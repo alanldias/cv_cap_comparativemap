@@ -1,0 +1,9 @@
+{
+    "actions": [
+        {
+            "id": "openReadmeFile",
+            "actionType": "FILE",
+            "uri": "file:///home/user/projects/cv_cap_comparativemap/comparativomap/.gen/generation.log"
+        }
+    ]
+}
