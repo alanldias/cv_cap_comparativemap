@@ -20,7 +20,8 @@
     "@sap/cds-dk": ">=8"
   },
   "scripts": {
-    "start": "cds-serve"
+    "start": "cds-serve",
+    "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false"
   },
   "cds": {
     "requires": {
