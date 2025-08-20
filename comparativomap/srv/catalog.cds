@@ -1,5 +1,15 @@
-using comparativemap as comparativemap from '../db/schema';
+using ariba as db from '../db/schema';
 
-service catalog {
-    entity Client as projection on comparativemap.Client;    
+@path: '/odata/v4/catalog'
+service CatalogService {
+
+  // Projeção OData V4 da entidade persistida
+  entity AribaQuotes as projection on db.AribaQuotes;
+
+  // (Opcional) Function para consulta "estilo REST" por parâmetros
+  function GetQuotes(
+    docId      : String,
+    supplierId : String,
+    lineNumber : Integer
+  ) returns many AribaQuotes;
 }

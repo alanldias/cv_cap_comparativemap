@@ -1,0 +1,11 @@
+### OData - listar tudo
+GET http://localhost:4004/odata/v4/catalog/AribaQuotes
+
+### OData - filtro docId
+GET http://localhost:4004/odata/v4/catalog/AribaQuotes?$filter=docId eq 'ARIBA-2025-000123'
+
+### REST - listar tudo
+GET http://localhost:4004/api/ariba/quotes
+
+### REST - docId + supplier
+GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
