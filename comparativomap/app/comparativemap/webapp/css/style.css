@@ -1,0 +1,28 @@
+/* Enter your custom styles here */
+.centralizarTabela {
+    width: 99%;
+    margin: auto;
+}
+
+.cabecalhoTopo {
+  background-color: white;
+  padding: 1.5rem;
+}
+
+.cabecalhoTexto {
+  color: #354b9d;
+  font-size: 1.5rem;
+  font-weight: bold;
+}
+
+.textoTabela{
+  color: #354b9d;
+  font-size: 1.1rem;
+  font-weight: 900;
+}
+
+.cabecalhoTabela{
+  background-color: white;
+  height: 2.5rem !important;
+}
+

@@ -1,0 +1,1 @@
+using service.AribaQuotes as service from '../../srv/service';
