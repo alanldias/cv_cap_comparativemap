@@ -1,1 +1,1 @@
-using MainService as service from '../../srv/service';
+using service.AribaQuotes as service from '../../srv/service';
