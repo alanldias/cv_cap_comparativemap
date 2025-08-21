@@ -9,3 +9,16 @@ GET http://localhost:4004/api/ariba/quotes
 
 ### REST - docId + supplier
 GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
+
+
+### Health
+GET http://localhost:4004/api/health
+
+### Mock local (USE_REMOTE=false)
+GET http://localhost:4004/api/ariba/quotes
+
+### Mock local com filtros
+GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123&lineNumber=10
+
+### Quando ligar o remoto (USE_REMOTE=true e ARIBA_API_BASE setado)
+GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123

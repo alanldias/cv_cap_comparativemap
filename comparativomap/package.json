@@ -34,7 +34,7 @@
       "[production]": { "auth": "xsuaa" },
       "AribaApproval": {
         "kind": "rest",
-        "credentials": { "url": "https://sandbox.api.sap.com/ariba/api/approval/v2/sandbox" }
+        "credentials": {  "url": "${ARIBA_API_BASE}" }
       },
       "connectivity": true,
       "destinations": true,
