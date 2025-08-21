@@ -2,6 +2,8 @@ using comparativemap as comparativemap from '../db/schema';
 
 service service {
 
+  entity Client as projection on comparativemap.Client;
+
   @requires: 'ECCOperator' // manter alinhado com ROLE_REQUIRED 
   action consultarPedidoECC(numero: String) returns {
     DOC_TYPE   : String;
