@@ -1,6 +1,5 @@
 using comparativemap as comparativemap from '../db/schema';
 
-// srv/ecc-service.cds
 service service {
 
   @requires: 'ECCOperator' // manter alinhado com ROLE_REQUIRED 

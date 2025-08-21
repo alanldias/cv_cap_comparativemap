@@ -76,28 +76,35 @@ module.exports = cds.service.impl(function () {
         timeout      : SOAP_TIMEOUT_MS
       });
 
-      // 2) Ajuste para a operação real do seu WSDL
+      // 2) Ajuste para a operação real do  WSDL + parametro
       // Ex.: Z_GET_PO_DETAIL(EBELN)+Async
       const [resp] = await client.Z_GET_PO_DETAILAsync({ EBELN: String(numero) });
 
       // 3) Normalização comum
+      // pega o nome da função gerada pelo node-soap com o nome do WSDL
+      // algum serviços retornam objeto dentro do response outros jogam tudo no resp
       const payload = resp?.Z_GET_PO_DETAILResponse || resp;
+      // tenta achar e padronizar o resultado se não achar fica o nome que veio mesmo
       const header =
         payload?.POHEADER ||
         payload?.PO_HEADER ||
         payload?.E_PO_HEADER ||
         payload?.E_HEADER ||
         payload;
-
+     // helper que pega o primiero campo valido entre sinonimos
+     //Ex.: pick(header, 'DOC_TYPE', 'BSART') → retorna DOC_TYPE se existir; se não, tenta BSART.
       const pick = (obj, ...keys) => {
         for (const k of keys) {
           const v = obj?.[k];
           if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
         }
         return null;
+      
       };
 
       // 4) Retornar APENAS os campos pedidos
+      //No fim usa pick(...) pra montar o objeto só com:
+      //DOC_TYPE, PURCH_ORG, PUR_GROUP, COMP_CODE, INCOTERMS1, INCOTERMS2, PMNTTRMS.
       return {
         DOC_TYPE   : pick(header, 'DOC_TYPE', 'BSART'),
         PURCH_ORG  : pick(header, 'PURCH_ORG', 'EKORG'),
