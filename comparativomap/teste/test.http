@@ -1,24 +1,24 @@
 ### OData - listar tudo
-GET http://localhost:4004/odata/v4/catalog/AribaQuotes
+GET http://localhost:4004/odata/v4/service/AribaQuotes
 
 ### OData - filtro docId
-GET http://localhost:4004/odata/v4/catalog/AribaQuotes?$filter=docId eq 'ARIBA-2025-000123'
+GET http://localhost:4004/odata/v4/service/AribaQuotes?$filter=docId eq 'ARIBA-2025-000123'
 
 ### REST - listar tudo
-GET http://localhost:4004/api/ariba/quotes
+GET http://localhost:4004/api/comparativemap/quotes
 
 ### REST - docId + supplier
-GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
+GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
 
 
 ### Health
 GET http://localhost:4004/api/health
 
 ### Mock local (USE_REMOTE=false)
-GET http://localhost:4004/api/ariba/quotes
+GET http://localhost:4004/api/comparativemap/quotes
 
 ### Mock local com filtros
-GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123&lineNumber=10
+GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&lineNumber=10
 
 ### Quando ligar o remoto (USE_REMOTE=true e ARIBA_API_BASE setado)
-GET http://localhost:4004/api/ariba/quotes?docId=ARIBA-2025-000123
+GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123

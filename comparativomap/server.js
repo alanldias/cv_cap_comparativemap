@@ -34,7 +34,7 @@ cds.on('bootstrap', app => {
   // health-check
   app.get('/api/health', (_req, res) => res.send('ok'));
 
-  app.get('/api/ariba/quotes', async (req, res, next) => {
+  app.get('/api/comparativemap/quotes', async (req, res, next) => {
     try {
       // 1) Tenta REMOTO se flag ligada
       if (USE_REMOTE && REMOTE_BASE) {
@@ -49,7 +49,7 @@ cds.on('bootstrap', app => {
       }
 
       const db = await cds.connect.to('db');
-      const { AribaQuotes } = cds.entities('ariba');
+      const { AribaQuotes } = cds.entities('comparativemap');
 
       const where = {};
       const { docId, supplierId, lineNumber } = req.query;

@@ -1,4 +1,4 @@
-namespace ariba;
+namespace comparativemap;
 
 entity AribaQuotes {
   key docId                  : String(40);
