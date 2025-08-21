@@ -4,7 +4,7 @@
     xmlns:l="sap.ui.layout">
     <Page id="page" showHeader="false">
 
-        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo">
+        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo sapUiSmallMarginBottom">
             <HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween">
                 <HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo">
                     <Image id="logoTopoNf"
@@ -23,8 +23,8 @@
         </Toolbar>
 
         <l:VerticalLayout id="searchLayout" class="sapUiContentPadding">
-            <HBox id="searchHBox" class="sapUiTinyMarginBottom">
-                <Label id="labelDoc" labelFor="inputDoID"/>
+            <HBox id="searchHBox" alignItems="Center" >
+                <Label id="labelDoc" text="Doc ID:" labelFor="inputDoID" class="sapUiTinyMarginEnd"/>
                 <Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"
                        submit=".onBuscar" />
                 <Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"
@@ -63,43 +63,43 @@
                         </header>
                     </Column>
 
-                    <Column id="colTipoPedido" width="11%" hAlign="Left">
+                    <Column id="colTipoPedido" width="6rem" hAlign="Center">
                         <header>
                             <Text id="headerTipoPedido" text="{i18n>coluna3}"/>
                         </header>
                     </Column>
 
-                    <Column id="colOrgCompras" width="11%" hAlign="Left">
+                    <Column id="colOrgCompras" width="6rem" hAlign="Center">
                         <header>
                             <Text id="headerOrgCompras" text="{i18n>coluna4}"/>
                         </header>
                     </Column>
 
-                    <Column id="colGrpCompradores" width="11%" hAlign="Left">
+                    <Column id="colGrpCompradores" width="7rem" hAlign="Center">
                         <header>
                             <Text id="headerGrpCompradores" text="{i18n>coluna5}"/>
                         </header>
                     </Column>
 
-                    <Column id="colEmpresa" width="11%" hAlign="Left">
+                    <Column id="colEmpresa" width="4rem" hAlign="Center">
                         <header>
                             <Text id="headerEmpresa" text="{i18n>coluna6}"/>
                         </header>
                     </Column>
 
-                    <Column id="colIncoterms" width="11%" hAlign="Left">
+                    <Column id="colIncoterms" width="6rem" hAlign="Center">
                         <header>
                             <Text id="headerIncoterms" text="{i18n>coluna7}"/>
                         </header>
                     </Column>
 
-                    <Column id="colLocalIncoterms" width="11%" hAlign="Left">
+                    <Column id="colLocalIncoterms" width="7rem" hAlign="Left">
                         <header>
                             <Text id="headerLocalIncoterms" text="{i18n>coluna8}"/>
                         </header>
                     </Column>
 
-                    <Column id="colCondPagamento" width="11%" hAlign="Left">
+                    <Column id="colCondPagamento" width="5rem" hAlign="Center">
                         <header>
                             <Text id="headerCondPagamento" text="{i18n>coluna9}"/>
                         </header>
@@ -107,9 +107,9 @@
                 </columns>
 
                 <items>
-                    <ColumnListItem id="itemTemplate" vAlign="Middle">
+                    <ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress">
                         <cells>
-                            <Text id="txtFornecedor" text="{vm>fornecedor}" wrapping="false" tooltip="{vm>fornecedor}" />
+                            <Link id="txtFornecedor" text="{vm>fornecedor}" wrapping="false"  press=".onItemQuickView" />
                             <Text id="txtNomeItem" text="{vm>nomeItem}" wrapping="false" tooltip="{vm>nomeItem}"/>
                             <Text id="txtTipoDocumento" text="{vm>arb_Document_Type}" wrapping="false" tooltip="{vm>arb_Document_Type}"/>
                             <Text id="txtOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false" tooltip="{vm>arb_PurchasingOrganization}"/>
@@ -123,7 +123,6 @@
                 </items>
 
             </Table>
-        
         </VBox>
 
     </Page>
