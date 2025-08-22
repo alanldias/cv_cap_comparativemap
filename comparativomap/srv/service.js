@@ -37,11 +37,6 @@ module.exports = cds.service.impl(function () {
   });
 
   ///////////////////////////////////  ///////////////////////////////////  ///////////////////////////////////  ///////////////////////////////////
-
-
-/* =========================
- * CONFIG FIXA (mundo ideal)
- * ========================= */
 /**
  * Versão minimalista (WSDL conhecido):
  * - Operação única: Z_GET_PO_DETAIL
@@ -49,12 +44,6 @@ module.exports = cds.service.impl(function () {
  * - Response: { Z_GET_PO_DETAILResponse: { E_HEADER:{...}, E_ITEMS:[...] } }
  * - Retorna MESMO array + campos extras, preservando ordem/tamanho.
  */
-
-const cds  = require('@sap/cds');
-const soap = require('soap');
-const axios = require('axios');
-const { getDestination, addDestinationToRequestConfig } = require('@sap-cloud-sdk/connectivity');
-
 /* =========================
  * CONFIG
  * ========================= */
