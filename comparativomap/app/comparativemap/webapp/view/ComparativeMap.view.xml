@@ -49,7 +49,22 @@
                    growing="true"
                    noDataText="{i18n>instrucaoTabela}"
                    items="{vm>/rows}">
+                     <headerToolbar>
+                        <OverflowToolbar id="OverflowToolbarCM">
+                        <Title id="TitleItensCM" text="Itens" level="H2"/>
+                        <ToolbarSpacer id="spacerTabela2"/>
+                        <Button id="Sorter" icon="sap-icon://sort"   text="Sort"   press=".handleSortButtonPressed"/>
+                        <Button id="Filter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
+                        <Button id="Group" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/>
+                        </OverflowToolbar>
+                    </headerToolbar>
 
+                    <!-- ✅ Barra de resumo dos filtros -->
+                    <infoToolbar>
+                        <OverflowToolbar id="vsdFilterBar" visible="false">
+                        <Text id="vsdFilterLabel" />
+                        </OverflowToolbar>
+                    </infoToolbar>
                 <columns>
                     <Column id="colFornecedores" width="11%" hAlign="Left">
                         <header>
