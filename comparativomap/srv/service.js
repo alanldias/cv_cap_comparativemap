@@ -1,4 +1,4 @@
-const cds  = require('@sap/cds');
+const cds = require('@sap/cds');
 const soap = require('soap');
 const axios = require('axios');
 const { getDestination, addDestinationToRequestConfig } = require('@sap-cloud-sdk/connectivity');
@@ -37,87 +37,87 @@ module.exports = cds.service.impl(function () {
   });
 
   ///////////////////////////////////  ///////////////////////////////////  ///////////////////////////////////  ///////////////////////////////////
-/**
- * Versão minimalista (WSDL conhecido):
- * - Operação única: Z_GET_PO_DETAIL
- * - Request: { EBELN }
- * - Response: { Z_GET_PO_DETAILResponse: { E_HEADER:{...}, E_ITEMS:[...] } }
- * - Retorna MESMO array + campos extras, preservando ordem/tamanho.
- */
-/* =========================
- * CONFIG
- * ========================= */
-const ACTION_NAME       = process.env.CAP_ACTION       || 'consultarPedidoECC'; // action no .cds
-const ROLE_REQUIRED     = process.env.ROLE_REQUIRED    || 'ECCOperator';
-const DESTINATION_NAME  = process.env.DESTINATION_NAME || 'ECC_SOAP';
-const ECC_WSDL_URL      = process.env.ECC_WSDL_URL     || 'http://<host>:<port>/sap/bc/srt/rfc/sap/ZWS_PO/100?wsdl';
-const SOAP_TIMEOUT_MS   = Number(process.env.SOAP_TIMEOUT_MS || 30000);
+  /**
+   * Versão minimalista (WSDL conhecido):
+   * - Operação única: Z_GET_PO_DETAIL
+   * - Request: { EBELN }
+   * - Response: { Z_GET_PO_DETAILResponse: { E_HEADER:{...}, E_ITEMS:[...] } }
+   * - Retorna MESMO array + campos extras, preservando ordem/tamanho.
+   */
+  /* =========================
+   * CONFIG
+   * ========================= */
+  const ACTION_NAME = process.env.CAP_ACTION || 'consultarPedidoECC'; // action no .cds
+  const ROLE_REQUIRED = process.env.ROLE_REQUIRED || 'ECCOperator';
+  const DESTINATION_NAME = process.env.DESTINATION_NAME || 'ECC_SOAP';
+  const ECC_WSDL_URL = process.env.ECC_WSDL_URL || 'http://<host>:<port>/sap/bc/srt/rfc/sap/ZWS_PO/100?wsdl';
+  const SOAP_TIMEOUT_MS = Number(process.env.SOAP_TIMEOUT_MS || 30000);
 
-/** Operação fixa (mundo ideal) */
-const DEFAULT_OP         = 'Z_GET_PO_DETAIL';
-const METHOD_NAME_ASYNC  = `${DEFAULT_OP}Async`;
+  /** Operação fixa (mundo ideal) */
+  const DEFAULT_OP = 'Z_GET_PO_DETAIL';
+  const METHOD_NAME_ASYNC = `${DEFAULT_OP}Async`;
 
-/* =========================
- * FLAGS DE COMPORTAMENTO
- * ========================= */
-// STRICT_MATCH_DOCID
-// true  → garante consistência: o EBELN (docId) do header da BAPI TEM que ser igual ao que foi enviado.
-// false → não valida essa igualdade (usa o que a BAPI devolver).
-const STRICT_MATCH_DOCID   = true;   
-// REQUIRE_PROD_IF_SENT
-// true  → se o input veio com `produto`, esse produto PRECISA existir na lista de itens retornados; senão marca erro no item.
-// false → se não achar o produto, segue com o primeiro item retornado (não erra).
-const REQUIRE_PROD_IF_SENT = true;  
-// ERROR_FILL_VALUE
-// Valor usado para preencher os campos "extras" quando ocorre erro no item.
-// Coloque 'ERRO' para ficar visual no front, ou `null` se preferir campos vazios.
-const ERROR_FILL_VALUE     = 'ERRO';
-// EXTRA_FIELDS
-// Lista dos campos "extras" que enriquecemos no sucesso.
-// Quando dá erro, esses campos são preenchidos com ERROR_FILL_VALUE para manter o mesmo shape no retorno.
-const EXTRA_FIELDS = [
-  'docType','org','group','company','incoterm1','incoterm2','pagamento','moeda','precoTotal',
-  'produtoRet','unidadeRet','precoUnitario','quantidade'
-];
+  /* =========================
+   * FLAGS DE COMPORTAMENTO
+   * ========================= */
+  // STRICT_MATCH_DOCID
+  // true  → garante consistência: o EBELN (docId) do header da BAPI TEM que ser igual ao que foi enviado.
+  // false → não valida essa igualdade (usa o que a BAPI devolver).
+  const STRICT_MATCH_DOCID = true;
+  // REQUIRE_PROD_IF_SENT
+  // true  → se o input veio com `produto`, esse produto PRECISA existir na lista de itens retornados; senão marca erro no item.
+  // false → se não achar o produto, segue com o primeiro item retornado (não erra).
+  const REQUIRE_PROD_IF_SENT = true;
+  // ERROR_FILL_VALUE
+  // Valor usado para preencher os campos "extras" quando ocorre erro no item.
+  // Coloque 'ERRO' para ficar visual no front, ou `null` se preferir campos vazios.
+  const ERROR_FILL_VALUE = 'ERRO';
+  // EXTRA_FIELDS
+  // Lista dos campos "extras" que enriquecemos no sucesso.
+  // Quando dá erro, esses campos são preenchidos com ERROR_FILL_VALUE para manter o mesmo shape no retorno.
+  const EXTRA_FIELDS = [
+    'docType', 'org', 'group', 'company', 'incoterm1', 'incoterm2', 'pagamento', 'moeda', 'precoTotal',
+    'produtoRet', 'unidadeRet', 'precoUnitario', 'quantidade'
+  ];
 
-/* =========================
- * Transporte SOAP via Destination
- * ========================= */
-async function buildSoapHttp(jwt) {
-  const destination = await getDestination({ destinationName: DESTINATION_NAME, jwt });
-  if (!destination) throw new Error(`Destination ${DESTINATION_NAME} não encontrado`);
+  /* =========================
+   * Transporte SOAP via Destination
+   * ========================= */
+  async function buildSoapHttp(jwt) {
+    const destination = await getDestination({ destinationName: DESTINATION_NAME, jwt });
+    if (!destination) throw new Error(`Destination ${DESTINATION_NAME} não encontrado`);
 
-  const cfg = await addDestinationToRequestConfig({}, destination);
+    const cfg = await addDestinationToRequestConfig({}, destination);
 
-  const http = axios.create({
-    httpAgent : cfg.httpAgent,
-    httpsAgent: cfg.httpsAgent,
-    proxy     : false,
-    timeout   : SOAP_TIMEOUT_MS
-  });
+    const http = axios.create({
+      httpAgent: cfg.httpAgent,
+      httpsAgent: cfg.httpsAgent,
+      proxy: false,
+      timeout: SOAP_TIMEOUT_MS
+    });
 
-  // Função de request que o node-soap usa
-  const soapRequest = (requestOptions, cb) => {
-    http({
-      method : requestOptions.method || 'POST',
-      url    : requestOptions.uri || requestOptions.url,
-      headers: { ...(cfg.headers || {}), ...(requestOptions.headers || {}) },
-      data   : requestOptions.body
-    })
-      .then(res => cb(null, res, res.data))
-      .catch(err => cb(err));
-  };
+    // Função de request que o node-soap usa
+    const soapRequest = (requestOptions, cb) => {
+      http({
+        method: requestOptions.method || 'POST',
+        url: requestOptions.uri || requestOptions.url,
+        headers: { ...(cfg.headers || {}), ...(requestOptions.headers || {}) },
+        data: requestOptions.body
+      })
+        .then(res => cb(null, res, res.data))
+        .catch(err => cb(err));
+    };
 
-  return {
-    soapRequest,
-    wsdlHeaders: cfg.headers || {},
-    wsdlOptions: { agent: cfg.httpAgent || cfg.httpsAgent }
-  };
-}
+    return {
+      soapRequest,
+      wsdlHeaders: cfg.headers || {},
+      wsdlOptions: { agent: cfg.httpAgent || cfg.httpsAgent }
+    };
+  }
 
-/* =========================
- * Serviço CAP
- * ========================= */
+  /* =========================
+   * Serviço CAP
+   * ========================= */
   this.on(ACTION_NAME, async (req) => {
     // 1) Segurança
     if (!req.user?.is(ROLE_REQUIRED)) return req.error(403, `Sem permissão (${ROLE_REQUIRED})`);
@@ -137,10 +137,10 @@ async function buildSoapHttp(jwt) {
     try {
       const { soapRequest, wsdlHeaders, wsdlOptions } = await buildSoapHttp(jwt);
       client = await soap.createClientAsync(ECC_WSDL_URL, {
-        request      : soapRequest,
-        wsdl_headers : wsdlHeaders,
-        wsdl_options : wsdlOptions,
-        timeout      : SOAP_TIMEOUT_MS
+        request: soapRequest,
+        wsdl_headers: wsdlHeaders,
+        wsdl_options: wsdlOptions,
+        timeout: SOAP_TIMEOUT_MS
       });
     } catch (err) {
       console.error('[ECC SOAP] falha criando client:', err?.message);
@@ -151,7 +151,7 @@ async function buildSoapHttp(jwt) {
     const results = [];
 
     for (let index = 0; index < itens.length; index++) {
-      const input   = itens[index];
+      const input = itens[index];
       const baseOut = { ...input, _index: index, _status: 'ERROR', _errors: [] };
 
       // helper para montar saída de erro, mantendo shape e preenchendo extras
@@ -179,8 +179,8 @@ async function buildSoapHttp(jwt) {
         const [rawResp] = await methodAsync({ EBELN });
 
         // ===== Mapeamento direto (WSDL estável) =====
-        const resp    = rawResp?.Z_GET_PO_DETAILResponse || rawResp;
-        const header  = resp?.E_HEADER || {};
+        const resp = rawResp?.Z_GET_PO_DETAILResponse || rawResp;
+        const header = resp?.E_HEADER || {};
         // Coerção leve para array (se vier um único item "nu", embrulha)
         const itensRetRaw = resp?.E_ITEMS;
         const itensRet = Array.isArray(itensRetRaw)
@@ -214,25 +214,25 @@ async function buildSoapHttp(jwt) {
         const enriched = {
           ...input,
           // header
-          docId        : EBELN,
-          docType      : header.BSART ?? null,
-          org          : header.EKORG ?? null,
-          group        : header.EKGRP ?? null,
-          company      : header.BUKRS ?? null,
-          incoterm1    : header.INCO1 ?? null,
-          incoterm2    : header.INCO2 ?? null,
-          pagamento    : header.ZTERM ?? null,
-          moeda        : header.WAERS ?? null,
-          precoTotal   : header.NETWR ?? null,
+          docId: EBELN,
+          docType: header.BSART ?? null,
+          org: header.EKORG ?? null,
+          group: header.EKGRP ?? null,
+          company: header.BUKRS ?? null,
+          incoterm1: header.INCO1 ?? null,
+          incoterm2: header.INCO2 ?? null,
+          pagamento: header.ZTERM ?? null,
+          moeda: header.WAERS ?? null,
+          precoTotal: header.NETWR ?? null,
           // item
-          produtoRet    : itemSel.MATNR ?? null,
-          unidadeRet    : itemSel.MEINS ?? null,
-          precoUnitario : itemSel.NETPR ?? null,
-          quantidade    : itemSel.MENGE ?? null,
+          produtoRet: itemSel.MATNR ?? null,
+          unidadeRet: itemSel.MEINS ?? null,
+          precoUnitario: itemSel.NETPR ?? null,
+          quantidade: itemSel.MENGE ?? null,
           // controle
-          _index   : index,
-          _status  : 'OK',
-          _errors  : []
+          _index: index,
+          _status: 'OK',
+          _errors: []
         };
 
         results.push(enriched);
