@@ -1,0 +1,37 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+  <Dialog id="dlgSimulacao" title="Simulação de Compra" verticalScrolling="true" horizontalScrolling="true" draggable="true" resizable="true">
+    <VBox class="sapUiSmallMargin">
+      <ObjectHeader title="Resumo" />
+      <HBox justifyContent="SpaceBetween" class="sapUiTinyMarginBottom">
+        <ObjectNumber number="{sim>totais/valorTotal}" unit="{sim>totais/moeda}" emphasized="true" />
+        <Text text="Itens: {sim>totais/itens}" />
+      </HBox>
+
+      <ObjectHeader title="Itens simulados" />
+      <Table id="tblSim" items="{sim>/itens}">
+        <columns>
+          <Column><Text text="Fornecedor"/></Column>
+          <Column><Text text="Item"/></Column>
+          <Column hAlign="End"><Text text="Qtd"/></Column>
+          <Column hAlign="End"><Text text="Preço"/></Column>
+          <Column hAlign="End"><Text text="Total"/></Column>
+        </columns>
+        <items>
+          <ColumnListItem>
+            <cells>
+              <Text text="{sim>fornecedor}" />
+              <Text text="{sim>nomeItem}" />
+              <ObjectNumber number="{sim>quantity}" unit="{sim>uom}" />
+              <ObjectNumber number="{sim>netPrice}" unit="{sim>currency}" />
+              <ObjectNumber number="{sim>totalItem}" unit="{sim>currency}" emphasized="true" />
+            </cells>
+          </ColumnListItem>
+        </items>
+      </Table>
+    </VBox>
+
+    <beginButton>
+      <Button text="Fechar" press=".onCloseSimulacao" />
+    </beginButton>
+  </Dialog>
+</core:FragmentDefinition>

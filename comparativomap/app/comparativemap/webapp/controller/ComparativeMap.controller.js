@@ -1,14 +1,16 @@
 sap.ui.define([
   "sap/ui/core/mvc/Controller",
   "sap/ui/model/Sorter",
-  "sap/m/MessageBox"
-], function (Controller, Sorter, MessageBox) {
+  "sap/m/MessageBox",
+  "sap/ui/core/Fragment",
+  "sap/ui/model/json/JSONModel"
+], function (Controller, Sorter, MessageBox, Fragment, JSONModel) {
   "use strict";
 
   return Controller.extend("comparativemap.comparativemap.controller.ComparativeMap", {
 
     onInit() {
-      const vm = new sap.ui.model.json.JSONModel({ rows: [] });
+      const vm = new JSONModel({ rows: [] });
       this.getView().setModel(vm, "vm");
     },
 
@@ -73,7 +75,17 @@ sap.ui.define([
           arb_CompanyCode: it.arb_CompanyCode,
           incoterms: it.INCOTERMS1,
           localIncoterms: it.INCOTERMS2,
-          arb_PaymentTerms: it.arb_PaymentTerms
+          arb_PaymentTerms: it.arb_PaymentTerms,
+
+          // ➕ campos para payload da simulação
+          docId: it.docId,
+          supplierId: it.supplierId,
+          lineNumber: it.lineNumber,
+          quantity: it.quantity,
+          uom: it.uom,
+          netPrice: it.netPrice,
+          currency: it.currency,
+          materialCode: it.materialCode
         }));
         oVM.setProperty("/rows", rows);
 
@@ -102,6 +114,64 @@ sap.ui.define([
       } catch (e) {
         MessageBox.error("Falha ao buscar dados: " + (e.message || e));
       }
+    },
+    onCloseSimulacao: function () {
+      if (this._dlgSim) this._dlgSim.close();
+    },
+
+    onAfterCloseSimulacao: function () {
+      // opcional: destruir depois de fechar
+      if (this._dlgSim) { this._dlgSim.destroy(); this._dlgSim = null; }
+    },
+
+    async onSimularCompra() {
+  const oView  = this.getView();
+  const oModel = oView.getModel(); // OData V4
+  const oTbl   = this.byId("tblDocs");
+
+  // 1) tenta pegar da seleção
+  const sel = oTbl.getSelectedContexts("vm");
+  let numero = sel.length ? sel[0].getObject().docId : null;
+
+  // 2) fallback: pega do input (se o usuário digitou)
+  if (!numero) {
+    const typed = (oView.byId("inputDoID").getValue() || "").trim();
+    if (typed) numero = typed;
+  }
+
+  try {
+    if (!numero) throw new Error("Informe o Doc ID (selecione uma linha ou preencha o campo).");
+
+    const oCtx = oModel.bindContext("/consultarPedidoECC(...)", undefined, { $$groupId: "$direct" });
+    oCtx.setParameter("numero", numero);
+
+    await oCtx.execute();
+    const res = oCtx.getBoundContext().getObject(); // { DOC_TYPE, PURCH_ORG, ... }
+
+    sap.m.MessageBox.information(
+      `Tipo: ${res.DOC_TYPE}\nOrg: ${res.PURCH_ORG}\nIncoterms: ${res.INCOTERMS1} ${res.INCOTERMS2}`
+    );
+  } catch (e) {
+    sap.m.MessageBox.error("Falha ao simular: " + (e.message || e));
+  }
+},
+
+    // Utilidade: se o backend ainda não estiver pronto,
+    // cria um resultado fake para testar o fragment
+    _mockFromItems(itens) {
+      const valorTotal = itens.reduce((acc, it) => acc + (Number(it.netPrice) * Number(it.quantity || 1)), 0);
+      return {
+        totais: { itens: itens.length, valorTotal: valorTotal.toFixed(2), moeda: itens[0]?.currency || "BRL" },
+        itens: itens.map(it => ({
+          fornecedor: it.fornecedor,
+          nomeItem: it.materialDesc || "",
+          quantity: it.quantity,
+          uom: it.uom,
+          netPrice: it.netPrice,
+          currency: it.currency,
+          totalItem: (Number(it.netPrice) * Number(it.quantity || 1)).toFixed(2)
+        }))
+      };
     }
   });
 });
