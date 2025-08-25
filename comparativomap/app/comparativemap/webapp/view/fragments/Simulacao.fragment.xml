@@ -16,11 +16,11 @@
                     path: 'sim>/rows'
                 }">
                 <columns>
-                    <Column id="colQuantidade"><Text id="txtColQuantidade" text="Quantidade"/></Column>
-                    <Column id="colMoeda"><Text id="txtColMoeda" text="Moeda"/></Column>
-                    <Column id="colPreco"><Text id="txtColPreco" text="Preço"/></Column>
-                    <Column id="colFornecedorId"><Text id="txtColFornecedorId" text="Fornecedor ID"/></Column>
-                    <Column id="colFornecedor"><Text id="txtColFornecedor" text="Fornecedor"/></Column>
+                    <Column id="coluna1"><Text id="txtColQuantidade" text="Quantidade"/></Column>
+                    <Column id="coluna2"><Text id="txtColMoeda" text="Moeda"/></Column>
+                    <Column id="coluna3"><Text id="txtColPreco" text="Preço"/></Column>
+                    <Column id="coluna4"><Text id="txtColFornecedorId" text="Fornecedor ID"/></Column>
+                    <Column id="coluna5"><Text id="txtColFornecedor" text="Fornecedor"/></Column>
                 </columns>
                 <items>
                     <ColumnListItem id="colunasID">
@@ -37,7 +37,7 @@
         </VBox>
 
         <beginButton>
-            <Button id="btnPremiar" text="Premiar" type="Emphasized" press=".onConfirmSimulacao"/>
+            <Button id="btnPremiar" text="Premiar" type="Emphasized" press=".onPremiarSelecionados"/>
         </beginButton>
         <endButton>
             <Button id="btnCancelar" text="Cancelar" press=".onCloseSimulacao"/>
