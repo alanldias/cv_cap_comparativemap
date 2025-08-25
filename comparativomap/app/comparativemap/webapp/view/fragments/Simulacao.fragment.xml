@@ -25,11 +25,11 @@
                 <items>
                     <ColumnListItem id="colunasID">
                         <cells>
-                            <Text id="textoColunas1" text="{sim>quantity}"/>
-                            <Text id="textoColunas2" text="{sim>currency}"/>
-                            <Text id="textoColunas3" text="{sim>netPrice}"/>
-                            <Text id="textoColunas4" text="{sim>supplierId}"/>
-                            <Text id="textoColunas5" text="{sim>supplierName}"/>
+                            <Text text="{sim>quantity}"/>
+                            <Text text="{sim>currency}"/>
+                            <Text text="{sim>netPrice}"/>
+                            <Text text="{sim>supplierId}"/>
+                            <Text text="{sim>supplierName}"/>
                         </cells>
                     </ColumnListItem>
                 </items>
