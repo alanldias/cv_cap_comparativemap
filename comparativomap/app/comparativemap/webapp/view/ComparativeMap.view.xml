@@ -51,11 +51,6 @@
                    items="{vm>/rows}">
 
                 <columns>
-                    <Column id="colFornecedores" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerFornecedores" text="{i18n>coluna1}"/>
-                        </header>
-                    </Column>
 
                     <Column id="colNomeItem" width="11%" hAlign="Left">
                         <header>
@@ -63,6 +58,12 @@
                         </header>
                     </Column>
 
+                    <Column id="colFornecedores" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerFornecedores" text="{i18n>coluna1}"/>
+                        </header>
+                    </Column>
+                    
                     <Column id="colTipoPedido" width="6rem" hAlign="Center">
                         <header>
                             <Text id="headerTipoPedido" text="{i18n>coluna3}"/>
@@ -109,8 +110,8 @@
                 <items>
                     <ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress">
                         <cells>
-                            <Link id="txtFornecedor" text="{vm>fornecedor}" wrapping="false"  press=".onItemQuickView" />
-                            <Text id="txtNomeItem" text="{vm>nomeItem}" wrapping="false" tooltip="{vm>nomeItem}"/>
+                            <Link id="txtNomeItem" text="{vm>materialDesc}" wrapping="false"  press=".onItemQuickView" />                        
+                            <Text id="txtFornecedor" text="{vm>supplierName}" wrapping="false" tooltip="{vm>supplierName}"/>
                             <Text id="txtTipoDocumento" text="{vm>arb_Document_Type}" wrapping="false" tooltip="{vm>arb_Document_Type}"/>
                             <Text id="txtOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false" tooltip="{vm>arb_PurchasingOrganization}"/>
                             <Text id="txtGrpCompradores" text="{vm>arb_PurchasingGroup}" wrapping="false" tooltip="{vm>arb_PurchasingGroup}"/>
