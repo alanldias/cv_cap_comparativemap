@@ -131,8 +131,8 @@
                             <Text id="txtOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false" tooltip="{vm>arb_PurchasingOrganization}"/>
                             <Text id="txtGrpCompradores" text="{vm>arb_PurchasingGroup}" wrapping="false" tooltip="{vm>arb_PurchasingGroup}"/>
                             <Text id="txtEmpresa" text="{vm>arb_CompanyCode}" wrapping="false" tooltip="{vm>arb_CompanyCode}"/>
-                            <Text id="txtIncoterms" text="{vm>incoterms}" wrapping="false" tooltip="{vm>incoterms}"/>
-                            <Text id="txtLocalIncoterms" text="{vm>localIncoterms}" wrapping="false" tooltip="{vm>localIncoterms}" />
+                            <Text id="txtIncoterms" text="{vm>INCOTERMS1}" wrapping="false" tooltip="{vm>INCOTERMS1}"/>
+                            <Text id="txtLocalIncoterms" text="{vm>INCOTERMS2}" wrapping="false" tooltip="{vm>INCOTERMS2}" />
                             <Text id="txtCondPagamento" text="{vm>arb_PaymentTerms}" wrapping="false" tooltip="{vm>arb_PaymentTerms}"/>
                         </cells>
                     </ColumnListItem>

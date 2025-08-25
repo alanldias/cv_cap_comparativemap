@@ -42,11 +42,11 @@ sap.ui.define([
 
       this._storage = new Storage(Storage.Type.local, "comparativemap");
       this._prefsKey = "tblDocs-prefs";
-      this._prefs = this._loadPrefs(); // { filter:{fornecedor:[], nomeItem:[]}, sort:{key,desc}, group:{key,desc} }
+      this._prefs = this._loadPrefs();
 
       this.mGroupFunctions = {
-        fornecedor: (oCtx) => {
-          const v = oCtx.getProperty("fornecedor") || "";
+        supplierName: (oCtx) => {
+          const v = oCtx.getProperty("supplierName") || "";
           return { key: v, text: v };
         },
         arb_PurchasingOrganization: (oCtx) => {
@@ -67,7 +67,7 @@ sap.ui.define([
         if (raw) return JSON.parse(raw);
       } catch (e) {}
       return {
-        filter: { fornecedor: [], nomeItem: [] },
+        filter: { supplierName: [], materialDesc: [] },
         sort: { key: null, desc: false },
         group: { key: null, desc: false }
       };
@@ -99,7 +99,7 @@ sap.ui.define([
           new Filter({
             and: false,
             filters: this._prefs.filter.fornecedor.map(
-              (v) => new Filter("fornecedor", FilterOperator.EQ, v)
+              (v) => new Filter("supplierName", FilterOperator.EQ, v)
             )
           })
         );
@@ -109,7 +109,7 @@ sap.ui.define([
           new Filter({
             and: false,
             filters: this._prefs.filter.nomeItem.map(
-              (v) => new Filter("nomeItem", FilterOperator.EQ, v)
+              (v) => new Filter("materialDesc", FilterOperator.EQ, v)
             )
           })
         );
@@ -180,17 +180,17 @@ sap.ui.define([
       if (Device.system.desktop) dlg.addStyleClass("sapUiSizeCompact");
       oView.addDependent(dlg);
 
-      const fiForn = new ViewSettingsFilterItem({ text: "Fornecedor", key: "fornecedor" });
-      this._getDistinct("fornecedor").forEach((val) => {
-        const it = new ViewSettingsItem({ text: val, key: `fornecedor___EQ___${val}` });
+      const fiForn = new ViewSettingsFilterItem({ text: "Fornecedor", key: "supplierName" });
+      this._getDistinct("supplierName").forEach((val) => {
+        const it = new ViewSettingsItem({ text: val, key: `supplierName___EQ___${val}` });
         if (this._prefs.filter.fornecedor?.includes(val)) it.setSelected(true);
         fiForn.addItem(it);
       });
       dlg.addFilterItem(fiForn);
 
-      const fiNome = new ViewSettingsFilterItem({ text: "Nome do item", key: "nomeItem" });
-      this._getDistinct("nomeItem").forEach((val) => {
-        const it = new ViewSettingsItem({ text: val, key: `nomeItem___EQ___${val}` });
+      const fiNome = new ViewSettingsFilterItem({ text: "Nome do item", key: "materialDesc" });
+      this._getDistinct("materialDesc").forEach((val) => {
+        const it = new ViewSettingsItem({ text: val, key: `materialDesc___EQ___${val}` });
         if (this._prefs.filter.nomeItem?.includes(val)) it.setSelected(true);
         fiNome.addItem(it);
       });
@@ -200,7 +200,7 @@ sap.ui.define([
     },
     handleFilterDialogConfirm(oEvent) {
       const selected = oEvent.getParameters().filterItems || [];
-      const grouped = {}; // { fornecedor:[Filter...], nomeItem:[Filter...] }
+      const grouped = {}; 
       selected.forEach((item) => {
         const [path, op, v1, v2] = item.getKey().split("___");
         (grouped[path] ||= []).push(new Filter(path, FilterOperator[op] || op, v1, v2));
@@ -215,13 +215,13 @@ sap.ui.define([
       const oTbl = this.byId("tblDocs");
       oTbl.getBinding("items").filter(andFilters);
 
-      this._prefs.filter.fornecedor = (grouped.fornecedor || []).map((f) => String(f.oValue1));
-      this._prefs.filter.nomeItem   = (grouped.nomeItem   || []).map((f) => String(f.oValue1));
+      this._prefs.filter.fornecedor = (grouped.supplierName || []).map((f) => String(f.oValue1));
+      this._prefs.filter.nomeItem   = (grouped.materialDesc   || []).map((f) => String(f.oValue1));
       this._savePrefs();
       this._applyFiltersFromPrefs();
     },
     onFilterSelectAllFornecedor() {
-      this._prefs.filter.fornecedor = this._getDistinct("fornecedor");
+      this._prefs.filter.fornecedor = this._getDistinct("supplierName");
       this._savePrefs(); this._applyFiltersFromPrefs();
       MessageToast.show("Fornecedor: selecionado tudo.");
     },
@@ -231,7 +231,7 @@ sap.ui.define([
       MessageToast.show("Fornecedor: seleção limpa.");
     },
     onFilterSelectAllNomeItem() {
-      this._prefs.filter.nomeItem = this._getDistinct("nomeItem");
+      this._prefs.filter.nomeItem = this._getDistinct("materialDesc");
       this._savePrefs(); this._applyFiltersFromPrefs();
       MessageToast.show("Nome do item: selecionado tudo.");
     },
@@ -256,8 +256,8 @@ sap.ui.define([
 
       this._oSortDialog.destroySortItems();
       [
-        { text: "Fornecedor", key: "fornecedor" },
-        { text: "Nome do item", key: "nomeItem" },
+        { text: "Fornecedor", key: "supplierName" },
+        { text: "Nome do item", key: "materialDesc" },
         { text: "Tipo de pedido", key: "arb_Document_Type" },
         { text: "Org. Compras", key: "arb_PurchasingOrganization" },
         { text: "Grp. Compradores", key: "arb_PurchasingGroup" },
@@ -308,7 +308,7 @@ sap.ui.define([
 
       this._oGroupDialog.destroyGroupItems();
       [
-        { text: "Fornecedor", key: "fornecedor" },
+        { text: "Fornecedor", key: "supplierName" },
         { text: "Org. Compras", key: "arb_PurchasingOrganization" },
         { text: "Empresa", key: "arb_CompanyCode" }
       ].forEach((g) => this._oGroupDialog.addGroupItem(new ViewSettingsItem(g)));
