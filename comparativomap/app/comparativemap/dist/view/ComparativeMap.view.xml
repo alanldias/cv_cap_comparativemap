@@ -1,0 +1,130 @@
+<mvc:View controllerName="comparativemap.comparativemap.controller.ComparativeMap"
+    xmlns:mvc="sap.ui.core.mvc"
+    xmlns="sap.m"
+    xmlns:l="sap.ui.layout">
+    <Page id="page" showHeader="false">
+
+        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo">
+            <HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween">
+                <HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo">
+                    <Image id="logoTopoNf"
+                           src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"
+                           height="2rem"
+                           width="auto"
+                           class="sapUiTinyMarginBegin" />
+                </HBox>
+                <HBox id="hboxCentroNf" width="100%" justifyContent="Center">
+                    <Text id="tituloCabecalhoNf"
+                          text="{i18n>title}"
+                          class="cabecalhoTexto" />
+                </HBox>
+                <HBox id="hboxDireitaNf" width="2rem" />
+            </HBox>
+        </Toolbar>
+
+        <l:VerticalLayout id="searchLayout" class="sapUiContentPadding">
+            <HBox id="searchHBox" class="sapUiTinyMarginBottom">
+                <Label id="labelDoc" labelFor="inputDoID"/>
+                <Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"
+                       submit=".onBuscar" />
+                <Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"
+                        press=".onBuscar" class="sapUiTinyMarginBegin" />
+            </HBox>
+        </l:VerticalLayout>
+
+        <VBox id="tableVBox" class="centralizarTabela">
+            <Toolbar id="tableToolbar" class="cabecalhoTabela">
+                <Text id="tituloTabelaAriba"
+                      text="{i18n>tituloTabela}"
+                      class="textoTabela" />
+                <ToolbarSpacer id="spacerTabela"/>
+                <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
+                        icon="sap-icon://simulate" class="sapUiTinyMarginBegin"
+                        press=".onSimularCompra" />
+            </Toolbar>
+            
+            <Table id="tblDocs"
+                   inset="false"
+                   mode="MultiSelect"
+                   growing="true"
+                   noDataText="{i18n>instrucaoTabela}"
+                   items="{vm>/rows}">
+
+                <columns>
+                    <Column id="colFornecedores" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerFornecedores" text="{i18n>coluna1}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colNomeItem" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerNomeItem" text="{i18n>coluna2}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colTipoPedido" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerTipoPedido" text="{i18n>coluna3}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colOrgCompras" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerOrgCompras" text="{i18n>coluna4}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colGrpCompradores" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerGrpCompradores" text="{i18n>coluna5}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colEmpresa" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerEmpresa" text="{i18n>coluna6}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colIncoterms" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerIncoterms" text="{i18n>coluna7}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colLocalIncoterms" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerLocalIncoterms" text="{i18n>coluna8}"/>
+                        </header>
+                    </Column>
+
+                    <Column id="colCondPagamento" width="11%" hAlign="Left">
+                        <header>
+                            <Text id="headerCondPagamento" text="{i18n>coluna9}"/>
+                        </header>
+                    </Column>
+                </columns>
+
+                <items>
+                    <ColumnListItem id="itemTemplate" vAlign="Middle">
+                        <cells>
+                            <Text id="txtFornecedor" text="{vm>fornecedor}" wrapping="false" tooltip="{vm>fornecedor}" />
+                            <Text id="txtNomeItem" text="{vm>nomeItem}" wrapping="false" tooltip="{vm>nomeItem}"/>
+                            <Text id="txtTipoDocumento" text="{vm>arb_Document_Type}" wrapping="false" tooltip="{vm>arb_Document_Type}"/>
+                            <Text id="txtOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false" tooltip="{vm>arb_PurchasingOrganization}"/>
+                            <Text id="txtGrpCompradores" text="{vm>arb_PurchasingGroup}" wrapping="false" tooltip="{vm>arb_PurchasingGroup}"/>
+                            <Text id="txtEmpresa" text="{vm>arb_CompanyCode}" wrapping="false" tooltip="{vm>arb_CompanyCode}"/>
+                            <Text id="txtIncoterms" text="{vm>incoterms}" wrapping="false" tooltip="{vm>incoterms}"/>
+                            <Text id="txtLocalIncoterms" text="{vm>localIncoterms}" wrapping="false" tooltip="{vm>localIncoterms}" />
+                            <Text id="txtCondPagamento" text="{vm>arb_PaymentTerms}" wrapping="false" tooltip="{vm>arb_PaymentTerms}"/>
+                        </cells>
+                    </ColumnListItem>
+                </items>
+
+            </Table>
+        
+        </VBox>
+
+    </Page>
+</mvc:View>
