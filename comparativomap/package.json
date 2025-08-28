@@ -7,6 +7,7 @@
   "private": true,
   "dependencies": {
     "@cap-js/hana": "^2",
+    "@cap-js/sqlite": "^2.0.2",
     "@sap-cloud-sdk/connectivity": "^4.1.1",
     "@sap-cloud-sdk/http-client": "^4.1.1",
     "@sap-cloud-sdk/resilience": "^4.1.1",
@@ -20,19 +21,21 @@
   },
   "devDependencies": {
     "@cap-js/cds-types": "^0.13.0",
-    "@cap-js/sqlite": "^2",
     "@sap/cds-dk": ">=8"
   },
   "scripts": {
     "start": "cds-serve",
-    "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false"
+    "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false",
+    "build": "mbt build -t .",
+    "deploy": "cf deploy comparativomap_1.0.0.mtar",
+    "undeploy": "cf undeploy comparativomap --delete-services --delete-service-keys --delete-service-brokers"
   },
   "cds": {
     "requires": {
       "db": {
         "kind": "sqlite",
         "credentials": {
-          "database": "db/dev.db"
+          "database": "dev.sqlite"
         }
       },
       "[production]": {

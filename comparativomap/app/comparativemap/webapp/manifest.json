@@ -49,6 +49,10 @@
       "phone": true
     }
   },
+  "sap.cloud": {
+    "public": true,
+    "service": "comparativomap.service"
+  },
   "sap.ui5": {
     "flexEnabled": true,
     "dependencies": {
