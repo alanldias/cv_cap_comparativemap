@@ -8,12 +8,13 @@
     "sapui5"
   ],
   "main": "webapp/index.html",
-  "dependencies": {},
   "devDependencies": {
-    "@ui5/cli": "^4.0.16",
-    "@sap/ux-ui5-tooling": "1"
+    "@sap/ux-ui5-tooling": "^1.18.5",
+    "@ui5/cli": "^4.0.23"
   },
   "scripts": {
+    "start": "ui5 serve --config ui5.yaml --open index.html",
+    "build": "ui5 build --all --clean-dest --dest dist",
     "deploy-config": "npx -p @sap/ux-ui5-tooling fiori add deploy-config cf"
   }
 }
