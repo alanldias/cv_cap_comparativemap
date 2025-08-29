@@ -60,8 +60,8 @@ const ARIBA_REALM = process.env.ARIBA_REALM || '744701080-T';
 const ARIBA_USER = process.env.ARIBA_USER || 'acopino.consult';
 const ARIBA_PASSWORD_ADAPTER = process.env.ARIBA_PASSWORD_ADAPTER || 'ThirdPartyUser';
 
-const ARIBA_API_KEY = process.env.ARIBA_API_KEY || 'SKUVVJwBe5Yrw8jpC6gTkPj1OS6ReVL2';
-const ARIBA_BEARER_TOKEN = process.env.ARIBA_BEARER_TOKEN || 'd8d3d384-d394-48c6-bfe2-dfe275e4e302';
+const ARIBA_API_KEY = process.env.ARIBA_API_KEY || '';
+const ARIBA_BEARER_TOKEN = process.env.ARIBA_BEARER_TOKEN || '';
 
 const HTTP_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS || 30000);
 
