@@ -112,7 +112,7 @@ sap.ui.define([
         }
 
       } catch (e) {
-        sap.m.MessageBox.error("Falha ao buscar dados: " + (e.message || e));
+        MessageBox.error("Falha ao buscar dados: " + (e.message || e));
       }
     },
 
@@ -132,7 +132,7 @@ sap.ui.define([
       const selCtx = oTbl.getSelectedContexts("vm") || [];
       const selecionados = selCtx.map(c => c.getObject());
       if (!selecionados.length) {
-        sap.m.MessageBox.warning("Selecione ao menos uma linha.");
+          MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
 
@@ -183,11 +183,11 @@ sap.ui.define([
         await this._openSimFragment(okRows, docIds);
 
         if (fails.length) {
-          sap.m.MessageToast.show(`${fails.length} item(ns) falharam na simulação.`);
+          MessageToast.show(`${fails.length} item(ns) falharam na simulação.`);
         }
       } catch (e) {
         const msg = e?.message || e?.cause?.message || e?.cause?.error?.message || String(e);
-        sap.m.MessageBox.error("Falha ao simular: " + msg);
+          MessageBox.error("Falha ao simular: " + msg);
       } finally {
         sap.ui.core.BusyIndicator.hide();
       }
@@ -506,10 +506,7 @@ sap.ui.define([
       const oTbl = this.byId("tblDocs");
       const oBinding = oTbl?.getBinding("items");
       if (!oBinding) return;
-
-      const Filter = sap.ui.model.Filter;
-      const FilterOperator = sap.ui.model.FilterOperator;
-
+      
       const aFilters = docId ? [new Filter("docId", FilterOperator.EQ, String(docId))] : [];
       oBinding.filter(aFilters);
     },
