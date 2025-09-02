@@ -12,6 +12,8 @@
     "@sap-cloud-sdk/resilience": "^4.1.1",
     "@sap/cds": "^9",
     "@sap/xssec": "^4",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1",
     "express": "^4"
   },
   "engines": {
@@ -30,12 +32,18 @@
     "requires": {
       "db": {
         "kind": "sqlite",
-        "credentials": { "database": "db/dev.db" }
+        "credentials": {
+          "database": "db/dev.db"
+        }
       },
-      "[production]": { "auth": "xsuaa" },
+      "[production]": {
+        "auth": "xsuaa"
+      },
       "AribaApproval": {
         "kind": "rest",
-        "credentials": {  "url": "${ARIBA_API_BASE}" }
+        "credentials": {
+          "url": "${ARIBA_API_BASE}"
+        }
       },
       "connectivity": true,
       "destinations": true,
