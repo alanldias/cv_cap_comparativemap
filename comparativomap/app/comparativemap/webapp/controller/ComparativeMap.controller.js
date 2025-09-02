@@ -37,8 +37,9 @@ sap.ui.define([
 
     /* ==== Lifecycle ==== */
     onInit() {
-      const vm = new JSONModel({ rows: [] });
-      this.getView().setModel(vm, "vm");
+      if (!this.getView().getModel("vm")) {
+        this.getView().setModel(new JSONModel({ rows: [], headerRows: [] }), "vm");
+      }
 
       this._oFilterDialog = null;
       this._oSortDialog = null;
@@ -67,53 +68,63 @@ sap.ui.define([
 
     /* ==== Ações de dados ==== */
     async onBuscar() {
-      const oView = this.getView();
-      const oOData = oView.getModel(); // OData V4 (default)
-      const oVM = oView.getModel("vm");
-      const docId = oView.byId("inputDoID").getValue();
+      const oView  = this.getView();
+      const oOData = oView.getModel();          // default OData V4 do manifest
+      const oVM    = oView.getModel("vm");
+      const docId  = (oView.byId("inputDoID").getValue() || "").trim();
+      const tbl    = oView.byId("tblDocs");
 
       try {
         if (!oOData) throw new Error("Modelo OData V4 não encontrado (verifique o manifest).");
+        if (!docId)  { MessageToast.show("Informe o Doc ID"); return; }
 
-        // Chama a action/operation
+        tbl.setBusy(true);
+
+        // Chama a function/action import via OData V4
         const oCtx = oOData.bindContext("/GetQuotes(...)");
-        if (docId) oCtx.setParameter("docId", docId);
+        oCtx.setParameter("docId", docId);
         await oCtx.execute();
 
-        // Normaliza retorno
-        const resultRaw = oCtx.getBoundContext().getObject();
-        console.log(resultRaw)
-        const list = Array.isArray(resultRaw) ? resultRaw : (resultRaw?.value || []);
+        // ⚠️ Em OData V4 o retorno pode vir como array direto, ou dentro de value / $Return
+        const opResult = await oCtx.getBoundContext().requestObject();
+        let list = [];
+        if (Array.isArray(opResult)) list = opResult;
+        else if (Array.isArray(opResult?.value)) list = opResult.value;
+        else if (Array.isArray(opResult?.$Return)) list = opResult.$Return;
+        else if (opResult) list = [opResult];
 
-        // Itens (tabela de baixo)
-        const rows = docId
-          ? list.filter(r => String(r.docId) === String(docId))
-          : list;
-        // ... depois de obter `list`
+        // Se quiser ver no console:
+        console.log("GetQuotes ->", list);
+
+        // Preenche a tabela (vm>/rows) — seu XML já está mapeado pra esses nomes
         oVM.setProperty("/rows", list);
 
-        // header (tabela de cima)
-        const headerRows = this._buildHeaderRows(list, docId);
-        oVM.setProperty("/headerRows", headerRows);
+        // (opcional) header de cima: usa só o doc digitado
+        oVM.setProperty("/headerRows", [{
+          docId,
+          arb_Document_Type: "",            // preencha se tiver esses dados
+          arb_PurchasingOrganization: "",
+          arb_PurchasingGroup: "",
+          arb_CompanyCode: "",
+          INCOTERMS1: "",
+          INCOTERMS2: "",
+          arb_PaymentTerms: ""
+        }]);
 
-        // se veio docId digitado, já aplica o filtro inicial na tabela de baixo
-        if (docId) {
-          this._filterItemsByDoc(docId);
-        } else {
-          // opcional: selecionar automaticamente o primeiro header e filtrar
-          const tblHeader = this.byId("tblHeader");
-          tblHeader?.attachEventOnce("updateFinished", () => {
-            const first = tblHeader.getItems()[0];
-            if (first) {
-              tblHeader.setSelectedItem(first, true);
-              const id = first.getBindingContext("vm").getProperty("docId");
-              this._filterItemsByDoc(id);
-            }
-          });
-        }
+        // Evite filtrar por docId nos itens: o objeto de itens NÃO tem docId.
+        // Se você quiser aplicar algum filtro inicial, comente a linha abaixo:
+        // this._filterItemsByDoc(docId);  // <- remova/ajuste se esse método filtra por vm>docId
+
+        // (opcional) força atualização da tabela
+        oView.byId("tblDocs").getBinding("items")?.refresh(true);
+
+        if (!list.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
 
       } catch (e) {
+        console.error(e);
         MessageBox.error("Falha ao buscar dados: " + (e.message || e));
+      } finally {
+        tbl.setBusy(false);
       }
     },
 
@@ -133,7 +144,7 @@ sap.ui.define([
       const selCtx = oTbl.getSelectedContexts("vm") || [];
       const selecionados = selCtx.map(c => c.getObject());
       if (!selecionados.length) {
-          MessageBox.warning("Selecione ao menos uma linha.");
+        MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
 
@@ -188,7 +199,7 @@ sap.ui.define([
         }
       } catch (e) {
         const msg = e?.message || e?.cause?.message || e?.cause?.error?.message || String(e);
-          MessageBox.error("Falha ao simular: " + msg);
+        MessageBox.error("Falha ao simular: " + msg);
       } finally {
         sap.ui.core.BusyIndicator.hide();
       }
@@ -202,8 +213,8 @@ sap.ui.define([
 
     /* ==== UI: botões Filter/Sort/Group ==== */
     handleFilterButtonPressed() { this._openFilterDialog(); },
-    handleSortButtonPressed()   { this._openSortDialog();   },
-    handleGroupButtonPressed()  { this._openGroupDialog();  },
+    handleSortButtonPressed() { this._openSortDialog(); },
+    handleGroupButtonPressed() { this._openGroupDialog(); },
 
     /* ==== UI: filtros rápidos (selecionar/limpar) ==== */
     onFilterSelectAllFornecedor() {
@@ -507,7 +518,7 @@ sap.ui.define([
       const oTbl = this.byId("tblDocs");
       const oBinding = oTbl?.getBinding("items");
       if (!oBinding) return;
-      
+
       const aFilters = docId ? [new Filter("docId", FilterOperator.EQ, String(docId))] : [];
       oBinding.filter(aFilters);
     },

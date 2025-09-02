@@ -126,28 +126,32 @@
                         <items>
                             <ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress">
                                 <cells>
-                                    <Text id="cellFornecedor" text="{= ${vm>supplierName} || '-'}" wrapping="false" tooltip="{vm>supplierName}"/>
-                                    <Text id="cellCodMaterial" text="{= ${vm>materialCode}  || '-'}" wrapping="false" tooltip="{vm>materialCode}"/>
-                                    <Text id="cellNomeItem" text="{= ${vm>materialDesc}  || '-'}" wrapping="false" tooltip="{vm>materialDesc}"/>
-                                    <Text id="cellPreco" text="{= ${vm>netPrice}      || '0.00'}" textAlign="End" />
-                                    <Text id="cellMoeda" text="{= ${vm>currency}      || '-'}" wrapping="false"/>
-                                    <Text id="cellNCM" text="{= ${vm>ncm}           || '-'}" wrapping="false"/>
-                                    <Text id="cellMVA" text="{= ${vm>mva}           || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqICMS" text="{= ${vm>aliqIcms}      || '0.00'}" textAlign="End"/>
-                                    <Text id="cellICMSAp" text="{= ${vm>icmsApurado}   || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqIPI" text="{= ${vm>aliqIpi}       || '0.00'}" textAlign="End"/>
-                                    <Text id="cellIPIAp" text="{= ${vm>ipiApurado}    || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqPIS" text="{= ${vm>aliqPis}       || '0.00'}" textAlign="End"/>
-                                    <Text id="cellPISAp" text="{= ${vm>pisApurado}    || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqCOFINS" text="{= ${vm>aliqCofins}    || '0.00'}" textAlign="End"/>
-                                    <Text id="cellCOFINSAp" text="{= ${vm>cofinsApurado} || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqICMSIntra" text="{= ${vm>aliqIcmsInterna} || '0.00'}" textAlign="End"/>
-                                    <Text id="cellOrigem" text="{= ${vm>origemMaterial} || '-'}" wrapping="false"/>
-                                    <Text id="cellPrecoEstendido" text="{= ${vm>precoEstendido} || '0.00'}" textAlign="End"/>
-                                    <Text id="cellCentro" text="{= ${vm>centro}         || '-'}" wrapping="false"/>
-                                    <Text id="cellCategoriaItem" text="{= ${vm>categoriaItem}  || '-'}" wrapping="false"/>
-                                    <Text id="cellReq" text="{= ${vm>requisicaoCodigo} || '-'}" wrapping="false"/>
-                                    <Text id="cellGrpMateriais" text="{= ${vm>grupoMateriais} || '-'}" wrapping="false"/>
+                                 <Text id="cellFornecedor"     text="{= ${vm>supplierName} || '-'}" wrapping="false" tooltip="{vm>supplierName}"/>
+                                    <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}  || '-'}" wrapping="false" tooltip="{vm>MaterialCode}"/>
+                                    <Text id="cellNomeItem"       text="{= ${vm>itemDescription} || '-'}" wrapping="false" tooltip="{vm>itemDescription}"/>
+                                    <Text id="cellPreco"          text="{= ${vm>price}          || '0.00'}" textAlign="End" />
+                                    <Text id="cellMoeda"          text="{= ${vm>currency}       || '-'}" wrapping="false"/>
+
+                                    <Text id="cellNCM"            text="{= ${vm>ncm}                          || '-'}"    wrapping="false"/>
+                                    <Text id="cellMVA"            text="{= ${vm>mva}                          || '0.00'}" textAlign="End"/>
+
+                                    <Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}              || '0.00'}" textAlign="End"/>
+                                    <Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}                || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}                || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}            || '0.00'}" textAlign="End"/>
+                                    <Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}             || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna}      || '0.00'}" textAlign="End"/>
+                                    <Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}         || '-'}"    wrapping="false"/>
+
+                                    <Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellCentro"         text="{= ${vm>PLANT}                       || '-'}"    wrapping="false"/>
+                                    <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                || '-'}"    wrapping="false"/>
+                                    <Text id="cellReq"            text="{= ${vm>requisicaoCodigo} || ${vm>ItemId} || '-'}" wrapping="false"/>
+                                    <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}           || '-'}"    wrapping="false"/>
+
                                 </cells>
                             </ColumnListItem>
                         </items>

@@ -9,8 +9,8 @@ function requireEnv(name) {
 
 // Carrega e valida envs necessários
 const OAUTH_PREFIX = requireEnv('ARIBA_OAUTH_URL_PREFIX')            // ex: https://api.ariba.com
-const CLIENT_ID    = requireEnv('ARIBA_OAUTH_CLIENT_ID');
-const CLIENT_SEC   = requireEnv('ARIBA_OAUTH_CLIENT_SECRET');
+const CLIENT_ID    = requireEnv('ARIBA_OAUTH_CLIENT_ID_EVENTS');
+const CLIENT_SEC   = requireEnv('ARIBA_OAUTH_CLIENT_SECRET_EVENTS');
 
 const OAUTH_URL = `${OAUTH_PREFIX.replace(/\/+$/,'')}/v2/oauth/token`;
 const BASIC = Buffer.from(`${CLIENT_ID}:${CLIENT_SEC}`).toString('base64');
