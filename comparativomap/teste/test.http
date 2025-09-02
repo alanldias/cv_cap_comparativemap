@@ -22,3 +22,7 @@ GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&line
 
 ### Quando ligar o remoto (USE_REMOTE=true e ARIBA_API_BASE setado)
 GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123
+
+### Ariba Header
+GET http://localhost:4004/odata/v4/service/aribaHeader(projectId='WS1639759115')
+Accept: application/json

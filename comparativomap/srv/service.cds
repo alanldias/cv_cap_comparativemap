@@ -55,5 +55,17 @@ service service {
     grupo_de_materias               : String(80); // MaterialGroup (simpleValue)
   }
 
+  type AribaHeader : {
+    tipoPedido             : String;
+    purchasingOrganization : String;
+    purchasingGroup        : String;
+    companyCode            : String;
+    incoterms1             : String;
+    incoterms2             : String;
+    paymentTerms           : String;
+  };
+
+  function aribaHeader(projectId : String) returns AribaHeader;
+
   function GetQuotes(docId : String) returns many QuoteRow;
 };
