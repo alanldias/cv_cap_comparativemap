@@ -94,89 +94,102 @@ module.exports = cds.service.impl(function () {
       console.log(data)
       // 1) padroniza p/ array
       const rawArray = Array.isArray(data?.payload) ? data.payload
-        : Array.isArray(data) ? data
-          : (data ? [data] : []);
+                    : Array.isArray(data) ? data
+                    : (data ? [data] : []);
 
-      // 2) helpers
+      // 2) ID do item que queremos abrir
+      const TARGET_ITEM_ID = '1203106213'; // ou: const TARGET_ITEM_ID = req.data.targetItemId;
+
+      // 3) localiza a linha cujo itemId (top) ou item.itemId = TARGET_ITEM_ID
+      const targetRow = rawArray.find(r => (r?.item?.itemId ?? r?.itemId) === TARGET_ITEM_ID);
+
+      if (!targetRow) {
+        return req.error(404, `ItemId ${TARGET_ITEM_ID} não encontrado no evento ${docId}.`);
+      }
+
+      // 4) helpers
       const moneyObj = (term) => {
         const mv = term?.value?.moneyValue || term?.value?.supplierValue;
-        return mv ? { amount: mv.amount ?? null, currency: mv.currency ?? null } : { amount: null, currency: null };
+        return mv ? { amount: mv.amount ?? null, currency: mv.currency ?? null }
+                  : { amount: null, currency: null };
       };
 
-      // 3) mapeia cada registro
-      const normalized = rawArray.map(row => {
-        const terms = row?.item?.terms || row?.terms || [];
-        const byId = Object.fromEntries(terms.filter(t => t?.fieldId).map(t => [t.fieldId, t]));
+      // 5) indexa termos por fieldId e normaliza APENAS o item alvo
+      const terms = targetRow?.item?.terms || targetRow?.terms || [];
+      const byId  = Object.fromEntries(terms.filter(t => t?.fieldId).map(t => [t.fieldId, t]));
 
-        // unit price + currency
-        const unit = moneyObj(byId['PRICE']);
-        const qv = byId['QUANTITY']?.value?.quantityValue;
-        const ext = moneyObj(byId['EXTENDEDPRICE']);
+      // unit price + currency
+      const unit = moneyObj(byId['PRICE']);
+      // quantity + UoM
+      const qv   = byId['QUANTITY']?.value?.quantityValue;
+      // extended price
+      const ext  = moneyObj(byId['EXTENDEDPRICE']);
 
-        const ncm = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null;   // NCM
-        const mva = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null;    // MVA
+      // extrinsics / fiscais
+      const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null;   // NCM
+      const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null;    // MVA
 
-        const aliquotaICMS = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null;
-        const icmsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000046']).amount;
+      const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null;
+      const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount;
 
-        const aliquotaIPI = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null;
-        const ipiApuradoAmount = moneyObj(byId['GITAMONEYIFZ000047']).amount;
+      const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null;
+      const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount;
 
-        const aliquotaPIS = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null;
-        const pisApuradoAmount = moneyObj(byId['GITAMONEYIFZ000048']).amount;
+      const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null;
+      const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount;
 
-        const aliquotaCOFINS = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null;
-        const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount;
+      const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null;
+      const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount;
 
-        const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null;
-        const origemMaterial = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null;
+      const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null;
+      const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null;
 
-        const plant = byId['Plant']?.value?.simpleValue ?? null;
-        const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null;
-        const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null;
-        const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null;
+      const plant               = byId['Plant']?.value?.simpleValue ?? null;
+      const itemCategory        = byId['ItemCategory']?.value?.simpleValue ?? null;
+      const grupoMaterias       = byId['MaterialGroup']?.value?.simpleValue ?? null; // grupo_de_materias
+      const taxCode             = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null; // IVA → TAX_CODE
+      const materialCode        = byId['MaterialCode']?.value?.simpleValue ?? null;
 
-        const itemIdTop = row?.item?.itemId ?? row?.itemId ?? null;
-        const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null;
 
-        return {
-          // cabeçalho
-          ItemId: itemIdTop,                    // certo
-          itemDEscription: row?.item?.title ?? null, //certo
-          quantity: qv?.amount ?? null, //certo
-          unitOfMeasure: qv?.unitOfMeasureCode ?? null,//certo
+      const result = {
+        // cabeçalho (ItemId do topo + descrição)
+        ItemId             : targetRow?.item?.itemId ?? targetRow?.itemId ?? null,
+        itemDEscription    : targetRow?.item?.title ?? null,
+        quantity           : qv?.amount ?? null,
+        unitOfMeasure      : qv?.unitOfMeasureCode ?? null,
 
-          // preço unitário + moeda
-          price: unit.amount,//certo
-          currency: unit.currency,//certo
+        // preço unitário + moeda
+        price              : unit.amount,
+        currency           : unit.currency,
 
-          // extrinsics principais
-          ncm: ncm,//certo
-          mva: mva,//certo
-          Extrinsic_Aliquota_ICMS: aliquotaICMS,//certo
-          Extrinsic_ICMS_Apurado: icmsApuradoAmount,//certo
-          Extrinsic_Aliquota_IPI: aliquotaIPI,//certo
-          Extrinsic_IPI_Apurado: ipiApuradoAmount,//certo
-          Extrinsic_Aliquota_PIS: aliquotaPIS,//certo
-          Extrinsic_PIS_Apurado: pisApuradoAmount,//certo
-          Extrinsic_Aliquota_Cofins: aliquotaCOFINS,//certo
-          Extrinsic_Cofins_apurado: cofinsApuradoAmount,//certo
-          Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,//certo
-          Extrinsic_Origem_do_Material: origemMaterial,//certo
+        // extrinsics principais
+        ncm                        : ncm,
+        mva                        : mva,
+        Extrinsic_Aliquota_ICMS    : aliquotaICMS,
+        Extrinsic_ICMS_Apurado     : icmsApuradoAmount,
+        Extrinsic_Aliquota_IPI     : aliquotaIPI,
+        Extrinsic_IPI_Apurado      : ipiApuradoAmount,
+        Extrinsic_Aliquota_PIS     : aliquotaPIS,
+        Extrinsic_PIS_Apurado      : pisApuradoAmount,
+        Extrinsic_Aliquota_Cofins  : aliquotaCOFINS,
+        Extrinsic_Cofins_apurado   : cofinsApuradoAmount,
+        Extrinsic_Aliquota_ICMS_Interna : aliquotaICMSInterna,
+        Extrinsic_Origem_do_Material    : origemMaterial,
 
-          // totals / master data
-          EXTENDEDPRICE: ext.amount,//certo
-          PLANT: plant,//certo
-          ItemCategory: itemCategory,//certo
-          IVA: taxCode,//certo
+        // totais / dados mestre
+        EXTENDEDPRICE       : ext.amount,
+        PLANT               : plant,
+        ItemCategory        : itemCategory,
+        TAX_CODE            : taxCode,
+        MaterialCode        : materialCode,
+        grupo_de_materias   : grupoMaterias
+      };
 
-          // específicos
-          MaterialCode: materialCode,//certo
-          grupo_de_materias: grupoMaterias//certo
-        };
-      });
+            console.log(result, "resultado")
 
-      return normalized;
+
+      // 6) retorna ARRAY com 1 item (compatível com o retorno many)
+      return [result];
 
     } catch (e) {
       const status = e.response?.status || 502;

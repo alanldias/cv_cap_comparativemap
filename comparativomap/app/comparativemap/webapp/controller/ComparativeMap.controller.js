@@ -82,6 +82,7 @@ sap.ui.define([
 
         // Normaliza retorno
         const resultRaw = oCtx.getBoundContext().getObject();
+        console.log(resultRaw)
         const list = Array.isArray(resultRaw) ? resultRaw : (resultRaw?.value || []);
 
         // Itens (tabela de baixo)
