@@ -62,13 +62,13 @@
                     <ColumnListItem id="hdrItemTemplate" type="Inactive">
                         <cells>
                             <Text id="cellHdrDocId" text="{vm>docId}" wrapping="false"/>
-                            <Text id="cellHdrTipoPedido" text="{vm>arb_Document_Type}" wrapping="false"/>
-                            <Text id="cellHdrOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false"/>
-                            <Text id="cellHdrGrpCompradores" text="{vm>arb_PurchasingGroup}" wrapping="false"/>
-                            <Text id="cellHdrEmpresa" text="{vm>arb_CompanyCode}" wrapping="false"/>
-                            <Text id="cellHdrIncoterms" text="{vm>INCOTERMS1}" wrapping="false"/>
-                            <Text id="cellHdrLocalIncoterms" text="{vm>INCOTERMS2}" wrapping="false"/>
-                            <Text id="cellHdrCondPagamento" text="{vm>arb_PaymentTerms}" wrapping="false"/>
+                            <Text id="cellHdrTipoPedido" text="{vm>tipoPedido}" wrapping="false"/>
+                            <Text id="cellHdrOrgCompras" text="{vm>purchasingOrganization}" wrapping="false"/>
+                            <Text id="cellHdrGrpCompradores" text="{vm>purchasingGroup}" wrapping="false"/>
+                            <Text id="cellHdrEmpresa" text="{vm>companyCode}" wrapping="false"/>
+                            <Text id="cellHdrIncoterms" text="{vm>incoterms1}" wrapping="false"/>
+                            <Text id="cellHdrLocalIncoterms" text="{vm>incoterms2}" wrapping="false"/>
+                            <Text id="cellHdrCondPagamento" text="{vm>paymentTerms}" wrapping="false"/>
                         </cells>
                     </ColumnListItem>
                 </items>

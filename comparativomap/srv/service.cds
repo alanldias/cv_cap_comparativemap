@@ -19,43 +19,35 @@ service service {
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
 
-  // Linha normalizada que o backend está devolvendo
-  type QuoteRow : {
-    // Cabeçalho do item
+  type QuoteRow       : {
     ItemId                          : String(30);
     itemDEscription                 : String(255);
     quantity                        : Decimal(15, 3);
     unitOfMeasure                   : String(12);
-
-    // Preço unitário
     price                           : Decimal(15, 2);
     currency                        : String(3);
-
-    // Extrinsics (nomes aproximados com underscore)
-    ncm                             : String(40); // GITASHORTSTRINGIFZ000050
-    mva                             : Decimal(15, 3); // GITABIGDECIFZ000003
-
-    Extrinsic_Aliquota_ICMS         : Decimal(15, 3); // GITABIGDECIFZ000004
-    Extrinsic_ICMS_Apurado          : Decimal(15, 2); // GITAMONEYIFZ000046 (amount)
-    Extrinsic_Aliquota_IPI          : Decimal(15, 3); // GITABIGDECIFZ000005
-    Extrinsic_IPI_Apurado           : Decimal(15, 2); // GITAMONEYIFZ000047 (amount)
-    Extrinsic_Aliquota_PIS          : Decimal(15, 3); // GITABIGDECIFZ000029
-    Extrinsic_PIS_Apurado           : Decimal(15, 2); // GITAMONEYIFZ000048 (amount)
-    Extrinsic_Aliquota_Cofins       : Decimal(15, 3); // GITABIGDECIFZ000028
-    Extrinsic_Cofins_apurado        : Decimal(15, 2); // GITAMONEYIFZ000049 (amount)
-    Extrinsic_Aliquota_ICMS_Interna : Decimal(15, 3); // GITABIGDECIFZ000006
-    Extrinsic_Origem_do_Material    : String(20); // GITASHORTSTRINGIFZ000153
-
-    // Totais / dados mestre
-    EXTENDEDPRICE                   : Decimal(15, 2); // amount de EXTENDEDPRICE
-    PLANT                           : String(100); // Plant (simpleValue)
-    ItemCategory                    : String(40); // ItemCategory (simpleValue)
-    TAX_CODE                        : String(10); // IVA -> TAX_CODE
-    MaterialCode                    : String(120); // Term "MaterialCode" (simpleValue)
-    grupo_de_materias               : String(80); // MaterialGroup (simpleValue)
+    ncm                             : String(40);
+    mva                             : Decimal(15, 3);
+    Extrinsic_Aliquota_ICMS         : Decimal(15, 3);
+    Extrinsic_ICMS_Apurado          : Decimal(15, 2);
+    Extrinsic_Aliquota_IPI          : Decimal(15, 3);
+    Extrinsic_IPI_Apurado           : Decimal(15, 2);
+    Extrinsic_Aliquota_PIS          : Decimal(15, 3);
+    Extrinsic_PIS_Apurado           : Decimal(15, 2);
+    Extrinsic_Aliquota_Cofins       : Decimal(15, 3);
+    Extrinsic_Cofins_apurado        : Decimal(15, 2);
+    Extrinsic_Aliquota_ICMS_Interna : Decimal(15, 3);
+    Extrinsic_Origem_do_Material    : String(20);
+    EXTENDEDPRICE                   : Decimal(15, 2);
+    PLANT                           : String(100);
+    ItemCategory                    : String(40);
+    TAX_CODE                        : String(10);
+    MaterialCode                    : String(120);
+    grupo_de_materias               : String(80);
   }
 
-  type AribaHeader : {
+  type AribaHeader    : {
+    docId                  : String;
     tipoPedido             : String;
     purchasingOrganization : String;
     purchasingGroup        : String;
@@ -63,9 +55,12 @@ service service {
     incoterms1             : String;
     incoterms2             : String;
     paymentTerms           : String;
-  };
+  }
 
-  function aribaHeader(projectId : String) returns AribaHeader;
+  type QuotesResponse : {
+    header : AribaHeader; // cabeçalho do projeto
+    items  : many QuoteRow; // linhas de cotação
+  }
 
-  function GetQuotes(docId : String) returns many QuoteRow;
+  function GetQuotes(docId: String)           returns QuotesResponse;
 };
