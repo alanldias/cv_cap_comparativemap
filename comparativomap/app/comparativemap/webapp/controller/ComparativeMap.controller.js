@@ -216,7 +216,7 @@ sap.ui.define([
       MessageToast.show("Fornecedor: seleção limpa.");
     },
     onFilterSelectAllNomeItem() {
-      this._prefs.filter.nomeItem = this._getDistinct("materialDesc");
+      this._prefs.filter.nomeItem = this._getDistinct("itemDescription");
       this._savePrefs(); this._applyFiltersFromPrefs();
       MessageToast.show("Nome do item: selecionado tudo.");
     },
@@ -245,7 +245,7 @@ sap.ui.define([
       oTbl.getBinding("items").filter(andFilters);
 
       this._prefs.filter.fornecedor = (grouped.supplierName || []).map((f) => String(f.oValue1));
-      this._prefs.filter.nomeItem = (grouped.materialDesc || []).map((f) => String(f.oValue1));
+      this._prefs.filter.nomeItem = (grouped.itemDescription || []).map((f) => String(f.oValue1));
       this._savePrefs();
       this._applyFiltersFromPrefs();
     },
@@ -315,7 +315,7 @@ sap.ui.define([
         if (raw) return JSON.parse(raw);
       } catch (e) { }
       return {
-        filter: { supplierName: [], materialDesc: [] },
+        filter: { supplierName: [], itemDescription: [] },
         sort: { key: null, desc: false },
         group: { key: null, desc: false }
       };
@@ -357,7 +357,7 @@ sap.ui.define([
           new Filter({
             and: false,
             filters: this._prefs.filter.nomeItem.map(
-              (v) => new Filter("materialDesc", FilterOperator.EQ, v)
+              (v) => new Filter("itemDescription", FilterOperator.EQ, v)
             )
           })
         );
@@ -434,9 +434,9 @@ sap.ui.define([
       });
       dlg.addFilterItem(fiForn);
 
-      const fiNome = new ViewSettingsFilterItem({ text: "Nome do item", key: "materialDesc" });
-      this._getDistinct("materialDesc").forEach((val) => {
-        const it = new ViewSettingsItem({ text: val, key: `materialDesc___EQ___${val}` });
+      const fiNome = new ViewSettingsFilterItem({ text: "Nome do item", key: "itemDescription" });
+      this._getDistinct("itemDescription").forEach((val) => {
+        const it = new ViewSettingsItem({ text: val, key: `itemDescription___EQ___${val}` });
         if (this._prefs.filter.nomeItem?.includes(val)) it.setSelected(true);
         fiNome.addItem(it);
       });
@@ -486,7 +486,7 @@ sap.ui.define([
       this._oSortDialog.destroySortItems();
       [
         { text: "Fornecedor", key: "supplierName" },
-        { text: "Nome do item", key: "materialDesc" },
+        { text: "Nome do item", key: "itemDescription" },
         { text: "Tipo de pedido", key: "arb_Document_Type" },
         { text: "Org. Compras", key: "arb_PurchasingOrganization" },
         { text: "Grp. Compradores", key: "arb_PurchasingGroup" },
