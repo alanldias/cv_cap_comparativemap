@@ -1,16 +1,23 @@
-// srv/service.js
+
 const cds = require('@sap/cds');
 require('dotenv').config();
 const axios = require('axios');
 const { simularPO } = require('./utils/simular-po') // <<=== Lógica da chamada da BAPI
+const { getDestination, addDestinationToRequestConfig } = require('@sap-cloud-sdk/connectivity')
 
-// Log customizado para este serviço
-const LOG = cds.log('ariba-service');
 
-// Token dos ENDPOINTS de EVENTS (já existia no teu projeto)
-const { getAccessToken } = require('../srv/auth/aribaOauth');
+// Log
+const LOG = cds.log('ariba-service')
 
-// ==================== ENV VARS ====================
+// Token dos ENDPOINTS de EVENTS (teu projeto)
+const { getAccessToken } = require('../srv/auth/aribaOauth')
+
+// ==================== SWITCH DESTINATION vs .ENV ====================
+const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
+const EVENTS_DEST     = process.env.ARIBA_DEST_EVENTS   || 'ARIBA_Event_Management_Test'
+const PROJECTS_DEST   = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Project_Management_Test'
+
+// ==================== ENV VARS (fallback .env) ====================
 const {
   // EVENTS
   ARIBA_BASE_URL_EVENTS,
@@ -26,191 +33,476 @@ const {
   ARIBA_PASSWORD_ADAPTER,
   HTTP_TIMEOUT_MS,
 
-  // OAuth PM
+  // OAuth PM (fallback .env)
   ARIBA_PM_OAUTH_TOKEN_URL,
   ARIBA_PM_OAUTH_CLIENT_ID,
   ARIBA_PM_OAUTH_CLIENT_SECRET,
-  ARIBA_PM_OAUTH_GRANT_TYPE
-} = process.env;
+  ARIBA_PM_OAUTH_GRANT_TYPE,
 
-// ==================== CÓDIGO DELA (PM) -> FUNÇÕES INTERNAS ====================
-// cache simples de token (sem inFlight)
-let _pmOauthCache = { token: null, exp: 0 };
+  // Round padrão para supplier invitations (se não usar Destination)
+  ARIBA_EVENT_ROUND
+} = process.env
 
-async function getPmAccessToken() {
-  LOG.info('[getPmAccessToken] Tentando obter token para o serviço PM.');
-  const now = Date.now();
-  if (_pmOauthCache.token && now < _pmOauthCache.exp - 60_000) {
-    LOG.info('[getPmAccessToken] Usando token do cache.');
-    return _pmOauthCache.token; // 1 min de folga
-  }
-  LOG.info('[getPmAccessToken] O cache está vazio ou o token expirou. Solicitando um novo token.');
-  const basic = Buffer.from(`${ARIBA_PM_OAUTH_CLIENT_ID}:${ARIBA_PM_OAUTH_CLIENT_SECRET}`).toString('base64');
-  const grantType = ARIBA_PM_OAUTH_GRANT_TYPE || 'client_credentials';
-
-  try {
-    const { data } = await axios.post(
-      ARIBA_PM_OAUTH_TOKEN_URL,
-      `grant_type=${encodeURIComponent(grantType)}`,
-      {
-        headers: {
-          Authorization: `Basic ${basic}`,
-          'Content-Type': 'application/x-www-form-urlencoded'
-        }
-      }
-    );
-    LOG.info('[getPmAccessToken] Novo token obtido com sucesso. Salvando no cache.');
-    _pmOauthCache.token = data.access_token;
-    _pmOauthCache.exp = now + (data.expires_in ?? 3600) * 1000;
-    return _pmOauthCache.token;
-  } catch (error) {
-    LOG.error(`[getPmAccessToken] Falha ao obter token: ${error.message}`);
-    throw error;
-  }
+// ==================== HELPER: GET via Destination ====================
+async function destGet (destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+  const destination = await getDestination({ destinationName: destName })
+  const reqCfg = await addDestinationToRequestConfig(
+    { method: 'get', url: relativePath, params, headers, timeout: timeoutMs },
+    destination
+  )
+  const { data } = await axios.request(reqCfg) // Authorization + headers/queries da destination
+  return data
 }
 
-async function aribaPmGet(path, params = {}) {
-  LOG.info(`[aribaPmGet] Chamando a API do PM para o path: ${path}`);
-  const token = await getPmAccessToken();
+// ==================== CÓDIGO PM (PROJECTS) ====================
+// cache simples de token (fallback .env; não usado quando USE_DESTINATION=true)
+let _pmOauthCache = { token: null, exp: 0 }
+
+async function getPmAccessToken () {
+  if (USE_DESTINATION) throw new Error('getPmAccessToken não deve ser usado com Destination')
+  const now = Date.now()
+  if (_pmOauthCache.token && now < _pmOauthCache.exp - 60_000) return _pmOauthCache.token
+
+  const basic = Buffer.from(`${ARIBA_PM_OAUTH_CLIENT_ID}:${ARIBA_PM_OAUTH_CLIENT_SECRET}`).toString('base64')
+  const grantType = ARIBA_PM_OAUTH_GRANT_TYPE || 'client_credentials'
+
+  const { data } = await axios.post(
+    ARIBA_PM_OAUTH_TOKEN_URL,
+    `grant_type=${encodeURIComponent(grantType)}`,
+    { headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
+  )
+  _pmOauthCache.token = data.access_token
+  _pmOauthCache.exp   = now + (data.expires_in ?? 3600) * 1000
+  return _pmOauthCache.token
+}
+
+async function aribaPmGet (path, params = {}) {
+  if (USE_DESTINATION) {
+    // IMPORTANTE: repassar params para a Destination
+    return await destGet(PROJECTS_DEST, path, {
+      params, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+  }
+  const token = await getPmAccessToken()
   try {
     const { data } = await axios.get(`${ARIBA_BASE_URL_PROJECTS}${path}`, {
       params,
       headers: { apikey: ARIBA_API_KEY_PROJECTS, Authorization: `Bearer ${token}` },
       timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    });
-    LOG.info(`[aribaPmGet] Resposta da API do PM recebida com sucesso para o path: ${path}`);
-    return data;
+    })
+    return data
   } catch (e) {
-    LOG.warn(`[aribaPmGet] Primeira tentativa falhou para o path ${path}. Tentando novamente com novo token.`);
     if (e?.response?.status === 401) {
-      _pmOauthCache = { token: null, exp: 0 };
-      const newToken = await getPmAccessToken();
+      _pmOauthCache = { token: null, exp: 0 }
+      const newToken = await getPmAccessToken()
       const { data } = await axios.get(`${ARIBA_BASE_URL_PROJECTS}${path}`, {
         params,
         headers: { apikey: ARIBA_API_KEY_PROJECTS, Authorization: `Bearer ${newToken}` },
         timeout: Number(HTTP_TIMEOUT_MS) || 30000
-      });
-      LOG.info(`[aribaPmGet] Segunda tentativa bem-sucedida para o path: ${path}`);
-      return data;
+      })
+      return data
     }
-    LOG.error(`[aribaPmGet] Erro crítico na chamada da API do PM: ${e.message}`);
-    throw e;
+    throw e
   }
 }
 
-// helpers do mapeamento do cabeçalho (iguais às do código dela)
-const firstToken = (s) => (s || '').trim().split(' ')[0] || null;
-const cut = (s, n) => (s || '').substring(0, n) || null;
+// ==================== MAPEAMENTO HEADER PM ====================
+const firstToken = (s) => (s || '').trim().split(' ')[0] || null
+const cut        = (s, n) => (s || '').substring(0, n) || null
 
-function getCustomField(p, fieldId) {
+function getCustomField (p, fieldId) {
   const pools = [
     p?.externalFields,
     p?.sourcingProjectCustomFields,
     p?.projectCustomFields,
     p?.fields,
     p?.customFields
-  ].filter(Boolean);
+  ].filter(Boolean)
 
-  LOG.debug(`[getCustomField] Procurando pelo campo customizado: ${fieldId}`);
   for (const arr of pools) {
-    const f = (arr || []).find(x => x.fieldId === fieldId);
-    if (!f) continue;
-    LOG.debug(`[getCustomField] Encontrado valor para ${fieldId}: ${JSON.stringify(f)}`);
-    if (Array.isArray(f.flexMasterDataTypeValue)) return f.flexMasterDataTypeValue[0];
-    if (Array.isArray(f.textValue)) return f.textValue[0];
-    if (Array.isArray(f.values) && f.values[0]) return f.values[0].value || f.values[0].name;
-    if ('booleanValue' in f) return String(f.booleanValue);
-    if ('numberValue' in f) return String(f.numberValue);
-    if ('value' in f) return f.value;
+    const f = (arr || []).find(x => x.fieldId === fieldId)
+    if (!f) continue
+    if (Array.isArray(f.flexMasterDataTypeValue)) return f.flexMasterDataTypeValue[0]
+    if (Array.isArray(f.textValue))               return f.textValue[0]
+    if (Array.isArray(f.values) && f.values[0])   return f.values[0].value || f.values[0].name
+    if ('booleanValue' in f)                      return String(f.booleanValue)
+    if ('numberValue'  in f)                      return String(f.numberValue)
+    if ('value'        in f)                      return f.value
   }
-  LOG.debug(`[getCustomField] Nenhum valor encontrado para o campo customizado: ${fieldId}`);
-  return null;
+  return null
 }
 
-function mapAribaHeader(p) {
-  LOG.info('[mapAribaHeader] Mapeando cabeçalho do projeto Ariba.');
-  const bs = p?.businessSystem || {};
-  const docCat = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null;
-  const purOrg = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null;
-  const purGrp = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null;
-  const compCode = bs?.companyCode?.[0]?.value || bs?.companyCode?.[0]?.key || null;
+function mapAribaHeader (p) {
+  const bs = p?.businessSystem || {}
+  const docCat   = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null
+  const purOrg   = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null
+  const purGrp   = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null
+  const compCode = bs?.companyCode?.[0]?.value || bs?.companyCode?.[0]?.key || null
 
-  const inc1 = getCustomField(p, 'cus_wsincoterms') || getCustomField(p, 'cus_wsIncoterms');
-  const inc2 = getCustomField(p, 'cus_wslocal');
-  const payt = getCustomField(p, 'arb_PaymentTerms');
+  const inc1 = getCustomField(p, 'cus_wsincoterms') || getCustomField(p, 'cus_wsIncoterms')
+  const inc2 = getCustomField(p, 'cus_wslocal')
+  const payt = getCustomField(p, 'arb_PaymentTerms')
 
-  const mappedHeader = {
-    tipoPedido: docCat,
+  return {
+    tipoPedido            : docCat,
     purchasingOrganization: cut(firstToken(purOrg), 4),
-    purchasingGroup: cut(firstToken(purGrp), 3),
-    companyCode: cut(firstToken(compCode), 4),
-    incoterms1: inc1,
-    incoterms2: inc2,
-    paymentTerms: payt || null
-  };
-  LOG.debug(`[mapAribaHeader] Cabeçalho mapeado: ${JSON.stringify(mappedHeader)}`);
-  return mappedHeader;
+    purchasingGroup       : cut(firstToken(purGrp), 3),
+    companyCode           : cut(firstToken(compCode), 4),
+    incoterms1            : inc1,
+    incoterms2            : inc2,
+    paymentTerms          : payt || null
+  }
 }
 
-// função interna (não OData) para você chamar quando quiser
-async function fetchAribaHeader(projectId) {
-  LOG.info(`[fetchAribaHeader] Buscando cabeçalho do projeto Ariba para projectId: ${projectId}`);
+async function fetchAribaHeader (projectId) {
   const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
+    // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
     realm: ARIBA_REALM,
     user: ARIBA_USER,
     passwordAdapter: ARIBA_PASSWORD_ADAPTER
-  });
-  LOG.info('[fetchAribaHeader] Dados brutos do cabeçalho recebidos. Mapeando...');
-  return mapAribaHeader(data || {});
+  })
+  return mapAribaHeader(data || {})
 }
 
-// ==================== TEU CÓDIGO (EVENTS) INALTERADO ====================
+// ==================== HELPERS (EVENTS) ====================
+const toArr = (d) =>
+  Array.isArray(d?.payload) ? d.payload :
+    Array.isArray(d) ? d :
+      (d ? [d] : [])
+
+const termsFrom = (row) => (row?.item?.terms || row?.terms || [])
+const byFieldId = (row) =>
+  Object.fromEntries(termsFrom(row).filter(t => t?.fieldId).map(t => [t.fieldId, t]))
+
+const moneyObj = (term) => {
+  const mv = term?.value?.moneyValue || term?.value?.supplierValue
+  return mv ? { amount: mv.amount ?? null, currency: mv.currency ?? null }
+    : { amount: null, currency: null }
+}
+
+// fallback de nome genérico
+function pickSupplierNameFromRows (rows) {
+  if (!Array.isArray(rows)) return null
+  const hit = rows.find(r =>
+    r?.organization?.name ||
+    r?.supplier?.name || r?.supplierName || r?.organizationName || r?.supplier?.organizationName
+  )
+  return (
+    hit?.organization?.name ||
+    hit?.supplier?.name ||
+    hit?.supplierName ||
+    hit?.organizationName ||
+    hit?.supplier?.organizationName ||
+    null
+  )
+}
+
+// fallback de nome por invitationId específico
+function pickSupplierNameByInvitation (rows, invId) {
+  const hit = rows.find(r => String(r?.invitationId) === String(invId))
+  if (!hit) return null
+  return (
+    hit?.organization?.name ||
+    hit?.supplier?.name ||
+    hit?.supplierName ||
+    hit?.organizationName ||
+    hit?.supplier?.organizationName ||
+    null
+  )
+}
+
+/**
+ * 1) supplierBids:
+ *    - Para CADA fornecedor (row) e CADA itemId em itemsWithBid, gera um resultado.
+ *    - Para mapear valores do item, procura uma row cujo item.itemId == itemId
+ *      priorizando a mesma invitationId; se não achar, usa a primeira que casar o itemId.
+ *    - Retorna:
+ *        { rows, results: [ { mappedFields..., _invitationId, _itemId } ] }
+ */
+async function fetchSupplierBids (docId, headersCommon) {
+  const path = `/events/${encodeURIComponent(docId)}/supplierBids`
+  let data
+  if (USE_DESTINATION) {
+    data = await destGet(EVENTS_DEST, path, {
+      params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+  } else {
+    const urlBids = `${ARIBA_BASE_URL_EVENTS}${path}`
+    const resp = await axios.get(urlBids, {
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: headersCommon,
+      timeout: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+    data = resp.data
+  }
+
+  const rows = toArr(data)
+  if (!rows.length) return { rows: [], results: [] }
+
+  const results = []
+
+  for (const row of rows) {
+    const invId = row?.invitationId ?? null
+    const itemIds = Array.isArray(row?.itemsWithBid) ? row.itemsWithBid.map(String) : []
+    if (!itemIds.length) continue
+
+    for (const itemId of itemIds) {
+      // 1) achar uma linha com os termos do item
+      let targetRow =
+        rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(itemId) && String(r?.invitationId) === String(invId)) ||
+        rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(itemId))
+
+      if (!targetRow) continue
+
+      const byId = byFieldId(targetRow)
+      const unit = moneyObj(byId['PRICE'])
+      const qv   = byId['QUANTITY']?.value?.quantityValue
+      const ext  = moneyObj(byId['EXTENDEDPRICE'])
+
+      const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
+      const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
+
+      const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
+      const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount
+      const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
+      const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount
+      const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
+      const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount
+      const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
+      const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
+      const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
+      const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
+
+      const plant         = byId['Plant']?.value?.simpleValue ?? null
+      const itemCategory  = byId['ItemCategory']?.value?.simpleValue ?? null
+      const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
+      const taxCode       = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      const materialCode  = byId['MaterialCode']?.value?.simpleValue ?? null
+
+      const mapped = {
+        ItemId: itemId,
+        itemDescription: targetRow?.item?.title ?? null,
+        quantity: qv?.amount ?? null,
+        unitOfMeasure: qv?.unitOfMeasureCode ?? null,
+        price: unit.amount,
+        currency: unit.currency,
+        ncm, mva,
+        Extrinsic_Aliquota_ICMS: aliquotaICMS,
+        Extrinsic_ICMS_Apurado: icmsApuradoAmount,
+        Extrinsic_Aliquota_IPI: aliquotaIPI,
+        Extrinsic_IPI_Apurado: ipiApuradoAmount,
+        Extrinsic_Aliquota_PIS: aliquotaPIS,
+        Extrinsic_PIS_Apurado: pisApuradoAmount,
+        Extrinsic_Aliquota_Cofins: aliquotaCOFINS,
+        Extrinsic_Cofins_apurado: cofinsApuradoAmount,
+        Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,
+        Extrinsic_Origem_do_Material: origemMaterial,
+        EXTENDEDPRICE: ext.amount,
+        PLANT: plant,
+        ItemCategory: itemCategory,
+        TAX_CODE: taxCode,
+        MaterialCode: materialCode,
+        grupo_de_materias: grupoMaterias
+      }
+
+      // guardamos internamente pra resolver supplierName depois
+      results.push({ ...mapped, _invitationId: invId, _itemId: itemId })
+    }
+  }
+
+  return { rows, results }
+}
+
+/**
+ * 2) Identifiers → parentProjectId
+ */
+async function fetchParentProjectId (docId, headersCommon) {
+  const path = `/events/identifiers`
+  let data
+  if (USE_DESTINATION) {
+    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+  } else {
+    const urlIds = `${ARIBA_BASE_URL_EVENTS}${path}`
+    const resp = await axios.get(urlIds, {
+      params: {
+        realm: ARIBA_REALM,
+        user: ARIBA_USER,
+        passwordAdapter: ARIBA_PASSWORD_ADAPTER,
+        $filter: '(createDateFrom gt 01082025000000 and createDateTo lt 31122025000000)'
+      },
+      headers: headersCommon,
+      timeout: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+    data = resp.data
+  }
+  const arr = toArr(data)
+  const parentProjectId = arr.find(x => String(x?.internalId) === String(docId))?.parentProjectId ?? null
+  return parentProjectId
+}
+
+/**
+ * 3) Lista de supplier invitations do round
+ */
+async function fetchSupplierInvitationsList (docId, round, headersCommon) {
+  const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
+  let data
+  if (USE_DESTINATION) {
+    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+  } else {
+    const url = `${ARIBA_BASE_URL_EVENTS}${path}`
+    const resp = await axios.get(url, {
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: headersCommon,
+      timeout: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+    data = resp.data
+  }
+  return toArr(data)
+}
+
+/**
+ * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
+ */
+async function fetchSupplierInvitationById (docId, round, resourceId, headersCommon) {
+  if (!resourceId) return null
+  const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`
+  let data
+  if (USE_DESTINATION) {
+    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+  } else {
+    const url = `${ARIBA_BASE_URL_EVENTS}${path}`
+    const resp = await axios.get(url, {
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: headersCommon,
+      timeout: Number(HTTP_TIMEOUT_MS) || 30000
+    })
+    data = resp.data
+  }
+
+  const supplierName =
+    data?.organization?.name ||
+    data?.mainContact?.orgName ||
+    data?.mainContact?.organization ||
+    (Array.isArray(data?.contacts) && (data.contacts[0]?.orgName || data.contacts[0]?.organization)) ||
+    data?.organizationName ||
+    data?.supplier?.organizationName ||
+    data?.supplier?.name ||
+    data?.supplierName ||
+    null
+
+  const emailDetected =
+    data?.mainContact?.emailAddress ||
+    data?.emailAddress ||
+    data?.supplier?.email ||
+    data?.supplierEmail ||
+    data?.contact?.email ||
+    (String(resourceId).includes('_') ? String(resourceId).split('_')[1] : null) ||
+    null
+
+  return {
+    supplierName: supplierName || (emailDetected ? String(emailDetected).split('@')[0] : null),
+    supplierEmail: emailDetected
+  }
+}
+
+// ==================== HANDLER ODATA ====================
 module.exports = function () {
   this.on('GetQuotes', async (req) => {
-    const { docId } = (req.data || {});
-    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
+    const { docId } = (req.data || {})
+    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
+    const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
 
-    const token = await getAccessToken();
-    const headersCommon = {
-      apiKey: ARIBA_API_KEY_EVENTS,
-      'Content-Type': 'application/json',
-      Accept: 'application/json',
-      Authorization: `Bearer ${token}`,
-    };
+    // Headers de EVENTS só quando .env; com Destination não precisa
+    let headersCommon = {}
+    if (!USE_DESTINATION) {
+      const token = await getAccessToken()
+      headersCommon = {
+        apiKey: ARIBA_API_KEY_EVENTS,
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        Authorization: `Bearer ${token}`
+      }
+    }
 
     try {
-      const { rows, result } = await fetchSupplierBids(docId, headersCommon);
-      if (!rows.length || !result) return { header: null, items: [] };
+      // 1) supplierBids (EVENTS) -> pega TODOS os itens/fornecedores (+ guarda invitationId interno)
+      const { rows, results } = await fetchSupplierBids(docId, headersCommon)
+      if (!rows.length || !results.length) return { header: null, items: [] }
 
-      // tenta descobrir o parentProjectId (identifiers no EVENTS)
-      let parentProjectId = null;
-      try {
-        parentProjectId = await fetchParentProjectId(docId, headersCommon);
-      } catch (err) {
-        console.warn('[GetQuotes] identifiers falhou:', err?.response?.status, err?.response?.data || err.message);
+      // 2) resolver supplierName por invitationId (com cache)
+      const inviteIds = [...new Set(results.map(r => r._invitationId).filter(Boolean))]
+      const nameCache = new Map()
+
+      // tenta resolver em massa usando a lista do round (um GET só)
+      let list = []
+      try { list = await fetchSupplierInvitationsList(docId, round, headersCommon) } catch (e) { /* noop */ }
+
+      const emailByInvId = new Map()
+      for (const it of list) {
+        const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
+        if (!invId) continue
+        const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
+        if (email) emailByInvId.set(invId, email)
+        // nome direto se já vier
+        const name =
+          it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
+        if (name) nameCache.set(invId, name)
       }
 
-      // busca header no PM (PROJECTS)
-      let header = null;
-      try {
-        if (parentProjectId) {
-          header = await fetchAribaHeader(parentProjectId);
+      // para cada convite pendente, busca por ID completo (se necessário)
+      for (const invId of inviteIds) {
+        if (nameCache.has(invId)) continue
+
+        let resourceId = null
+        if (String(invId).includes('_')) {
+          resourceId = String(invId)
+        } else {
+          const email = emailByInvId.get(String(invId))
+          if (email) resourceId = `${String(invId)}_${String(email)}`
         }
-      } catch (e) {
-        console.warn('[GetQuotes] Falha ao buscar header PM:', e?.response?.status, e?.response?.data || e.message);
-      }
-      const headerWithDoc = Object.assign({ docId }, header || {});
 
-      // devolve no formato do CDS
-      return { header: headerWithDoc, items: [result] };
+        if (resourceId) {
+          try {
+            const inv = await fetchSupplierInvitationById(docId, round, resourceId, headersCommon)
+            if (inv?.supplierName) nameCache.set(invId, inv.supplierName)
+          } catch (e) { /* continua */ }
+        }
+
+        // fallback por rows caso ainda vazio
+        if (!nameCache.has(invId)) {
+          const fallback = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
+          if (fallback) nameCache.set(invId, fallback)
+        }
+      }
+
+      // 3) identifiers → parentProjectId (EVENTS)
+      let parentProjectId = null
+      try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
+
+      // 4) header (PROJECTS/PM)
+      let header = null
+      try {
+        if (parentProjectId) header = await fetchAribaHeader(parentProjectId)
+      } catch (e) { /* noop */ }
+
+      // 5) monta retorno com TODOS os itens
+      const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
+      const itemsOut = results.map(r => {
+        const supplierName = r._invitationId ? (nameCache.get(r._invitationId) || null) : null
+        // remove campos internos antes de expor
+        const { _invitationId, _itemId, ...pub } = r
+        return { ...pub, supplierName }
+      })
+
+      return { header: headerWithDoc, items: itemsOut }
 
     } catch (e) {
-      const status = e.response?.status || 502;
-      const msg = e.response?.data?.message || e.response?.data || e.message;
-      console.error('[GetQuotes] Erro Ariba:', status, msg);
-      return req.error(status, 'Falha ao consultar supplierBids no Ariba.');
+      const status = e.response?.status || 502
+      const msg = e.response?.data?.message || e.response?.data || e.message
+      LOG.error('[GetQuotes] Erro Ariba:', status, msg)
+      return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
     }
-  });
+  })
 
   this.on('simulateBapiPoCreate', async req => {
     const { items = [], header = {} } = req.data ?? {};
@@ -225,139 +517,4 @@ module.exports = function () {
       req.error(400, e.userMessage || e.message || 'Erro ao simular BAPI_PO_CREATE1');
     }
   });
-};
-
-// ==================== HELPERS (EVENTS) ====================
-const toArr = (d) => {
-  LOG.debug('[toArr] Convertendo dados para array.');
-  return Array.isArray(d?.payload) ? d.payload :
-    Array.isArray(d) ? d :
-      (d ? [d] : []);
-};
-
-const termsFrom = (row) => {
-  LOG.debug('[termsFrom] Extraindo termos da linha.');
-  return (row?.item?.terms || row?.terms || []);
-};
-
-const byFieldId = (row) => {
-  LOG.debug('[byFieldId] Mapeando termos por fieldId.');
-  return Object.fromEntries(termsFrom(row).filter(t => t?.fieldId).map(t => [t.fieldId, t]));
-};
-
-const moneyObj = (term) => {
-  LOG.debug('[moneyObj] Criando objeto de dinheiro.');
-  const mv = term?.value?.moneyValue || term?.value?.supplierValue;
-  return mv ? { amount: mv.amount ?? null, currency: mv.currency ?? null }
-    : { amount: null, currency: null };
-};
-
-async function fetchSupplierBids(docId, headersCommon) {
-  LOG.info(`[fetchSupplierBids] Buscando supplier bids para docId: ${docId}`);
-  const urlBids = `${ARIBA_BASE_URL_EVENTS}/events/${encodeURIComponent(docId)}/supplierBids`;
-  try {
-    const { data } = await axios.get(urlBids, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    });
-    const rows = toArr(data);
-    LOG.info(`[fetchSupplierBids] Encontrados ${rows.length} bids.`);
-    if (!rows.length) return { rows: [], result: null };
-
-    const itemsWithBid = [...new Set(
-      rows.flatMap(r => Array.isArray(r?.itemsWithBid) ? r.itemsWithBid : [])
-    )].map(String);
-
-    const chosenItemId =
-      itemsWithBid[0] ||
-      (rows.find(r => r?.bidRank === 1)?.item?.itemId ?? rows.find(r => r?.bidRank === 1)?.itemId) ||
-      (rows[0]?.item?.itemId ?? rows[0]?.itemId);
-    LOG.info(`[fetchSupplierBids] Item escolhido para detalhamento: ${chosenItemId}`);
-
-    if (!chosenItemId) return { rows, result: null };
-
-    const targetRow = rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(chosenItemId));
-    if (!targetRow) return { rows, result: null };
-
-    const byId = byFieldId(targetRow);
-    const unit = moneyObj(byId['PRICE']);
-    const qv = byId['QUANTITY']?.value?.quantityValue;
-    const ext = moneyObj(byId['EXTENDEDPRICE']);
-
-    const ncm = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null;
-    const mva = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null;
-
-    const aliquotaICMS = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null;
-    const icmsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000046']).amount;
-    const aliquotaIPI = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null;
-    const ipiApuradoAmount = moneyObj(byId['GITAMONEYIFZ000047']).amount;
-    const aliquotaPIS = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null;
-    const pisApuradoAmount = moneyObj(byId['GITAMONEYIFZ000048']).amount;
-    const aliquotaCOFINS = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null;
-    const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount;
-    const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null;
-    const origemMaterial = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null;
-
-    const plant = byId['Plant']?.value?.simpleValue ?? null;
-    const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null;
-    const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null;
-    const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null;
-    const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null;
-
-    const result = {
-      ItemId: targetRow?.item?.itemId ?? targetRow?.itemId ?? null,
-      itemDescription: targetRow?.item?.title ?? null,
-      quantity: qv?.amount ?? null,
-      unitOfMeasure: qv?.unitOfMeasureCode ?? null,
-      price: unit.amount,
-      currency: unit.currency,
-      ncm, mva,
-      Extrinsic_Aliquota_ICMS: aliquotaICMS,
-      Extrinsic_ICMS_Apurado: icmsApuradoAmount,
-      Extrinsic_Aliquota_IPI: aliquotaIPI,
-      Extrinsic_IPI_Apurado: ipiApuradoAmount,
-      Extrinsic_Aliquota_PIS: aliquotaPIS,
-      Extrinsic_PIS_Apurado: pisApuradoAmount,
-      Extrinsic_Aliquota_Cofins: aliquotaCOFINS,
-      Extrinsic_Cofins_apurado: cofinsApuradoAmount,
-      Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,
-      Extrinsic_Origem_do_Material: origemMaterial,
-      EXTENDEDPRICE: ext.amount,
-      PLANT: plant,
-      ItemCategory: itemCategory,
-      TAX_CODE: taxCode,
-      MaterialCode: materialCode,
-      grupo_de_materias: grupoMaterias
-    };
-    LOG.debug(`[fetchSupplierBids] Resultado do item processado: ${JSON.stringify(result)}`);
-    return { rows, result };
-  } catch (error) {
-    LOG.error(`[fetchSupplierBids] Falha ao buscar supplier bids: ${error.message}`);
-    throw error;
-  }
-}
-
-async function fetchParentProjectId(docId, headersCommon) {
-  LOG.info(`[fetchParentProjectId] Buscando ParentProjectId para docId: ${docId}`);
-  const urlIds = `${ARIBA_BASE_URL_EVENTS}/events/identifiers`;
-  try {
-    const { data } = await axios.get(urlIds, {
-      params: {
-        realm: ARIBA_REALM,
-        user: ARIBA_USER,
-        passwordAdapter: ARIBA_PASSWORD_ADAPTER,
-        $filter: '(createDateFrom gt 01082025000000 and createDateTo lt 31122025000000)',
-      },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000,
-    });
-    const arr = toArr(data);
-    const parentProjectId = arr.find(x => String(x?.internalId) === String(docId))?.parentProjectId ?? null;
-    LOG.info(`[fetchParentProjectId] ParentProjectId encontrado: ${parentProjectId}`);
-    return parentProjectId;
-  } catch (error) {
-    LOG.error(`[fetchParentProjectId] Falha ao buscar ParentProjectId: ${error.message}`);
-    throw error;
-  }
 }

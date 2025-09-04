@@ -32,7 +32,8 @@ service service {
     TAX_CODE                        : String(10);
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
-  };
+    supplierName                    : String(255);
+  }
 
   type AribaHeader : {
     docId                  : String;
