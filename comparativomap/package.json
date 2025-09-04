@@ -14,7 +14,8 @@
     "@sap/xssec": "^4",
     "axios": "^1.11.0",
     "dotenv": "^17.2.1",
-    "express": "^4"
+    "express": "^4",
+    "soap": "^1.3.0"
   },
   "engines": {
     "node": ">=20"
