@@ -48,7 +48,7 @@ async function destGet (destName, relativePath, { params = {}, headers = {}, tim
     { method: 'get', url: relativePath, params, headers, timeout: timeoutMs },
     destination
   )
-  const { data } = await axios.request(reqCfg) // Authorization + headers da destination
+  const { data } = await axios.request(reqCfg) // Authorization + headers/queries da destination
   return data
 }
 
@@ -76,8 +76,9 @@ async function getPmAccessToken () {
 
 async function aribaPmGet (path, params = {}) {
   if (USE_DESTINATION) {
+    // IMPORTANTE: repassar params para a Destination
     return await destGet(PROJECTS_DEST, path, {
-      params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+      params, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
     })
   }
   const token = await getPmAccessToken()
@@ -153,6 +154,7 @@ function mapAribaHeader (p) {
 
 async function fetchAribaHeader (projectId) {
   const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
+    // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
     realm: ARIBA_REALM,
     user: ARIBA_USER,
     passwordAdapter: ARIBA_PASSWORD_ADAPTER
@@ -176,8 +178,8 @@ const moneyObj = (term) => {
     : { amount: null, currency: null }
 }
 
-// fallback de nome a partir dos bids (se convite não retornar)
-function pickSupplierNameFromBids (rows) {
+// fallback de nome genérico
+function pickSupplierNameFromRows (rows) {
   if (!Array.isArray(rows)) return null
   const hit = rows.find(r =>
     r?.organization?.name ||
@@ -193,8 +195,27 @@ function pickSupplierNameFromBids (rows) {
   )
 }
 
+// fallback de nome por invitationId específico
+function pickSupplierNameByInvitation (rows, invId) {
+  const hit = rows.find(r => String(r?.invitationId) === String(invId))
+  if (!hit) return null
+  return (
+    hit?.organization?.name ||
+    hit?.supplier?.name ||
+    hit?.supplierName ||
+    hit?.organizationName ||
+    hit?.supplier?.organizationName ||
+    null
+  )
+}
+
 /**
- * 1) Lista bids, escolhe um item, devolve invitationId e o "result" mapeado
+ * 1) supplierBids:
+ *    - Para CADA fornecedor (row) e CADA itemId em itemsWithBid, gera um resultado.
+ *    - Para mapear valores do item, procura uma row cujo item.itemId == itemId
+ *      priorizando a mesma invitationId; se não achar, usa a primeira que casar o itemId.
+ *    - Retorna:
+ *        { rows, results: [ { mappedFields..., _invitationId, _itemId } ] }
  */
 async function fetchSupplierBids (docId, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/supplierBids`
@@ -214,82 +235,80 @@ async function fetchSupplierBids (docId, headersCommon) {
   }
 
   const rows = toArr(data)
-  if (!rows.length) return { rows: [], result: null, invitationId: null }
+  if (!rows.length) return { rows: [], results: [] }
 
-  const itemsWithBid = [...new Set(
-    rows.flatMap(r => Array.isArray(r?.itemsWithBid) ? r.itemsWithBid : [])
-  )].map(String)
+  const results = []
 
-  const chosenItemId =
-    itemsWithBid[0] ||
-    (rows.find(r => r?.bidRank === 1)?.item?.itemId ?? rows.find(r => r?.bidRank === 1)?.itemId) ||
-    (rows[0]?.item?.itemId ?? rows[0]?.itemId)
+  for (const row of rows) {
+    const invId = row?.invitationId ?? null
+    const itemIds = Array.isArray(row?.itemsWithBid) ? row.itemsWithBid.map(String) : []
+    if (!itemIds.length) continue
 
-  if (!chosenItemId) return { rows, result: null, invitationId: null }
+    for (const itemId of itemIds) {
+      // 1) achar uma linha com os termos do item
+      let targetRow =
+        rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(itemId) && String(r?.invitationId) === String(invId)) ||
+        rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(itemId))
 
-  const targetRow = rows.find(r => String(r?.item?.itemId ?? r?.itemId) === String(chosenItemId))
-  if (!targetRow) return { rows, result: null, invitationId: null }
+      if (!targetRow) continue
 
-  // linha "dona" do item (para achar invitationId)
-  const ownerRow = rows.find(r =>
-    Array.isArray(r?.itemsWithBid) &&
-    r.itemsWithBid.map(String).includes(String(chosenItemId))
-  )
-  const invitationId = ownerRow?.invitationId ?? targetRow?.invitationId ?? null
-  LOG.info(`[fetchSupplierBids] invitationId para item ${chosenItemId}: ${invitationId}`)
+      const byId = byFieldId(targetRow)
+      const unit = moneyObj(byId['PRICE'])
+      const qv   = byId['QUANTITY']?.value?.quantityValue
+      const ext  = moneyObj(byId['EXTENDEDPRICE'])
 
-  const byId = byFieldId(targetRow)
-  const unit = moneyObj(byId['PRICE'])
-  const qv   = byId['QUANTITY']?.value?.quantityValue
-  const ext  = moneyObj(byId['EXTENDEDPRICE'])
+      const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
+      const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
 
-  const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
-  const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
+      const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
+      const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount
+      const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
+      const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount
+      const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
+      const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount
+      const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
+      const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
+      const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
+      const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
 
-  const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
-  const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount
-  const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
-  const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount
-  const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
-  const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount
-  const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
-  const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
-  const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
-  const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
+      const plant         = byId['Plant']?.value?.simpleValue ?? null
+      const itemCategory  = byId['ItemCategory']?.value?.simpleValue ?? null
+      const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
+      const taxCode       = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      const materialCode  = byId['MaterialCode']?.value?.simpleValue ?? null
 
-  const plant         = byId['Plant']?.value?.simpleValue ?? null
-  const itemCategory  = byId['ItemCategory']?.value?.simpleValue ?? null
-  const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-  const taxCode       = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
-  const materialCode  = byId['MaterialCode']?.value?.simpleValue ?? null
+      const mapped = {
+        ItemId: itemId,
+        itemDescription: targetRow?.item?.title ?? null,
+        quantity: qv?.amount ?? null,
+        unitOfMeasure: qv?.unitOfMeasureCode ?? null,
+        price: unit.amount,
+        currency: unit.currency,
+        ncm, mva,
+        Extrinsic_Aliquota_ICMS: aliquotaICMS,
+        Extrinsic_ICMS_Apurado: icmsApuradoAmount,
+        Extrinsic_Aliquota_IPI: aliquotaIPI,
+        Extrinsic_IPI_Apurado: ipiApuradoAmount,
+        Extrinsic_Aliquota_PIS: aliquotaPIS,
+        Extrinsic_PIS_Apurado: pisApuradoAmount,
+        Extrinsic_Aliquota_Cofins: aliquotaCOFINS,
+        Extrinsic_Cofins_apurado: cofinsApuradoAmount,
+        Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,
+        Extrinsic_Origem_do_Material: origemMaterial,
+        EXTENDEDPRICE: ext.amount,
+        PLANT: plant,
+        ItemCategory: itemCategory,
+        TAX_CODE: taxCode,
+        MaterialCode: materialCode,
+        grupo_de_materias: grupoMaterias
+      }
 
-  const result = {
-    ItemId: targetRow?.item?.itemId ?? targetRow?.itemId ?? null,
-    itemDescription: targetRow?.item?.title ?? null,
-    quantity: qv?.amount ?? null,
-    unitOfMeasure: qv?.unitOfMeasureCode ?? null,
-    price: unit.amount,
-    currency: unit.currency,
-    ncm, mva,
-    Extrinsic_Aliquota_ICMS: aliquotaICMS,
-    Extrinsic_ICMS_Apurado: icmsApuradoAmount,
-    Extrinsic_Aliquota_IPI: aliquotaIPI,
-    Extrinsic_IPI_Apurado: ipiApuradoAmount,
-    Extrinsic_Aliquota_PIS: aliquotaPIS,
-    Extrinsic_PIS_Apurado: pisApuradoAmount,
-    Extrinsic_Aliquota_Cofins: aliquotaCOFINS,
-    Extrinsic_Cofins_apurado: cofinsApuradoAmount,
-    Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,
-    Extrinsic_Origem_do_Material: origemMaterial,
-    EXTENDEDPRICE: ext.amount,
-    PLANT: plant,
-    ItemCategory: itemCategory,
-    TAX_CODE: taxCode,
-    MaterialCode: materialCode,
-    grupo_de_materias: grupoMaterias
+      // guardamos internamente pra resolver supplierName depois
+      results.push({ ...mapped, _invitationId: invId, _itemId: itemId })
+    }
   }
 
-  return { rows, result, invitationId }
+  return { rows, results }
 }
 
 /**
@@ -341,7 +360,6 @@ async function fetchSupplierInvitationsList (docId, round, headersCommon) {
 
 /**
  * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
- *    - resourceId deve ser exatamente: "<invitationNumber>_<email>" quando for o caso
  */
 async function fetchSupplierInvitationById (docId, round, resourceId, headersCommon) {
   if (!resourceId) return null
@@ -387,11 +405,6 @@ async function fetchSupplierInvitationById (docId, round, resourceId, headersCom
 
 // ==================== HANDLER ODATA ====================
 module.exports = function () {
-  /**
-   * GetQuotes mantém a MESMA assinatura: GetQuotes(docId: String)
-   * - round = process.env.ARIBA_EVENT_ROUND || 1
-   * - usa invitationId "como veio"; só resolve email se invitationId NÃO tiver "_"
-   */
   this.on('GetQuotes', async (req) => {
     const { docId } = (req.data || {})
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
@@ -410,71 +423,76 @@ module.exports = function () {
     }
 
     try {
-      // 1) supplierBids (EVENTS) -> pega item + invitationId
-      const { rows, result, invitationId } = await fetchSupplierBids(docId, headersCommon)
-      if (!rows.length || !result) return { header: null, items: [] }
+      // 1) supplierBids (EVENTS) -> pega TODOS os itens/fornecedores (+ guarda invitationId interno)
+      const { rows, results } = await fetchSupplierBids(docId, headersCommon)
+      if (!rows.length || !results.length) return { header: null, items: [] }
 
-      // 2) decidir o resourceId da supplierInvitation
-      let resourceId = invitationId // pode já vir no formato "<id>_<email>"
-      let supplierName = null
+      // 2) resolver supplierName por invitationId (com cache)
+      const inviteIds = [...new Set(results.map(r => r._invitationId).filter(Boolean))]
+      const nameCache = new Map()
 
-      try {
-        if (!resourceId || !String(resourceId).includes('_')) {
-          // invitationId sem email -> tenta resolver email pela lista do round
-          const list = await fetchSupplierInvitationsList(docId, round, headersCommon)
-          const hit = list.find(x =>
-            String(x?.invitationId) === String(invitationId) ||
-            String(x?.userId)       === String(invitationId) ||
-            String(x?.uniqueName)   === String(invitationId)
-          )
-          const email =
-            hit?.emailAddress ||
-            hit?.supplierEmail ||
-            hit?.email ||
-            hit?.mainContact?.emailAddress ||
-            hit?.contact?.email ||
-            null
+      // tenta resolver em massa usando a lista do round (um GET só)
+      let list = []
+      try { list = await fetchSupplierInvitationsList(docId, round, headersCommon) } catch (e) { /* noop */ }
 
-          if (email) resourceId = `${String(invitationId)}_${String(email)}`
+      const emailByInvId = new Map()
+      for (const it of list) {
+        const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
+        if (!invId) continue
+        const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
+        if (email) emailByInvId.set(invId, email)
+        // nome direto se já vier
+        const name =
+          it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
+        if (name) nameCache.set(invId, name)
+      }
+
+      // para cada convite pendente, busca por ID completo (se necessário)
+      for (const invId of inviteIds) {
+        if (nameCache.has(invId)) continue
+
+        let resourceId = null
+        if (String(invId).includes('_')) {
+          resourceId = String(invId)
+        } else {
+          const email = emailByInvId.get(String(invId))
+          if (email) resourceId = `${String(invId)}_${String(email)}`
         }
-
-        LOG.info('[GetQuotes] supplierInvitation resourceId:', resourceId)
 
         if (resourceId) {
-          const inv = await fetchSupplierInvitationById(docId, round, resourceId, headersCommon)
-          supplierName = inv?.supplierName || null
+          try {
+            const inv = await fetchSupplierInvitationById(docId, round, resourceId, headersCommon)
+            if (inv?.supplierName) nameCache.set(invId, inv.supplierName)
+          } catch (e) { /* continua */ }
         }
-      } catch (err) {
-        LOG.warn('[GetQuotes] supplierInvitation lookup falhou:', err?.response?.status, err?.response?.data || err.message)
+
+        // fallback por rows caso ainda vazio
+        if (!nameCache.has(invId)) {
+          const fallback = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
+          if (fallback) nameCache.set(invId, fallback)
+        }
       }
 
-      // 3) fallback pelos bids, se ainda vazio
-      if (!supplierName) {
-        supplierName = pickSupplierNameFromBids(rows)
-      }
-      LOG.info('[GetQuotes] supplierName resolvido:', supplierName)
-
-      // 4) identifiers → parentProjectId (EVENTS)
+      // 3) identifiers → parentProjectId (EVENTS)
       let parentProjectId = null
-      try {
-        parentProjectId = await fetchParentProjectId(docId, headersCommon)
-      } catch (err) {
-        LOG.warn('[GetQuotes] identifiers falhou:', err?.response?.status, err?.response?.data || err.message)
-      }
+      try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
 
-      // 5) header (PROJECTS/PM)
+      // 4) header (PROJECTS/PM)
       let header = null
       try {
         if (parentProjectId) header = await fetchAribaHeader(parentProjectId)
-      } catch (e) {
-        LOG.warn('[GetQuotes] Falha ao buscar header PM:', e?.response?.status, e?.response?.data || e.message)
-      }
+      } catch (e) { /* noop */ }
 
-      // 6) monta retorno (sempre inclui supplierName; CAP serializa se existir no .cds)
-      const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: supplierName ?? null })
-      const itemOut       = Object.assign({}, result, { supplierName: supplierName ?? null })
+      // 5) monta retorno com TODOS os itens
+      const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
+      const itemsOut = results.map(r => {
+        const supplierName = r._invitationId ? (nameCache.get(r._invitationId) || null) : null
+        // remove campos internos antes de expor
+        const { _invitationId, _itemId, ...pub } = r
+        return { ...pub, supplierName }
+      })
 
-      return { header: headerWithDoc, items: [ itemOut ] }
+      return { header: headerWithDoc, items: itemsOut }
 
     } catch (e) {
       const status = e.response?.status || 502
