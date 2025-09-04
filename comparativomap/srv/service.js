@@ -1,9 +1,15 @@
+require('dotenv').config()
 'use strict'
 const cds = require('@sap/cds')
-require('dotenv').config()
 const axios = require('axios')
-const { getDestination, addDestinationToRequestConfig } = require('@sap-cloud-sdk/connectivity')
-
+const { getDestination } = require('@sap-cloud-sdk/connectivity')
+// tenta usar o helper se a sua versão do SDK expor; caso contrário, caímos no fallback
+let addDestinationToRequestConfig
+try {
+  addDestinationToRequestConfig = require('@sap-cloud-sdk/connectivity').addDestinationToRequestConfig
+} catch (_) {
+  addDestinationToRequestConfig = null
+}
 // Log
 const LOG = cds.log('ariba-service')
 
@@ -12,8 +18,61 @@ const { getAccessToken } = require('../srv/auth/aribaOauth')
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
-const EVENTS_DEST     = process.env.ARIBA_DEST_EVENTS   || 'ARIBA_Event_Management_Test'
-const PROJECTS_DEST   = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Project_Management_Test'
+const EVENTS_DEST = process.env.ARIBA_DEST_EVENTS || 'ARIBA_Event_Management_Test'
+const PROJECTS_DEST = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Sourcing_Project_Management_Test'
+
+const EVENTS_API_PREFIX = process.env.ARIBA_EVENTS_API_PREFIX || '/api/sourcing-event/v2/prod'
+const PM_API_PREFIX = process.env.ARIBA_PM_API_PREFIX || '/api/sourcing-project-management/v2/prod'
+
+
+const _destTokenCache = {} // cache simples por tokenUrl|clientId
+
+
+async function _fetchTokenFromDestination(destination) {
+  // a base do token na sua destination é https://api.ariba.com/v2 — aqui acrescentamos /oauth/token se faltar
+  const base = destination.tokenServiceUrl || destination.tokenUrl || destination.token_service_url
+  if (!base) throw new Error('Destination não possui tokenServiceUrl')
+  const tokenUrl = /\/oauth\b/i.test(base) ? base : base.replace(/\/$/, '') + '/oauth/token'
+
+  const clientId = destination.clientId || destination.clientid || destination.client_id
+  const clientSecret = destination.clientSecret || destination.clientsecret || destination.client_secret
+  const grantType = destination.grantType || destination.grant_type || 'client_credentials'
+  if (!clientId || !clientSecret) throw new Error('Faltando clientId/clientSecret no destination')
+
+  const key = tokenUrl + '|' + clientId
+  const now = Date.now()
+  if (_destTokenCache[key] && now < _destTokenCache[key].exp - 60_000) return _destTokenCache[key].token
+
+  const includeGrantInBody = !/\bgrant_type=/.test(tokenUrl)
+  const body = new URLSearchParams()
+  if (includeGrantInBody) body.append('grant_type', grantType)
+  if (destination.scope) body.append('scope', destination.scope)
+
+  const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
+  const resp = await axios.post(tokenUrl, body.toString(), {
+    headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' },
+    timeout: Number(HTTP_TIMEOUT_MS) || 15000
+  })
+  const { access_token, expires_in } = resp.data || {}
+  _destTokenCache[key] = { token: access_token, exp: now + (expires_in ?? 3600) * 1000 }
+  return access_token
+}
+
+function _maybePrefixPath(destName, relativePath) {
+  const rel = relativePath.startsWith('/') ? relativePath : `/${relativePath}`
+
+  // Events: /events/... => /api/sourcing-event/v2/prod/events/...
+  if (destName === EVENTS_DEST && /^\/events(\/|$)/i.test(rel)) {
+    return `${EVENTS_API_PREFIX}${rel}`
+  }
+
+  // Projects/PM: /projects/... => /api/sourcing-project-management/v2/prod/projects/...
+  if (destName === PROJECTS_DEST && /^\/projects(\/|$)/i.test(rel)) {
+    return `${PM_API_PREFIX}${rel}`
+  }
+
+  return relativePath
+}
 
 // ==================== ENV VARS (fallback .env) ====================
 const {
@@ -41,14 +100,74 @@ const {
   ARIBA_EVENT_ROUND
 } = process.env
 
-// ==================== HELPER: GET via Destination ====================
-async function destGet (destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+// ==================== HELPER: GET via Destination (robusto) ====================
+async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
   const destination = await getDestination({ destinationName: destName })
-  const reqCfg = await addDestinationToRequestConfig(
-    { method: 'get', url: relativePath, params, headers, timeout: timeoutMs },
-    destination
-  )
-  const { data } = await axios.request(reqCfg) // Authorization + headers/queries da destination
+  if (!destination) throw new Error(`Destination ${destName} não encontrada (ver process.env.destinations / VCAP_SERVICES)`)
+
+  // 1) normaliza caminho (ex.: /events/... → /api/sourcing-event/v2/prod/events/...)
+  const urlPath = _maybePrefixPath(destName, relativePath)
+
+  // 2) config base da chamada
+  const baseCfg = {
+    method: 'get',
+    url: urlPath,
+    params: { ...params },
+    headers: { ...headers },
+    timeout: Number(timeoutMs) || 30000
+  }
+
+  // 3) para EVENTS, se não veio nos params, injeta realm/user/passwordAdapter do .env
+  if (destName === EVENTS_DEST || destName === PROJECTS_DEST) {
+    if (ARIBA_REALM && baseCfg.params.realm == null) baseCfg.params.realm = ARIBA_REALM
+    if (ARIBA_USER && baseCfg.params.user == null) baseCfg.params.user = ARIBA_USER
+    if (ARIBA_PASSWORD_ADAPTER && baseCfg.params.passwordAdapter == null) {
+      baseCfg.params.passwordAdapter = ARIBA_PASSWORD_ADAPTER
+    }
+  }
+
+  // 4) tenta usar o helper oficial (se existir nessa versão)
+  let reqCfg
+  if (addDestinationToRequestConfig) {
+    try {
+      reqCfg = await addDestinationToRequestConfig(baseCfg, destination)
+    } catch (e) {
+      LOG.warn?.('[destGet] addDestinationToRequestConfig falhou; usando fallback:', e.message)
+    }
+  }
+
+  // 5) fallback manual (merge baseURL + headers + auth + apikey)
+  if (!reqCfg) {
+    reqCfg = {
+      baseURL: destination.url,              // ex.: https://openapi.ariba.com
+      ...baseCfg,
+      headers: { ...(destination.headers || {}), ...(baseCfg.headers || {}) }
+    }
+
+    // Authorization → usa authTokens da binding OU busca via OAuth2 Client Credentials
+    if (destination.authTokens?.[0]?.value) {
+      reqCfg.headers.authorization = reqCfg.headers.authorization || `Bearer ${destination.authTokens[0].value}`
+    } else if ((destination.authentication || '').toLowerCase() === 'oauth2clientcredentials') {
+      try {
+        const token = await _fetchTokenFromDestination(destination)
+        if (token) reqCfg.headers.authorization = `Bearer ${token}`
+      } catch (e) {
+        LOG.error?.('[destGet] erro ao obter token:', e.message)
+      }
+    }
+
+    // apikey → da destination.headers primeiro; se não houver, cai pro fallback do .env
+    if (!reqCfg.headers.apikey && destination.headers?.apikey) reqCfg.headers.apikey = destination.headers.apikey
+    if (!reqCfg.headers.apikey && destName === EVENTS_DEST && ARIBA_API_KEY_EVENTS) reqCfg.headers.apikey = ARIBA_API_KEY_EVENTS
+    if (!reqCfg.headers.apikey && destName === PROJECTS_DEST && ARIBA_API_KEY_PROJECTS) reqCfg.headers.apikey = ARIBA_API_KEY_PROJECTS
+
+    // defaults de conteúdo
+    if (!reqCfg.headers.Accept) reqCfg.headers.Accept = 'application/json'
+    if (!reqCfg.headers['Content-Type']) reqCfg.headers['Content-Type'] = 'application/json'
+  }
+
+  // 6) executa
+  const { data } = await axios.request(reqCfg)
   return data
 }
 
@@ -56,7 +175,7 @@ async function destGet (destName, relativePath, { params = {}, headers = {}, tim
 // cache simples de token (fallback .env; não usado quando USE_DESTINATION=true)
 let _pmOauthCache = { token: null, exp: 0 }
 
-async function getPmAccessToken () {
+async function getPmAccessToken() {
   if (USE_DESTINATION) throw new Error('getPmAccessToken não deve ser usado com Destination')
   const now = Date.now()
   if (_pmOauthCache.token && now < _pmOauthCache.exp - 60_000) return _pmOauthCache.token
@@ -70,11 +189,11 @@ async function getPmAccessToken () {
     { headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
   )
   _pmOauthCache.token = data.access_token
-  _pmOauthCache.exp   = now + (data.expires_in ?? 3600) * 1000
+  _pmOauthCache.exp = now + (data.expires_in ?? 3600) * 1000
   return _pmOauthCache.token
 }
 
-async function aribaPmGet (path, params = {}) {
+async function aribaPmGet(path, params = {}) {
   if (USE_DESTINATION) {
     // IMPORTANTE: repassar params para a Destination
     return await destGet(PROJECTS_DEST, path, {
@@ -106,9 +225,9 @@ async function aribaPmGet (path, params = {}) {
 
 // ==================== MAPEAMENTO HEADER PM ====================
 const firstToken = (s) => (s || '').trim().split(' ')[0] || null
-const cut        = (s, n) => (s || '').substring(0, n) || null
+const cut = (s, n) => (s || '').substring(0, n) || null
 
-function getCustomField (p, fieldId) {
+function getCustomField(p, fieldId) {
   const pools = [
     p?.externalFields,
     p?.sourcingProjectCustomFields,
@@ -121,20 +240,20 @@ function getCustomField (p, fieldId) {
     const f = (arr || []).find(x => x.fieldId === fieldId)
     if (!f) continue
     if (Array.isArray(f.flexMasterDataTypeValue)) return f.flexMasterDataTypeValue[0]
-    if (Array.isArray(f.textValue))               return f.textValue[0]
-    if (Array.isArray(f.values) && f.values[0])   return f.values[0].value || f.values[0].name
-    if ('booleanValue' in f)                      return String(f.booleanValue)
-    if ('numberValue'  in f)                      return String(f.numberValue)
-    if ('value'        in f)                      return f.value
+    if (Array.isArray(f.textValue)) return f.textValue[0]
+    if (Array.isArray(f.values) && f.values[0]) return f.values[0].value || f.values[0].name
+    if ('booleanValue' in f) return String(f.booleanValue)
+    if ('numberValue' in f) return String(f.numberValue)
+    if ('value' in f) return f.value
   }
   return null
 }
 
-function mapAribaHeader (p) {
+function mapAribaHeader(p) {
   const bs = p?.businessSystem || {}
-  const docCat   = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null
-  const purOrg   = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null
-  const purGrp   = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null
+  const docCat = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null
+  const purOrg = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null
+  const purGrp = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null
   const compCode = bs?.companyCode?.[0]?.value || bs?.companyCode?.[0]?.key || null
 
   const inc1 = getCustomField(p, 'cus_wsincoterms') || getCustomField(p, 'cus_wsIncoterms')
@@ -142,17 +261,17 @@ function mapAribaHeader (p) {
   const payt = getCustomField(p, 'arb_PaymentTerms')
 
   return {
-    tipoPedido            : docCat,
+    tipoPedido: docCat,
     purchasingOrganization: cut(firstToken(purOrg), 4),
-    purchasingGroup       : cut(firstToken(purGrp), 3),
-    companyCode           : cut(firstToken(compCode), 4),
-    incoterms1            : inc1,
-    incoterms2            : inc2,
-    paymentTerms          : payt || null
+    purchasingGroup: cut(firstToken(purGrp), 3),
+    companyCode: cut(firstToken(compCode), 4),
+    incoterms1: inc1,
+    incoterms2: inc2,
+    paymentTerms: payt || null
   }
 }
 
-async function fetchAribaHeader (projectId) {
+async function fetchAribaHeader(projectId) {
   const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
     // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
     realm: ARIBA_REALM,
@@ -179,7 +298,7 @@ const moneyObj = (term) => {
 }
 
 // fallback de nome genérico
-function pickSupplierNameFromRows (rows) {
+function pickSupplierNameFromRows(rows) {
   if (!Array.isArray(rows)) return null
   const hit = rows.find(r =>
     r?.organization?.name ||
@@ -196,7 +315,7 @@ function pickSupplierNameFromRows (rows) {
 }
 
 // fallback de nome por invitationId específico
-function pickSupplierNameByInvitation (rows, invId) {
+function pickSupplierNameByInvitation(rows, invId) {
   const hit = rows.find(r => String(r?.invitationId) === String(invId))
   if (!hit) return null
   return (
@@ -217,12 +336,13 @@ function pickSupplierNameByInvitation (rows, invId) {
  *    - Retorna:
  *        { rows, results: [ { mappedFields..., _invitationId, _itemId } ] }
  */
-async function fetchSupplierBids (docId, headersCommon) {
+async function fetchSupplierBids(docId, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/supplierBids`
   let data
   if (USE_DESTINATION) {
     data = await destGet(EVENTS_DEST, path, {
-      params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
     })
   } else {
     const urlBids = `${ARIBA_BASE_URL_EVENTS}${path}`
@@ -254,28 +374,28 @@ async function fetchSupplierBids (docId, headersCommon) {
 
       const byId = byFieldId(targetRow)
       const unit = moneyObj(byId['PRICE'])
-      const qv   = byId['QUANTITY']?.value?.quantityValue
-      const ext  = moneyObj(byId['EXTENDEDPRICE'])
+      const qv = byId['QUANTITY']?.value?.quantityValue
+      const ext = moneyObj(byId['EXTENDEDPRICE'])
 
-      const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
-      const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
+      const ncm = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
+      const mva = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
 
-      const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
-      const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount
-      const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
-      const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount
-      const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
-      const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount
-      const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
+      const aliquotaICMS = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
+      const icmsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000046']).amount
+      const aliquotaIPI = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
+      const ipiApuradoAmount = moneyObj(byId['GITAMONEYIFZ000047']).amount
+      const aliquotaPIS = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
+      const pisApuradoAmount = moneyObj(byId['GITAMONEYIFZ000048']).amount
+      const aliquotaCOFINS = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
       const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
       const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
-      const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
+      const origemMaterial = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
 
-      const plant         = byId['Plant']?.value?.simpleValue ?? null
-      const itemCategory  = byId['ItemCategory']?.value?.simpleValue ?? null
+      const plant = byId['Plant']?.value?.simpleValue ?? null
+      const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-      const taxCode       = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
-      const materialCode  = byId['MaterialCode']?.value?.simpleValue ?? null
+      const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
       const mapped = {
         ItemId: itemId,
@@ -314,38 +434,79 @@ async function fetchSupplierBids (docId, headersCommon) {
 /**
  * 2) Identifiers → parentProjectId
  */
-async function fetchParentProjectId (docId, headersCommon) {
-  const path = `/events/identifiers`
+/**
+ * 2) Identifiers → parentProjectId (robusto)
+ */
+async function fetchParentProjectId(docId, headersCommon) {
+  // 1ª tentativa: /events/{docId}
+  const pathEvent = `/events/${encodeURIComponent(docId)}`
+  try {
+    let dataEvt
+    if (USE_DESTINATION) {
+      dataEvt = await destGet(EVENTS_DEST, pathEvent, {
+        params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+        headers: {},
+        timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+      })
+    } else {
+      const urlEvt = `${ARIBA_BASE_URL_EVENTS}${pathEvent}`
+      const respEvt = await axios.get(urlEvt, {
+        params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+        headers: headersCommon,
+        timeout: Number(HTTP_TIMEOUT_MS) || 30000
+      })
+      dataEvt = respEvt.data
+    }
+    const pid =
+      dataEvt?.parentProjectId ||
+      dataEvt?.projectId ||
+      dataEvt?.parentProjectUniqueName ||
+      null
+    if (pid) return pid
+  } catch (e) {
+    // segue para fallback
+  }
+
+  // 2ª tentativa (fallback): /events/identifiers com filtro por internalId
+  const pathIds = `/events/identifiers`
   let data
+  const idsParams = {
+    realm: ARIBA_REALM,
+    user: ARIBA_USER,
+    passwordAdapter: ARIBA_PASSWORD_ADAPTER,
+    $filter: `(internalId eq ${encodeURIComponent(docId)})`
+  }
   if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+    data = await destGet(EVENTS_DEST, pathIds, {
+      params: idsParams,
+      headers: {},
+      timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+    })
   } else {
-    const urlIds = `${ARIBA_BASE_URL_EVENTS}${path}`
+    const urlIds = `${ARIBA_BASE_URL_EVENTS}${pathIds}`
     const resp = await axios.get(urlIds, {
-      params: {
-        realm: ARIBA_REALM,
-        user: ARIBA_USER,
-        passwordAdapter: ARIBA_PASSWORD_ADAPTER,
-        $filter: '(createDateFrom gt 01082025000000 and createDateTo lt 31122025000000)'
-      },
+      params: idsParams,
       headers: headersCommon,
       timeout: Number(HTTP_TIMEOUT_MS) || 30000
     })
     data = resp.data
   }
   const arr = toArr(data)
-  const parentProjectId = arr.find(x => String(x?.internalId) === String(docId))?.parentProjectId ?? null
-  return parentProjectId
+  const hit = arr.find(x => String(x?.internalId) === String(docId))
+  return hit?.parentProjectId ?? null
 }
 
 /**
  * 3) Lista de supplier invitations do round
  */
-async function fetchSupplierInvitationsList (docId, round, headersCommon) {
+async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
   let data
   if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+    data = await destGet(EVENTS_DEST, path, {
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+    })
   } else {
     const url = `${ARIBA_BASE_URL_EVENTS}${path}`
     const resp = await axios.get(url, {
@@ -358,15 +519,16 @@ async function fetchSupplierInvitationsList (docId, round, headersCommon) {
   return toArr(data)
 }
 
-/**
- * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
- */
-async function fetchSupplierInvitationById (docId, round, resourceId, headersCommon) {
+//
+async function fetchSupplierInvitationById(docId, round, resourceId, headersCommon) {
   if (!resourceId) return null
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`
   let data
   if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, { params: {}, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000 })
+    data = await destGet(EVENTS_DEST, path, {
+      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+    })
   } else {
     const url = `${ARIBA_BASE_URL_EVENTS}${path}`
     const resp = await axios.get(url, {
@@ -476,6 +638,7 @@ module.exports = function () {
       // 3) identifiers → parentProjectId (EVENTS)
       let parentProjectId = null
       try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
+      LOG.info?.('[GetQuotes] parentProjectId resolvido:', parentProjectId)
 
       // 4) header (PROJECTS/PM)
       let header = null
