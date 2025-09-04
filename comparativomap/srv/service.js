@@ -2,6 +2,7 @@
 const cds = require('@sap/cds');
 require('dotenv').config();
 const axios = require('axios');
+const { simularPO } = require('./utils/simular-po') // <<=== Lógica da chamada da BAPI
 
 // Log customizado para este serviço
 const LOG = cds.log('ariba-service');
@@ -201,13 +202,27 @@ module.exports = function () {
       const headerWithDoc = Object.assign({ docId }, header || {});
 
       // devolve no formato do CDS
-      return { header: headerWithDoc, items: [ result ] };
+      return { header: headerWithDoc, items: [result] };
 
     } catch (e) {
       const status = e.response?.status || 502;
       const msg = e.response?.data?.message || e.response?.data || e.message;
       console.error('[GetQuotes] Erro Ariba:', status, msg);
       return req.error(status, 'Falha ao consultar supplierBids no Ariba.');
+    }
+  });
+
+  this.on('simulateBapiPoCreate', async req => {
+    const { items = [], header = {} } = req.data ?? {};
+    try {
+      const resposta = await simularPO(items, header);
+      if (!resposta.success) {
+        const msg = resposta.messages?.map(m => m.text).join(' | ') || 'Falha na simulação';
+        req.error(400, msg, { details: resposta.messages });
+      }
+      return resposta;
+    } catch (e) {
+      req.error(400, e.userMessage || e.message || 'Erro ao simular BAPI_PO_CREATE1');
     }
   });
 };
