@@ -1,8 +1,8 @@
 require('dotenv').config()
 
 const cds = require('@sap/cds')
+const soap = require('soap');
 const axios = require('axios')
-const { simularPO } = require('./utils/simular-po')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
 // tenta usar o helper se a sua versão do SDK expor; caso contrário, caímos no fallback
 let addDestinationToRequestConfig
@@ -17,6 +17,13 @@ const LOG = cds.log('ariba-service')
 
 // Token dos ENDPOINTS de EVENTS (teu projeto)
 const { getAccessToken } = require('../srv/auth/aribaOauth')
+
+
+// ==================== PARA CHAMADA SOAP ====================
+const WSDL_PATH = './srv/external/bapi_po_create1.wsdl';
+const ENDPOINT = 'http://rseccasq05ha1.cvale.com.br:8080/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300';
+const USER = '<USER>';
+const PASS = '<PASS>';
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
@@ -667,17 +674,207 @@ module.exports = function () {
     }
   })
 
-  this.on('simulateBapiPoCreate', async req => {
-    const { items = [], header = {} } = req.data ?? {};
+  this.on('simularPO', async req => {
+     const t0 = Date.now();
+    console.log('========== [simularPO] START ==========');
+
     try {
-      const resposta = await simularPO(items, header);
-      if (!resposta.success) {
-        const msg = resposta.messages?.map(m => m.text).join(' | ') || 'Falha na simulação';
-        req.error(400, msg, { details: resposta.messages });
+      // 1) Coleta a entrada e monta payload de fumaça se nada vier
+      const { header = {}, items = [], schedules = [], testRun = true } = req.data || {};
+      console.log('[simularPO] Input resume:', {
+        hasHeader: !!header, itemsCount: Array.isArray(items) ? items.length : 0,
+        schedulesCount: Array.isArray(schedules) ? schedules.length : 0, testRun
+      });
+
+      const payload = buildSmokePayload(header, items, schedules, testRun);
+      console.log('[simularPO] Payload pronto (resumo):', {
+        TESTRUN: payload.TESTRUN,
+        POHEADER: payload.POHEADER,
+        POITEM_len: payload.POITEM?.item?.length,
+        POSCHEDULE_len: payload.POSCHEDULE?.item?.length
+      });
+
+      // 2) Cria o cliente SOAP
+      console.log('[simularPO] Criando client SOAP com WSDL:', WSDL_PATH);
+      const client = await soap.createClientAsync(WSDL_PATH);
+
+      // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
+      try {
+        const services = client?.wsdl?.definitions?.services || {};
+        for (const sName in services) {
+          const service = services[sName];
+          for (const pName in (service.ports || {})) {
+            const port = service.ports[pName];
+            console.log(`[simularPO] WSDL -> Service="${sName}" Port="${pName}" Address="${port.location}"`);
+          }
+        }
+      } catch (wErr) {
+        console.warn('[simularPO] Aviso ao inspecionar WSDL:', wErr?.message || wErr);
       }
-      return resposta;
+
+      // Segurança básica (se seu endpoint exigir)
+      client.setSecurity(new soap.BasicAuthSecurity(USER, PASS));
+
+      if (ENDPOINT && ENDPOINT.trim()) {
+        client.setEndpoint(ENDPOINT);
+        console.log('[simularPO] Forçando ENDPOINT:', ENDPOINT);
+      } else {
+        console.log('[simularPO] Usando o endpoint do WSDL (sem setEndpoint).');
+      }
+
+      // 3) Listeners de debug do node-soap
+      client.on('request', (xml, eid) => {
+        console.log('--- [SOAP REQUEST] eid=', eid, '---\n', xml, '\n--- [/SOAP REQUEST] ---');
+      });
+      client.on('response', (body, response, eid) => {
+        console.log('--- [SOAP RESPONSE] eid=', eid, 'status=', response?.statusCode, '---\n', body, '\n--- [/SOAP RESPONSE] ---');
+      });
+      client.on('soapError', (err) => {
+        console.error('--- [SOAP FAULT] ---\n', safeErr(err), '\n--- [/SOAP FAULT] ---');
+      });
+
+      // 4) Chama a BAPI
+      console.log('[simularPO] Chamando BAPI_PO_CREATE1Async...');
+      const resp = await client.BAPI_PO_CREATE1Async(payload);
+      const r0   = Array.isArray(resp) ? resp[0] : resp;
+
+      // 5) Normaliza resposta para o contrato OData
+      const expHeader = { poNumber: r0?.EXPHEADER?.PO_NUMBER || '' };
+      const messages = (r0?.RETURN?.item || []).map((m) => ({
+        type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
+        logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
+      }));
+
+      console.log('[simularPO] Resultado:', { expHeader, msgCount: messages.length });
+      console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
+      return { expHeader, returnMessages: messages };
+
     } catch (e) {
-      req.error(400, e.userMessage || e.message || 'Erro ao simular BAPI_PO_CREATE1');
+      // 6) Erro: log detalhado para diagnosticar 502, timeouts, TLS, etc.
+      const info = safeErr(e);
+      console.error('========== [simularPO] ERROR ==========');
+      console.error('[simularPO] Detalhes do erro:', info);
+      console.error('=======================================');
+
+      // Propaga erro mais legível no OData (evita [object Object])
+      return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
     }
   });
+
+/* =================== Helpers =================== */
+
+// Payload "fumaça": se nada vier do front, monta o mínimo p/ a BAPI responder algo.
+function buildSmokePayload(header, items, schedules, testRun) {
+  const hdr = {
+    DOC_TYPE  : header.docType  || 'NB',
+    COMP_CODE : header.compCode || '1000',
+    PURCH_ORG : header.purchOrg || '1000',
+    PUR_GROUP : header.purchGroup|| '001',
+    VENDOR    : padLeft(String(header.vendor || '123456'), 10, '0'),
+    CURRENCY  : header.currency || 'BRL',
+    ...(header.incoterms1 ? { INCOTERMS1: header.incoterms1 } : {}),
+    ...(header.incoterms2 ? { INCOTERMS2: header.incoterms2 } : {})
+  };
+  const hdrX = markX(hdr);
+
+  const itemList = (Array.isArray(items) && items.length > 0) ? items : [{
+    poItem   : 10,
+    plant    : 'BR01',
+    shortText: 'Teste chamada BAPI',
+    quantity : 1,
+    unit     : 'PC',
+    taxCode  : 'I1'
+  }];
+
+  const poitem  = [];
+  const poitemx = [];
+  itemList.forEach((it, i) => {
+    const PO_ITEM = padLeft(String(Number.isInteger(it.poItem) ? it.poItem : (i + 1) * 10), 5, '0');
+    const rec = {
+      PO_ITEM,
+      PLANT    : it.plant,
+      QUANTITY : String(it.quantity),
+      PO_UNIT  : it.unit,
+      ...(it.material  ? { MATERIAL  : padLeft(String(it.material).trim(), 18, '0') } : {}),
+      ...(it.shortText ? { SHORT_TEXT: String(it.shortText).slice(0, 40) } : {}),
+      ...(it.taxCode   ? { TAX_CODE  : String(it.taxCode).slice(0, 2) } : {}),
+      ...(it.netPrice != null ? { NET_PRICE: String(it.netPrice) } : {})
+    };
+    poitem.push(rec);
+    poitemx.push(markX(rec, { PO_ITEM }));
+  });
+
+  const today = isoDate(new Date());
+  const schedList = (Array.isArray(schedules) && schedules.length > 0)
+    ? schedules.map((s, idx) => ({
+        PO_ITEM      : padLeft(String(Number.isInteger(s.poItem) ? s.poItem : (idx + 1) * 10), 5, '0'),
+        SCHED_LINE   : padLeft(String(s.schedLine ?? 1), 4, '0'),
+        DELIVERY_DATE: s.deliveryDate ? isoDate(new Date(s.deliveryDate)) : today,
+        QUANTITY     : String(s.quantity ?? '0')
+      }))
+    : poitem.map(p => ({
+        PO_ITEM      : p.PO_ITEM,
+        SCHED_LINE   : '0001',
+        DELIVERY_DATE: today,
+        QUANTITY     : p.QUANTITY
+      }));
+
+  const posched  = [];
+  const poschedx = [];
+  schedList.forEach(s => {
+    posched.push(s);
+    poschedx.push(markX(s));
+  });
+
+  return {
+    TESTRUN     : testRun ? 'X' : '',
+    POHEADER    : hdr,
+    POHEADERX   : hdrX,
+    POITEM      : { item: poitem },
+    POITEMX     : { item: poitemx },
+    POSCHEDULE  : { item: posched },
+    POSCHEDULEX : { item: poschedx }
+  };
+}
+
+function padLeft(str, len, ch = '0') {
+  str = String(str ?? '');
+  return str.length >= len ? str : ch.repeat(len - str.length) + str;
+}
+function isoDate(d) {
+  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
+  return `${y}-${m}-${day}`; // troque para YYYYMMDD se seu backend exigir
+}
+function markX(obj, extra = {}) {
+  const x = { ...extra };
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === 'PO_ITEM' || k === 'SCHED_LINE') { x[k] = obj[k]; continue; }
+    if (v !== undefined && v !== null && String(v) !== '') x[k] = 'X';
+  }
+  return x;
+}
+
+// Constrói um objeto legível com os principais campos de erro
+function safeErr(e = {}) {
+  const info = {
+    name       : e.name,
+    message    : e.message,
+    code       : e.code,
+    errno      : e.errno,
+    address    : e.address,
+    port       : e.port,
+    statusCode : e.statusCode,
+    // Alguns campos específicos do node-soap / axios / request:
+    responseStatus: e.response?.status || e.status,
+    responseBody  : (e.body || e.response?.data || e.response?.body || e.root) ? cut(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
+    fault        : e.fault || e.root?.Envelope?.Body?.Fault,
+    stack       : e.stack ? cut(e.stack, 1200) : undefined
+  };
+  return info;
+}
+
+function cut(s, max=800) {
+  if (!s) return s;
+  return s.length > max ? (s.slice(0, max) + ` ... (${s.length - max} chars more)`) : s;
+}
 }

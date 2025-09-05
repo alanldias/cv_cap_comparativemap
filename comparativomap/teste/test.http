@@ -26,3 +26,10 @@ GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123
 ### Ariba Header
 GET http://localhost:4004/odata/v4/service/aribaHeader(projectId='WS1639759115')
 Accept: application/json
+
+
+### Teste SOAP
+POST http://localhost:4004/odata/v4/service/simularPO
+Content-Type: application/json
+
+{ "header": {}, "items": [], "schedules": [], "testRun": true }
