@@ -31,6 +31,12 @@
   },
   "cds": {
     "requires": {
+       "BAPI_INFORECORD_GETLIST": {
+        "credentials": {
+          "destination": "S4H_QAS_CQ5_MAPA",
+          "path": "/sap/bc/srt/scs/sap/zbapi_inforecord_getlist?sap-client=300"
+        }
+      },
       "db": {
         "kind": "sqlite",
         "credentials": {

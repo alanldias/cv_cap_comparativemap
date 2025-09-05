@@ -3,10 +3,9 @@ using comparativemap as comparativemap from '../db/schema';
 @path: '/odata/v4/service'
 service service {
 
-  // Projeção OData V4 da entidade persistida
+  // ==== Bia ====
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
-  /* ==================== Tipos já existentes ==================== */
   type QuoteRow       : {
     ItemId                          : String(30);
     itemDEscription                 : String(255); // mantido como está
@@ -50,13 +49,10 @@ service service {
     header : AribaHeader;
     items  : many QuoteRow;
   };
+  
+  function GetQuotes(docId: String)           returns QuotesResponse;
 
-  function GetQuotes(docId: String) returns QuotesResponse;
-
-
-  // --------------------------------------
-  // Tipos de entrada
-  // --------------------------------------
+  // ==== Axel ====
   type POHeader {
     docType    : String(4); // DOC_TYPE (ex.: 'NB')
     compCode   : String(4); // COMP_CODE (Empresa)
@@ -118,4 +114,25 @@ service service {
                      schedules: array of POSchedule,
                      testRun: Boolean default true // enviaremos 'X' no handler quando true
   )                                 returns SimulacaoPOResult;
-}
+
+
+// ==== Thiago ====
+
+   @readonly
+  action getTaxCode(
+    VENDOR            : String(10),
+    MATERIAL          : String(18),
+    PURCH_ORG         : String(4),
+    PURCHASINGINFOREC : String(10),
+  ) returns {
+    taxCode           : String(2);
+    infoRecord        : String(10);
+    vendor            : String(10);
+    purchOrg          : String(4);
+    matchedCount      : Integer;
+    rawItem           : LargeString; // opcional: JSON do item que bateu, p/ debug
+    returnMessages    : LargeString; // opcional: JSON de BAPIRETURN
+  };
+
+    action testInfoRecordOData() returns LargeString; // ou returns String(100000)
+};
