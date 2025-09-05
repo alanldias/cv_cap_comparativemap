@@ -1,0 +1,46 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+  <Dialog id="dlgAward" title="Premiar Fornecedores" contentWidth="1000px" draggable="true" resizable="true">
+    <VBox class="sapUiSmallMargin">
+      <MessageStrip text="A soma das quantidades por ITEM deve ser exatamente igual à quantidade mestre." type="Information" />
+      <Table items="{qm>/items}" mode="MultiSelect" sticky="ColumnHeaders">
+        <columns>
+          <Column width="12rem"><header><Text text="Fornecedor"/></header></Column>
+          <Column width="10rem"><header><Text text="Item"/></header></Column>
+          <Column width="16rem"><header><Text text="Descrição"/></header></Column>
+          <Column width="7rem"><header><Text text="Mestre"/></header></Column>
+          <Column width="7rem"><header><Text text="Disponível"/></header></Column>
+          <Column width="9rem" hAlign="Center"><header><Text text="Qtd p/ premiar"/></header></Column>
+        </columns>
+        <items>
+          <ColumnListItem>
+            <cells>
+              <Text text="{qm>supplierName}"/>
+              <Text text="{qm>materialCode}"/>
+              <Text text="{qm>description}" maxLines="2" wrapping="true"/>
+              <ObjectNumber number="{qm>masterQty}"/>
+              <ObjectNumber number="{qm>supplierQty}"/>
+              <Input type="Number"
+                     value="{path:'qm>qtyAward', type: 'sap.ui.model.type.Integer'}"
+                     liveChange=".onAwardQtyChange"
+                     width="7rem"/>
+            </cells>
+          </ColumnListItem>
+        </items>
+      </Table>
+
+      <!-- Resumo por itemKey -->
+      <Toolbar class="sapUiSmallMarginTop">
+        <Text text="Restante por item:"/>
+        <ToolbarSpacer/>
+        <Text text="{qm>_summaryText}" />
+      </Toolbar>
+    </VBox>
+
+    <beginButton>
+      <Button text="Premiar" type="Emphasized" enabled="{qm>/validAward}" press=".onConfirmAward"/>
+    </beginButton>
+    <endButton>
+      <Button text="Cancelar" press=".onCloseDialog"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>

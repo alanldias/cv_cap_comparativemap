@@ -388,6 +388,15 @@ async function fetchSupplierBids(docId, headersCommon) {
       if (!targetRow) continue
 
       const byId = byFieldId(targetRow)
+      // Tenta pegar o LIFNR direto dos termos do Ariba (ajuste as chaves conforme seu template)
+      const lifnrTerm =
+        byId['LIFNR']?.value?.simpleValue ||
+        byId['VendorNumber']?.value?.simpleValue ||
+        byId['ERPVendor']?.value?.simpleValue ||
+        byId['ERPVENDOR']?.value?.simpleValue ||
+        byId['VENDOR']?.value?.simpleValue ||
+        byId['GITALIFNR']?.value?.simpleValue || // se vocês usaram extrinsic custom
+        null;
       const unit = moneyObj(byId['PRICE'])
       const qv = byId['QUANTITY']?.value?.quantityValue
       const ext = moneyObj(byId['EXTENDEDPRICE'])
@@ -419,6 +428,7 @@ async function fetchSupplierBids(docId, headersCommon) {
         unitOfMeasure: qv?.unitOfMeasureCode ?? null,
         price: unit.amount,
         currency: unit.currency,
+        lifnr: lifnrTerm ? String(lifnrTerm).padStart(10, '0') : null,
         ncm, mva,
         Extrinsic_Aliquota_ICMS: aliquotaICMS,
         Extrinsic_ICMS_Apurado: icmsApuradoAmount,
@@ -448,9 +458,6 @@ async function fetchSupplierBids(docId, headersCommon) {
 
 /**
  * 2) Identifiers → parentProjectId
- */
-/**
- * 2) Identifiers → parentProjectId (robusto)
  */
 async function fetchParentProjectId(docId, headersCommon) {
   // 1ª tentativa: /events/{docId}
@@ -534,7 +541,9 @@ async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   return toArr(data)
 }
 
-//
+/**
+ * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
+ */
 async function fetchSupplierInvitationById(docId, round, resourceId, headersCommon) {
   if (!resourceId) return null
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`

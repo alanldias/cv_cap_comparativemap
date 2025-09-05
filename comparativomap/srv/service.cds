@@ -43,9 +43,11 @@ service service {
     incoterms1             : String;
     incoterms2             : String;
     paymentTerms           : String;
+    fornecedor             : String(10);
+    moeda                  : String(3);
   };
 
-  type QuotesResponse : {
+  type QuotesResponse       : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
