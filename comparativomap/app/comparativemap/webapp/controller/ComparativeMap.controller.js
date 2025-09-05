@@ -31,6 +31,7 @@ sap.ui.define([
 
   return Controller.extend("comparativemap.comparativemap.controller.ComparativeMap", {
 
+
     /* =========================================================================
      * 1) HANDLERS PRINCIPAIS (públicos) — ciclo de vida, ações de dados e UI
      * ========================================================================= */
@@ -46,6 +47,14 @@ sap.ui.define([
         rows: []
       });
       this.getView().setModel(vm, "vm");
+
+      const qm = new sap.ui.model.json.JSONModel({
+        items: [],       // linhas selecionadas com campos qtySim / qtyAward
+        perKey: {},      // somatórios por itemKey (para premiação)
+        validAward: false,
+        _summaryText: ""
+      });
+      this.getView().setModel(qm, "qm");
 
       this._oFilterDialog = null;
       this._oSortDialog = null;
@@ -89,105 +98,324 @@ sap.ui.define([
         // Chama a function import que retorna um OBJETO (QuotesResponse)
         const oCtx = oOData.bindContext("/GetQuotes(...)");
         oCtx.setParameter("docId", docId);
+        console.log("[onBuscar] GetQuotes(docId) =", docId);
         await oCtx.execute();
 
-        // Em V4, para function import, pegue o objeto direto:
-        const res = await oCtx.getBoundContext().requestObject(); // { header, items }
+        const res = await oCtx.getBoundContext().requestObject();
+        console.log("[onBuscar] Retorno GetQuotes =", res);
+        try { console.log("[onBuscar] Retorno GetQuotes (JSON) =", JSON.stringify(res, null, 2)); } catch (e) { }
 
-        // Log pra conferir
-        console.log("GetQuotes ->", res);
-
-        // Preenche o VM exatamente com o shape retornado
         oVM.setProperty("/header", res?.header || {});
         oVM.setProperty("/rows", Array.isArray(res?.items) ? res.items : []);
-
-        // (opcional) se sua seção de topo usa uma tabela e espera um array:
         oVM.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-        // Atualiza a tabela (se for necessário)
-        oView.byId("tblDocs").getBinding("items")?.refresh(true);
+        console.log("[onBuscar] VM.header =", oVM.getProperty("/header"));
+        console.log("[onBuscar] VM.rows.length =", oVM.getProperty("/rows")?.length);
+
+        this.byId("tblDocs").getBinding("items")?.refresh(true);
 
         if (!res?.items?.length) sap.m.MessageToast.show("Nenhum item retornado para esse Doc ID.");
       } catch (e) {
-        console.error(e);
+        console.error("[onBuscar] ERRO:", e);
         sap.m.MessageBox.error("Falha ao buscar dados: " + (e.message || e));
       } finally {
         tbl.setBusy(false);
       }
     },
 
-    onHeaderSelect(e) {
-      const item = e.getParameter("listItem");
-      const ctx = item?.getBindingContext("vm");
-      const docId = ctx?.getProperty("docId");
-      this._filterItemsByDoc(docId);
-    },
 
     async onSimularCompra() {
       const oView = this.getView();
-      const oModel = oView.getModel();     // OData V4
       const oTbl = this.byId("tblDocs");
 
-      // 🔹 Coleta TODAS as linhas selecionadas do modelo "vm"
       const selCtx = oTbl.getSelectedContexts("vm") || [];
+      console.log("[onSimularCompra] selCtx.length =", selCtx.length);
+
       const selecionados = selCtx.map(c => c.getObject());
+      console.log("[onSimularCompra] selecionados =", selecionados);
+
       if (!selecionados.length) {
         MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
 
+      const items = selecionados.map((r, i) => {
+        const obj = {
+          id: i + 1,
+          itemKey: this._getItemKey(r),
+          supplierId: r.supplierId,
+          supplierName: r.supplierName,
+
+          // material/descrição
+          MaterialCode: r.MaterialCode || r.materialCode,
+          materialCode: r.MaterialCode || r.materialCode, // se você usa minúsculo em algum binding
+          description: r.itemDescription || r.materialDesc || r.itemDEscription,
+
+          // quantidades/preço/moeda
+          masterQty: Number(r.quantity) || 0,
+          supplierQty: Number(r.quantity) || 0,
+          qtySim: Number(r.quantity) || 0,
+          price: Number(r.price) || 0,
+          currency: r.currency,
+
+          // >>> CAMPOS QUE ESTÃO FALTANDO NA SIMULAÇÃO <<<
+          unitOfMeasure: r.unitOfMeasure || r.PO_UNIT || r.unidade || null,
+          PLANT: r.PLANT || r.centro || null,
+          TAX_CODE: r.TAX_CODE || r.iva || null,
+          ItemCategory: r.ItemCategory || r.itemCategory || null,
+          grupo_de_materias: r.grupo_de_materias || r.grupoMateriais || r.MaterialGroup || null,
+          PREQ_NO: r.PREQ_NO || null,
+          PREQ_ITEM: r.PREQ_ITEM || null,
+
+          // identificação
+          docId: r.docId,
+          lineNumber: r.lineNumber,
+
+          // mantenha o bruto se quiser
+          raw: r
+        };
+        console.log("[onSimularCompra] item QM =", obj);
+        return obj;
+      });
+
+      const qm = oView.getModel("qm");
+      qm.setProperty("/items", items);
+      qm.setProperty("/perKey", {});
+      qm.setProperty("/validAward", false);
+      qm.setProperty("/_summaryText", "");
+
+      try { console.log("[onSimularCompra] QM JSON =", qm.getJSON ? qm.getJSON() : JSON.stringify(qm.getProperty("/"), null, 2)); } catch (e) { }
+
+      await this._openDlgSimQty();
+    }
+    ,
+
+    // === CHAVE DO "TIPO DE ITEM" (ajuste se for outra combinação, ex.: Material+Centro)
+    _getItemKey(row) {
+      return String(row.MaterialCode || row.materialCode || row.ItemId || "");
+    },
+
+    /* ===================== DIÁLOGO: FRACIONAR SIMULAÇÃO (qtySim) ===================== */
+    _openDlgSimQty: function () {
+      const oView = this.getView();
+      if (!this._dlgSim) {
+        // Fragment XML: comparativemap/comparativemap/view/fragments/FracionarSimulacao.fragment.xml
+        // (campos: supplierName, materialCode, description, masterQty, supplierQty, Input qtySim)
+        this._dlgSim = sap.ui.xmlfragment(oView.getId(),
+          "comparativemap.comparativemap.view.fragments.FracionarSimulacao", this);
+        oView.addDependent(this._dlgSim);
+      }
+      this._dlgSim.open();
+    },
+
+    onCloseDialog: function (oEvent) {
+      oEvent.getSource().getParent().close();
+    },
+
+    onSimQtyChange: function (oEvent) {
+      const input = oEvent.getSource();
+      const ctx = input.getBindingContext("qm");
+      const obj = ctx.getObject();
+
+      let v = Number(input.getValue());
+      if (isNaN(v) || v < 0) v = 0;
+      if (v > obj.supplierQty) v = obj.supplierQty;
+      v = Math.floor(v);
+      input.setValue(String(v));
+    },
+
+    /* ===================== DIÁLOGO: RESULTADO DA SIMULAÇÃO ===================== */
+    _openResultDialog: function (result) {
+      const oView = this.getView();
+      // result: espere algo como { rows: [{supplierName, materialCode, quantity, price, currency, impostos...}] }
+      const resModel = new sap.ui.model.json.JSONModel({ rows: result.rows || [] });
+      oView.setModel(resModel, "res");
+
+      if (!this._dlgRes) {
+        // Fragment XML: comparativemap/comparativemap/view/fragments/ResultadoSimulacao.fragment.xml
+        // (tabela simples, mode="MultiSelect", botão "Premiar Fornecedores" -> onOpenAwardDialog)
+        this._dlgRes = sap.ui.xmlfragment(oView.getId(),
+          "comparativemap.comparativemap.view.fragments.ResultadoSimulacao", this);
+        oView.addDependent(this._dlgRes);
+      }
+      this._dlgRes.open();
+    },
+
+    /* ===================== DIÁLOGO: PREMIAÇÃO (qtyAward, deve fechar mestre) ===================== */
+    onOpenAwardDialog: function () {
+      // pega só os itens selecionados no resultado
+      const tbl = this._dlgRes?.getContent()[0]; // primeira Table do fragment Resultado
+      const selected = tbl?.getSelectedContexts("res").map(c => c.getObject()) || [];
+      if (!selected.length) {
+        sap.m.MessageToast.show("Selecione ao menos um item simulado para premiar.");
+        return;
+      }
+
+      // agrupa por itemKey e prepara somatórios
+      const byKey = {};
+      const items = [];
+      const perKey = {};
+      selected.forEach((r) => {
+        const key = this._getItemKey(r);
+        (byKey[key] ||= []).push(r);
+      });
+
+      Object.entries(byKey).forEach(([key, arr]) => {
+        // masterQty deve vir do dado original (Ariba). Se no result já veio, use r.masterQty.
+        const masterQty = Number(arr[0].masterQty ?? arr[0].quantity ?? 0);
+        perKey[key] = { masterQty, currentSum: 0, remaining: masterQty };
+        arr.forEach((r) => {
+          items.push({
+            id: items.length + 1,
+            itemKey: key,
+            supplierId: r.supplierId,
+            supplierName: r.supplierName,
+            materialCode: r.materialCode,
+            description: r.description || r.itemDescription || "",
+            masterQty,
+            supplierQty: Number(r.supplierQty ?? r.quantity ?? masterQty), // limite por fornecedor
+            qtyAward: 0,
+            currency: r.currency,
+            price: Number(r.price || 0),
+            raw: r
+          });
+        });
+      });
+
+      const qm = this.getView().getModel("qm");
+      qm.setProperty("/items", items);
+      qm.setProperty("/perKey", perKey);
+      this._recalcAwardSummary();
+
+      const oView = this.getView();
+      if (!this._dlgAward) {
+        // Fragment XML: comparativemap/comparativemap/view/fragments/PremiarQuantidade.fragment.xml
+        // (tabela com Input qtyAward, barra de resumo e botão "Premiar" enabled="{qm>/validAward}")
+        this._dlgAward = sap.ui.xmlfragment(oView.getId(),
+          "comparativemap.comparativemap.view.fragments.PremiarQuantidade", this);
+        oView.addDependent(this._dlgAward);
+      }
+      this._dlgAward.open();
+    },
+
+    _recalcAwardSummary: function () {
+      const qm = this.getView().getModel("qm");
+      const items = qm.getProperty("/items") || [];
+      const perKey = qm.getProperty("/perKey") || {};
+
+      // zera somas
+      Object.keys(perKey).forEach(k => { perKey[k].currentSum = 0; perKey[k].remaining = perKey[k].masterQty; });
+
+      for (const it of items) {
+        const k = it.itemKey;
+        const v = Number(it.qtyAward) || 0;
+        perKey[k].currentSum += v;
+        perKey[k].remaining = perKey[k].masterQty - perKey[k].currentSum;
+      }
+
+      const parts = Object.entries(perKey).map(([k, v]) => `${k}: restante ${v.remaining}`);
+      qm.setProperty("/_summaryText", parts.join(" | "));
+
+      // válido somente se todos remaining === 0 e nenhuma qty > supplierQty ou < 0
+      let valid = true;
+      for (const [k, v] of Object.entries(perKey)) {
+        if (v.remaining !== 0) { valid = false; break; }
+      }
+      for (const it of items) {
+        const q = Number(it.qtyAward) || 0;
+        if (q < 0 || q > (Number(it.supplierQty) || 0)) { valid = false; break; }
+      }
+      qm.setProperty("/validAward", valid);
+    },
+
+    onAwardQtyChange: function (oEvent) {
+      const input = oEvent.getSource();
+      const ctx = input.getBindingContext("qm");
+      const obj = ctx.getObject();
+
+      let v = Number(input.getValue());
+      if (isNaN(v) || v < 0) v = 0;
+      if (v > obj.supplierQty) v = obj.supplierQty;
+      v = Math.floor(v);
+      input.setValue(String(v));
+
+      this._recalcAwardSummary();
+    },
+
+    onConfirmSimulate: async function () {
+      const oView = this.getView();
+      const oModel = oView.getModel();
+      const qm = oView.getModel("qm");
+      const vm = oView.getModel("vm");
+
+      const itemsQM = qm.getProperty("/items") || [];
+      console.log("[onConfirmSimulate] QM.items (bruto) =", itemsQM);
+
+      // 1) HEADER (raw)
+      const rawHeader = vm.getProperty("/header") || {};
+      console.log("[onConfirmSimulate] HEADER (raw) =", rawHeader);
+
+      // 2) ITEMS (payload) — primeiro declare o payload
+      const payload = itemsQM
+        .filter(it => Number(it.qtySim) > 0)
+        .map(it => ({
+          MaterialCode: it.MaterialCode ?? it.materialCode ?? null,
+          itemDescription: it.itemDescription ?? it.description ?? it.materialDesc ?? it.itemDEscription ?? null,
+          quantity: Number(it.qtySim),
+          unitOfMeasure: it.unitOfMeasure ?? it.PO_UNIT ?? it.unidade ?? null,
+          price: Number(it.price) || 0,
+          currency: it.currency ?? null,
+          PLANT: it.PLANT ?? it.plant ?? it.centro ?? null,
+          TAX_CODE: it.TAX_CODE ?? it.iva ?? null,
+          ItemCategory: it.ItemCategory ?? it.itemCategory ?? null,
+          grupo_de_materias: it.grupo_de_materias ?? it.grupoMateriais ?? it.MaterialGroup ?? null,
+          lifnr: '100573116',// it.lifnr ?? it.supplierId ?? it.VENDOR ?? 3,
+          PREQ_NO: it.PREQ_NO ?? null,
+          PREQ_ITEM: it.PREQ_ITEM ?? null
+        }));
+
+      // 3) Derive moeda sem acessar variável antes de declarar
+      const firstCurrency = payload.length ? payload[0].currency : null;
+
+      // 4) HEADER (sanitizado)
+      const header = {
+        docId: rawHeader.docId ?? null,
+        tipoPedido: rawHeader.tipoPedido ?? null,
+        purchasingOrganization: rawHeader.purchasingOrganization ?? null,
+        purchasingGroup: rawHeader.purchasingGroup ?? null,
+        companyCode: rawHeader.companyCode ?? null,
+        incoterms1: rawHeader.incoterms1 ?? null,
+        incoterms2: rawHeader.incoterms2 ?? null,
+        paymentTerms: rawHeader.paymentTerms ?? null,
+        fornecedor: rawHeader.fornecedor ?? null,
+        moeda: rawHeader.moeda ?? firstCurrency
+      };
+      console.log("[onConfirmSimulate] HEADER (sanitizado) =", header);
+
+      console.log("[onConfirmSimulate] ITEMS pronto p/ enviar =", payload);
+
+      if (!payload.length) {
+        sap.m.MessageToast.show("Informe quantidades maiores que zero para simular.");
+        return;
+      }
+
       sap.ui.core.BusyIndicator.show(0);
       try {
-        // Helper: executa a operação para UMA linha selecionada
-        const runOne = async (row) => {
-          const { docId, lineNumber, supplierId } = row;
-          if (!docId) throw new Error("Linha sem Doc ID.");
+        const ctx = oModel.bindContext("/SimulateBapiPoCreate(...)");
+        ctx.setParameter("header", header);
+        ctx.setParameter("items", payload);
 
-          const ctx = oModel.bindContext("/GetQuotes(...)");
-          ctx.setParameter("docId", docId);
+        console.log("[onConfirmSimulate] Executando action /SimulateBapiPoCreate...");
+        await ctx.execute();
 
-          // Se a operation aceitar, enviamos parâmetros de item
-          if (lineNumber != null) ctx.setParameter("lineNumber", lineNumber);
-          if (supplierId) ctx.setParameter("supplierId", supplierId);
+        const result = await ctx.getBoundContext().requestObject();
+        console.log("[onConfirmSimulate] RESULTADO =", result);
 
-          await ctx.execute();
-
-          // Normaliza retorno
-          let data = ctx.getBoundContext().getObject();
-          let arr = Array.isArray(data) ? data : (data?.value || (data ? [data] : []));
-
-          // Filtro no cliente para manter APENAS o item daquela linha
-          arr = arr.filter(it =>
-            it.docId === docId &&
-            (lineNumber == null || it.lineNumber === lineNumber) &&
-            (!supplierId || it.supplierId === supplierId)
-          );
-
-          // Marcas auxiliares p/ exibir no fragment
-          return arr.map(it => ({
-            __docId: docId,
-            __lineNumber: lineNumber,
-            __supplierId: supplierId,
-            ...it
-          }));
-        };
-
-        // Executa todas as simulações em paralelo
-        const settled = await Promise.allSettled(selecionados.map(runOne));
-        const okRows = settled.filter(s => s.status === "fulfilled").flatMap(s => s.value);
-        const fails = settled.filter(s => s.status === "rejected");
-
-        if (!okRows.length) throw new Error("Nenhum resultado retornado para as seleções.");
-
-        const docIds = [...new Set(selecionados.map(r => r.docId).filter(Boolean))];
-        await this._openSimFragment(okRows, docIds);
-
-        if (fails.length) {
-          MessageToast.show(`${fails.length} item(ns) falharam na simulação.`);
-        }
+        await this._openResultDialog(result);
+        this._dlgSim?.close();
       } catch (e) {
-        const msg = e?.message || e?.cause?.message || e?.cause?.error?.message || String(e);
-        MessageBox.error("Falha ao simular: " + msg);
+        console.error("[onConfirmSimulate] ERRO:", e, e?.message, e?.response);
+        sap.m.MessageBox.error("Falha na simulação: " + (e.message || e));
       } finally {
         sap.ui.core.BusyIndicator.hide();
       }

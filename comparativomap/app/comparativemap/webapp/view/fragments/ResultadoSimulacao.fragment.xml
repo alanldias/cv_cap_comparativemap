@@ -1,0 +1,35 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
+  <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="1000px" draggable="true" resizable="true">
+    <Table items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect">
+      <columns>
+        <Column width="12rem"><header><Text text="Fornecedor"/></header></Column>
+        <Column width="10rem"><header><Text text="Item"/></header></Column>
+        <Column width="6rem" hAlign="End"><header><Text text="Qtd"/></header></Column>
+        <Column width="8rem" hAlign="End"><header><Text text="Preço"/></header></Column>
+        <Column width="8rem" hAlign="End"><header><Text text="ICMS"/></header></Column>
+        <Column width="8rem" hAlign="End"><header><Text text="IPI"/></header></Column>
+        <Column width="8rem" hAlign="End"><header><Text text="Total"/></header></Column>
+      </columns>
+      <items>
+        <ColumnListItem>
+          <cells>
+            <Text text="{res>supplierName}"/>
+            <Text text="{res>materialCode}"/>
+            <ObjectNumber number="{res>quantity}"/>
+            <ObjectNumber number="{res>price}" unit="{res>currency}"/>
+            <ObjectNumber number="{res>icms}"/>
+            <ObjectNumber number="{res>ipi}"/>
+            <ObjectNumber number="{res>total}" unit="{res>currency}"/>
+          </cells>
+        </ColumnListItem>
+      </items>
+    </Table>
+
+    <beginButton>
+      <Button text="Premiar Fornecedores" type="Emphasized" press=".onOpenAwardDialog"/>
+    </beginButton>
+    <endButton>
+      <Button text="Fechar" press=".onCloseDialog"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>
