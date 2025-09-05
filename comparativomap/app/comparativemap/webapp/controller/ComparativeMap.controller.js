@@ -187,8 +187,7 @@ sap.ui.define([
       try { console.log("[onSimularCompra] QM JSON =", qm.getJSON ? qm.getJSON() : JSON.stringify(qm.getProperty("/"), null, 2)); } catch (e) { }
 
       await this._openDlgSimQty();
-    }
-    ,
+    },
 
     // === CHAVE DO "TIPO DE ITEM" (ajuste se for outra combinação, ex.: Material+Centro)
     _getItemKey(row) {
@@ -784,7 +783,271 @@ sap.ui.define([
 
       this._oSimDialog.setModel(oSimModel, "sim");
       this._oSimDialog.open();
-    }
+    },
+
+
+    onSimularPress: async function () {
+      const oView = this.getView();
+      const oOData = oView.getModel();
+      const vm = oView.getModel("vm");
+
+      console.groupCollapsed("[SIMULAR] clique");
+      try {
+        // Header (aceita /headerRows como objeto ou array; senão /header)
+        let hCand = vm.getProperty("/headerRows");
+        if (Array.isArray(hCand)) hCand = hCand[0] || {};
+        if (!hCand || !Object.keys(hCand).length) hCand = vm.getProperty("/header") || {};
+        this._dbg("Header bruto (cand)", hCand);
+
+        // Linhas selecionadas
+        const oTbl = this.byId("tblDocs");
+        if (!oTbl) throw new Error("Tabela 'tblDocs' não encontrada.");
+        const aCtx = oTbl.getSelectedContexts("vm");
+        if (!aCtx.length) throw new Error("Selecione pelo menos 1 item para simular.");
+        const rows = aCtx.map(c => c.getObject());
+        this._dbg(`Linhas selecionadas (count=${rows.length})`, rows);
+
+        // Header normalizado (com fallback usando 1ª linha)
+        const header = this._mapHeaderFromAriba(hCand, rows[0]);
+        this._dbg("Header normalizado", header);
+
+        // Itens normalizados
+        const items = rows.map((r, idx) => {
+          const it = this._mapRowToPOItem(r, idx);
+          this._tapWarnsItem(it, r, idx);
+          return it;
+        });
+        console.table(items);
+
+        // Schedules
+        const schedules = items.map(it => ({
+          poItem: it.poItem,
+          schedLine: 1,
+          deliveryDate: this._toEdmDate(new Date()),
+          quantity: it.quantity
+        }));
+        console.table(schedules);
+
+        // ===== Validação antes de chamar o backend =====
+        const missing = [];
+        if (!header.docType) missing.push("Tipo de Pedido (docType)");
+        if (!header.compCode) missing.push("Empresa (compCode)");
+        if (!header.purchOrg) missing.push("Org. de Compras (purchOrg)");
+        if (!header.purchGroup) missing.push("Grupo de Compras (purchGroup)");
+        if (!header.vendor || /^0+$/.test(header.vendor)) missing.push("Fornecedor (vendor/LIFNR)");
+        if (!header.currency) missing.push("Moeda (currency)");
+
+        const missingItems = [];
+        items.forEach((it, i) => {
+          const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
+          if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
+          if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
+          if (!it.quantity || Number(it.quantity) <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
+          if (!it.material && !it.shortText) missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
+        });
+
+        if (missing.length || missingItems.length) {
+          const msg = [
+            missing.length ? "Cabeçalho faltando:\n- " + missing.join("\n- ") : "",
+            missingItems.length ? "Itens faltando:\n- " + missingItems.join("\n- ") : ""
+          ].filter(Boolean).join("\n\n");
+          throw new Error(msg);
+        }
+        // ===============================================
+
+        const payload = { header, items, schedules, testRun: true };
+        this._dbg("Payload final (simularPO)", payload);
+
+        // Chamada OData V4
+        const oCtx = oOData.bindContext("/simularPO(...)");
+        oCtx.setParameter("header", header);
+        oCtx.setParameter("items", items);
+        oCtx.setParameter("schedules", schedules);
+        oCtx.setParameter("testRun", true);
+
+        this._dbg("→ Executando oCtx.execute()", { path: "/simularPO(...)" });
+        await oCtx.execute();
+
+        const result = oCtx.getBoundContext().getObject();
+        this._dbg("Resultado da action", result);
+        console.groupEnd();
+        this._showBapiMessages(result.returnMessages);
+
+      } catch (err) {
+        console.error("[SIMULAR] ERRO:", err);
+        console.groupEnd();
+        sap.m.MessageBox.error(err.message || String(err));
+      }
+    },
+
+
+    /* ================= Helpers de mapeamento ================= */
+
+    _toEdmDate: function (d) {
+      // Usa DATA LOCAL (não UTC) para evitar “virada do dia” por fuso
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`; // Edm.Date esperado pelo OData V4
+    },
+
+    _normalizeDate: function (val) {
+      // Aceita Date, 'YYYY-MM-DD', 'YYYYMMDD' ou ISO '2025-09-05T...'
+      if (!val) return null;
+      if (val instanceof Date) return this._toEdmDate(val);
+
+      const s = String(val).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;                     // 'YYYY-MM-DD'
+      if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`; // 'YYYYMMDD'
+
+      const d = new Date(s);
+      if (!isNaN(d)) return this._toEdmDate(d);
+
+      throw new Error(`Data inválida: ${val}`);
+    },
+
+    _mapHeaderFromAriba: function (h, firstRow) {
+      // Fallbacks úteis
+      const currency = (h.moeda || firstRow?.currency || "").toString().toUpperCase().slice(0, 3);
+
+      return {
+        docType: (h.tipoPedido || "NB").toString().toUpperCase().slice(0, 4),
+        compCode: (h.companyCode || "").toString().slice(0, 4),
+        purchOrg: (h.purchasingOrganization || "").toString().slice(0, 4),
+        purchGroup: (h.purchasingGroup || "").toString().slice(0, 3),
+        vendor: this._zpad(h.fornecedor || "", 10),
+        currency,
+        incoterms1: (h.incoterms1 || "").toString().toUpperCase().slice(0, 3),
+        incoterms2: (h.incoterms2 || "").toString().slice(0, 28)
+      };
+    },
+
+
+    _mapRowToPOItem: function (r, idx) {
+      const poItem = (idx + 1) * 10;
+
+      const matRaw = (r.MaterialCode || "").toString().trim();
+      const material = /^\d+$/.test(matRaw) ? this._zpad(matRaw, 18) : "";
+
+      // Tenta vários nomes de descrição que podem vir do Ariba
+      const desc = (r.itemDEscription || r.itemDescription || r.description || r.nomeItem || r.ItemDescription || "").toString();
+      const shortText = material ? "" : desc.slice(0, 40);
+
+      const unit = this._mapUoM((r.unitOfMeasure || "").toString().toUpperCase());
+      const plant = this._mapPlant((r.PLANT || "").toString());
+
+      const itemCat = this._mapItemCategory((r.ItemCategory || "").toString());
+      const taxCode = (r.TAX_CODE || "").toString().trim().toUpperCase().slice(0, 2);
+      const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
+      const netPrice = (r.price != null) ? Number(r.price) : null;
+      const preqNo = /^\d+$/.test(String(r.ItemId || "")) ? String(r.ItemId).slice(0, 10) : undefined;
+
+      return { poItem, plant, material, shortText, quantity: Number(r.quantity || 0), unit, taxCode, netPrice, itemCat, matlGroup, preqNo };
+    },
+
+    _mapUoM: function (u) {
+      // mapeio simples — ajuste com sua tabela de unidades
+      const map = {
+        "UN": "PC",   // unidade → peça
+        "PC": "PC",
+        "PÇ": "PC",
+        "KG": "KG",
+        "G": "G",
+        "L": "L",
+        "M": "M",
+        "CX": "CX"
+      };
+      return map[u] || u.slice(0, 3);
+    },
+
+    _mapPlant: function (p) {
+      // Se o PLANT vier como "BR01 - Matriz", pegue o código à esquerda.
+      // Ajuste conforme seu padrão de dados do Ariba.
+      const code = p.split(/[ -]/)[0].trim();
+      return code.slice(0, 4);
+    },
+
+    _mapItemCategory: function (ext) {
+      // Ariba costuma expor letras externas (quando houver). BAPI precisa do símbolo interno:
+      // Standard: '0' (ou espaço)
+      // Subcontracting: '3' (externo 'L')
+      // Third-Party:    '5' (externo 'S')
+      // Enhanced Limits: 'A' (externo 'E')
+      // Consignment:     '2' (externo 'K')
+      const x = ext.trim().toUpperCase();
+      const dict = { "L": "3", "S": "5", "E": "A", "K": "2", "": "0", "STD": "0", "STANDARD": "0" };
+      return dict[x] || "0";
+    },
+
+    _zpad: function (val, len) {
+      const s = String(val || "");
+      return s.length >= len ? s : "0".repeat(len - s.length) + s;
+    },
+
+    _showBapiMessages: function (aMsg) {
+      if (!Array.isArray(aMsg) || aMsg.length === 0) {
+        sap.m.MessageToast.show("Sem mensagens retornadas pela BAPI.");
+        return;
+      }
+      // Exemplo simples: concatena e mostra
+      const txt = aMsg.map(m => `[${m.type}] ${m.message}`).join("\n");
+      sap.m.MessageBox.information(txt, { title: "BAPI RETURN" });
+    },
+
+
+    _dbg: function (title, obj) {
+      // Log “bonitinho”, sem funções/loops infinitos
+      try {
+        console.groupCollapsed("🔎 " + title);
+        console.log(this._safe(obj));
+        console.groupEnd();
+      } catch (e) {
+        console.log(title, obj);
+      }
+    },
+
+    _safe: function (obj) {
+      // Remove funções/referências circulares para JSON.stringify
+      const cache = new Set();
+      const out = JSON.parse(JSON.stringify(obj, (k, v) => {
+        if (typeof v === "function") return undefined;
+        if (typeof v === "object" && v !== null) {
+          if (cache.has(v)) return undefined;
+          cache.add(v);
+        }
+        return v;
+      }));
+      cache.clear();
+      return out;
+    },
+
+    _tapWarnsItem: function (it, raw, idx) {
+      const tag = `[ITEM ${String((idx + 1) * 10).padStart(5, '0')}]`;
+      if (!it.material && !it.shortText) {
+        console.warn(tag, "Sem MATERIAL e sem SHORT_TEXT — BAPI vai recusar.");
+      }
+      if (!it.plant) {
+        console.warn(tag, "PLANT vazio — obrigatório.");
+      }
+      if (!it.unit) {
+        console.warn(tag, "PO_UNIT vazio — obrigatório.");
+      }
+      if (!it.quantity || Number(it.quantity) <= 0) {
+        console.warn(tag, "QUANTITY inválida — obrigatório > 0.");
+      }
+      if (raw && raw.unitOfMeasure && it.unit === raw.unitOfMeasure.slice(0, 3).toUpperCase()) {
+        // nada mapeado (queda no default), só informe
+        console.info(tag, `UoM mapeada como '${it.unit}' a partir de '${raw.unitOfMeasure}'.`);
+      }
+      if (raw && raw.ItemCategory) {
+        console.info(tag, `ItemCategory origem='${raw.ItemCategory}' → interno='${it.itemCat}'`);
+      }
+      if (raw && raw.TAX_CODE && raw.TAX_CODE.length > 2) {
+        console.info(tag, `TAX_CODE origem '${raw.TAX_CODE}' → cortado p/ '${it.taxCode}' (2 chars).`);
+      }
+    },
+
+
 
   });
 });
