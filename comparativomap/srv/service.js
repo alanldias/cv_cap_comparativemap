@@ -414,7 +414,7 @@ async function fetchSupplierBids(docId, headersCommon) {
       const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
       const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
       const origemMaterial = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
-
+      const codigoRequisicao = byId['RequisitionId']?.value?.simpleValue ?? null
       const plant = byId['Plant']?.value?.simpleValue ?? null
       const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
@@ -441,6 +441,7 @@ async function fetchSupplierBids(docId, headersCommon) {
         Extrinsic_Aliquota_ICMS_Interna: aliquotaICMSInterna,
         Extrinsic_Origem_do_Material: origemMaterial,
         EXTENDEDPRICE: ext.amount,
+        CodigoRequisicao: codigoRequisicao,
         PLANT: plant,
         ItemCategory: itemCategory,
         TAX_CODE: taxCode,

@@ -149,10 +149,10 @@
                                     <Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}                   || '0.00'}" wrapping="true" maxLines="2" />
                                     <Text id="cellCentro"         text="{= ${vm>PLANT}                           || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>PLANT}"/>
                                     <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                    || '-'}"    wrapping="true" maxLines="2" />
-                                    <Text id="cellReq"            text="{= ${vm>requisicaoCodigo}                || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || '-'}"    wrapping="true" maxLines="2" />
                                     <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/>
                                     <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/>
-                                    <Text id="cellIva"            text="{= ${vm>iva}                             || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>iva}"/>
+                                    <Text id="cellIva"            text="{= ${vm>TAX_CODE}                             || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/>
                                 </cells>
                             </ColumnListItem>
                         </items>
