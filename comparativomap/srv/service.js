@@ -14,8 +14,8 @@ const { getAccessToken } = require('../srv/auth/aribaOauth')
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
-const EVENTS_DEST     = process.env.ARIBA_DEST_EVENTS   || 'ARIBA_Event_Management_Test'
-const PROJECTS_DEST   = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Project_Management_Test'
+const EVENTS_DEST = process.env.ARIBA_DEST_EVENTS || 'ARIBA_Event_Management_Test'
+const PROJECTS_DEST = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Project_Management_Test'
 
 // ==================== ENV VARS (fallback .env) ====================
 const {
@@ -44,7 +44,7 @@ const {
 } = process.env
 
 // ==================== HELPER: GET via Destination ====================
-async function destGet (destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
   const destination = await getDestination({ destinationName: destName })
   const reqCfg = await addDestinationToRequestConfig(
     { method: 'get', url: relativePath, params, headers, timeout: timeoutMs },
@@ -58,7 +58,7 @@ async function destGet (destName, relativePath, { params = {}, headers = {}, tim
 // cache simples de token (fallback .env; não usado quando USE_DESTINATION=true)
 let _pmOauthCache = { token: null, exp: 0 }
 
-async function getPmAccessToken () {
+async function getPmAccessToken() {
   if (USE_DESTINATION) throw new Error('getPmAccessToken não deve ser usado com Destination')
   const now = Date.now()
   if (_pmOauthCache.token && now < _pmOauthCache.exp - 60_000) return _pmOauthCache.token
@@ -72,11 +72,11 @@ async function getPmAccessToken () {
     { headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
   )
   _pmOauthCache.token = data.access_token
-  _pmOauthCache.exp   = now + (data.expires_in ?? 3600) * 1000
+  _pmOauthCache.exp = now + (data.expires_in ?? 3600) * 1000
   return _pmOauthCache.token
 }
 
-async function aribaPmGet (path, params = {}) {
+async function aribaPmGet(path, params = {}) {
   if (USE_DESTINATION) {
     // IMPORTANTE: repassar params para a Destination
     return await destGet(PROJECTS_DEST, path, {
@@ -108,9 +108,9 @@ async function aribaPmGet (path, params = {}) {
 
 // ==================== MAPEAMENTO HEADER PM ====================
 const firstToken = (s) => (s || '').trim().split(' ')[0] || null
-const cut        = (s, n) => (s || '').substring(0, n) || null
+const cut = (s, n) => (s || '').substring(0, n) || null
 
-function getCustomField (p, fieldId) {
+function getCustomField(p, fieldId) {
   const pools = [
     p?.externalFields,
     p?.sourcingProjectCustomFields,
@@ -123,20 +123,20 @@ function getCustomField (p, fieldId) {
     const f = (arr || []).find(x => x.fieldId === fieldId)
     if (!f) continue
     if (Array.isArray(f.flexMasterDataTypeValue)) return f.flexMasterDataTypeValue[0]
-    if (Array.isArray(f.textValue))               return f.textValue[0]
-    if (Array.isArray(f.values) && f.values[0])   return f.values[0].value || f.values[0].name
-    if ('booleanValue' in f)                      return String(f.booleanValue)
-    if ('numberValue'  in f)                      return String(f.numberValue)
-    if ('value'        in f)                      return f.value
+    if (Array.isArray(f.textValue)) return f.textValue[0]
+    if (Array.isArray(f.values) && f.values[0]) return f.values[0].value || f.values[0].name
+    if ('booleanValue' in f) return String(f.booleanValue)
+    if ('numberValue' in f) return String(f.numberValue)
+    if ('value' in f) return f.value
   }
   return null
 }
 
-function mapAribaHeader (p) {
+function mapAribaHeader(p) {
   const bs = p?.businessSystem || {}
-  const docCat   = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null
-  const purOrg   = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null
-  const purGrp   = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null
+  const docCat = bs?.documentCategory?.[0]?.value || bs?.documentCategory?.[0]?.key || null
+  const purOrg = bs?.purchasingOrganization?.[0]?.value || bs?.purchasingOrganization?.[0]?.key || null
+  const purGrp = bs?.purchasingGroup?.[0]?.value || bs?.purchasingGroup?.[0]?.key || null
   const compCode = bs?.companyCode?.[0]?.value || bs?.companyCode?.[0]?.key || null
 
   const inc1 = getCustomField(p, 'cus_wsincoterms') || getCustomField(p, 'cus_wsIncoterms')
@@ -144,17 +144,17 @@ function mapAribaHeader (p) {
   const payt = getCustomField(p, 'arb_PaymentTerms')
 
   return {
-    tipoPedido            : docCat,
+    tipoPedido: docCat,
     purchasingOrganization: cut(firstToken(purOrg), 4),
-    purchasingGroup       : cut(firstToken(purGrp), 3),
-    companyCode           : cut(firstToken(compCode), 4),
-    incoterms1            : inc1,
-    incoterms2            : inc2,
-    paymentTerms          : payt || null
+    purchasingGroup: cut(firstToken(purGrp), 3),
+    companyCode: cut(firstToken(compCode), 4),
+    incoterms1: inc1,
+    incoterms2: inc2,
+    paymentTerms: payt || null
   }
 }
 
-async function fetchAribaHeader (projectId) {
+async function fetchAribaHeader(projectId) {
   const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
     // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
     realm: ARIBA_REALM,
@@ -181,7 +181,7 @@ const moneyObj = (term) => {
 }
 
 // fallback de nome genérico
-function pickSupplierNameFromRows (rows) {
+function pickSupplierNameFromRows(rows) {
   if (!Array.isArray(rows)) return null
   const hit = rows.find(r =>
     r?.organization?.name ||
@@ -198,7 +198,7 @@ function pickSupplierNameFromRows (rows) {
 }
 
 // fallback de nome por invitationId específico
-function pickSupplierNameByInvitation (rows, invId) {
+function pickSupplierNameByInvitation(rows, invId) {
   const hit = rows.find(r => String(r?.invitationId) === String(invId))
   if (!hit) return null
   return (
@@ -219,7 +219,7 @@ function pickSupplierNameByInvitation (rows, invId) {
  *    - Retorna:
  *        { rows, results: [ { mappedFields..., _invitationId, _itemId } ] }
  */
-async function fetchSupplierBids (docId, headersCommon) {
+async function fetchSupplierBids(docId, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/supplierBids`
   let data
   if (USE_DESTINATION) {
@@ -255,29 +255,38 @@ async function fetchSupplierBids (docId, headersCommon) {
       if (!targetRow) continue
 
       const byId = byFieldId(targetRow)
+      // Tenta pegar o LIFNR direto dos termos do Ariba (ajuste as chaves conforme seu template)
+      const lifnrTerm =
+        byId['LIFNR']?.value?.simpleValue ||
+        byId['VendorNumber']?.value?.simpleValue ||
+        byId['ERPVendor']?.value?.simpleValue ||
+        byId['ERPVENDOR']?.value?.simpleValue ||
+        byId['VENDOR']?.value?.simpleValue ||
+        byId['GITALIFNR']?.value?.simpleValue || // se vocês usaram extrinsic custom
+        null;
       const unit = moneyObj(byId['PRICE'])
-      const qv   = byId['QUANTITY']?.value?.quantityValue
-      const ext  = moneyObj(byId['EXTENDEDPRICE'])
+      const qv = byId['QUANTITY']?.value?.quantityValue
+      const ext = moneyObj(byId['EXTENDEDPRICE'])
 
-      const ncm  = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
-      const mva  = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
+      const ncm = byId['GITASHORTSTRINGIFZ000050']?.value?.simpleValue ?? null
+      const mva = byId['GITABIGDECIFZ000003']?.value?.bigDecimalValue ?? null
 
-      const aliquotaICMS        = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
-      const icmsApuradoAmount   = moneyObj(byId['GITAMONEYIFZ000046']).amount
-      const aliquotaIPI         = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
-      const ipiApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000047']).amount
-      const aliquotaPIS         = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
-      const pisApuradoAmount    = moneyObj(byId['GITAMONEYIFZ000048']).amount
-      const aliquotaCOFINS      = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
+      const aliquotaICMS = byId['GITABIGDECIFZ000004']?.value?.bigDecimalValue ?? null
+      const icmsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000046']).amount
+      const aliquotaIPI = byId['GITABIGDECIFZ000005']?.value?.bigDecimalValue ?? null
+      const ipiApuradoAmount = moneyObj(byId['GITAMONEYIFZ000047']).amount
+      const aliquotaPIS = byId['GITABIGDECIFZ000029']?.value?.bigDecimalValue ?? null
+      const pisApuradoAmount = moneyObj(byId['GITAMONEYIFZ000048']).amount
+      const aliquotaCOFINS = byId['GITABIGDECIFZ000028']?.value?.bigDecimalValue ?? null
       const cofinsApuradoAmount = moneyObj(byId['GITAMONEYIFZ000049']).amount
       const aliquotaICMSInterna = byId['GITABIGDECIFZ000006']?.value?.bigDecimalValue ?? null
-      const origemMaterial      = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
+      const origemMaterial = byId['GITASHORTSTRINGIFZ000153']?.value?.simpleValue ?? null
 
-      const plant         = byId['Plant']?.value?.simpleValue ?? null
-      const itemCategory  = byId['ItemCategory']?.value?.simpleValue ?? null
+      const plant = byId['Plant']?.value?.simpleValue ?? null
+      const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-      const taxCode       = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
-      const materialCode  = byId['MaterialCode']?.value?.simpleValue ?? null
+      const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
       const mapped = {
         ItemId: itemId,
@@ -286,6 +295,7 @@ async function fetchSupplierBids (docId, headersCommon) {
         unitOfMeasure: qv?.unitOfMeasureCode ?? null,
         price: unit.amount,
         currency: unit.currency,
+        lifnr: lifnrTerm ? String(lifnrTerm).padStart(10, '0') : null,
         ncm, mva,
         Extrinsic_Aliquota_ICMS: aliquotaICMS,
         Extrinsic_ICMS_Apurado: icmsApuradoAmount,
@@ -316,7 +326,7 @@ async function fetchSupplierBids (docId, headersCommon) {
 /**
  * 2) Identifiers → parentProjectId
  */
-async function fetchParentProjectId (docId, headersCommon) {
+async function fetchParentProjectId(docId, headersCommon) {
   const path = `/events/identifiers`
   let data
   if (USE_DESTINATION) {
@@ -343,7 +353,7 @@ async function fetchParentProjectId (docId, headersCommon) {
 /**
  * 3) Lista de supplier invitations do round
  */
-async function fetchSupplierInvitationsList (docId, round, headersCommon) {
+async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
   let data
   if (USE_DESTINATION) {
@@ -363,7 +373,7 @@ async function fetchSupplierInvitationsList (docId, round, headersCommon) {
 /**
  * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
  */
-async function fetchSupplierInvitationById (docId, round, resourceId, headersCommon) {
+async function fetchSupplierInvitationById(docId, round, resourceId, headersCommon) {
   if (!resourceId) return null
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`
   let data
@@ -504,17 +514,64 @@ module.exports = function () {
     }
   })
 
-  this.on('simulateBapiPoCreate', async req => {
+  this.on('SimulateBapiPoCreate', async req => {
+    // Esses logs só aparecem se a validação do CAP deixar passar.
+    LOG.info("[SimulateBapiPoCreate] req.data =", JSON.stringify(req.data, null, 2));
+
     const { items = [], header = {} } = req.data ?? {};
-    try {
-      const resposta = await simularPO(items, header);
-      if (!resposta.success) {
-        const msg = resposta.messages?.map(m => m.text).join(' | ') || 'Falha na simulação';
-        req.error(400, msg, { details: resposta.messages });
-      }
-      return resposta;
-    } catch (e) {
-      req.error(400, e.userMessage || e.message || 'Erro ao simular BAPI_PO_CREATE1');
+    LOG.info("[SimulateBapiPoCreate] items.length =", Array.isArray(items) ? items.length : `(!array: ${typeof items})`);
+    LOG.info("[SimulateBapiPoCreate] header =", header);
+
+    if (!Array.isArray(items)) return req.error(400, "'items' deve ser um array.");
+    if (!items.length) LOG.warn("[SimulateBapiPoCreate] 'items' chegou vazio.");
+
+    // 1) Resolver LIFNR por item (se não vier no payload)
+    async function resolveLifnrForItem(it) {
+      if (it.lifnr) return String(it.lifnr).padStart(10, '0');
+      // ======= PONTO DE INTEGRAÇÃO =======
+      // Implemente aqui sua lógica real:
+      // - Consultar uma tabela de mapeamento (ex.: tabela CDS sua)
+      // - Ou chamar API do S/4 (A_Supplier / Business Partner) com chave (CNPJ, supplierId, etc.)
+      // - Evite "nome" puro; prefira chaves confiáveis. Sem mock.
+      // Se não for possível resolver, lance erro claro:
+      throw Object.assign(new Error(`Não foi possível resolver LIFNR para o fornecedor do item (ex.: ${it.supplierName || it.MaterialCode || 'sem identificação'})`), { userMessage: true });
     }
+    // 2) Normalizar e validar que cada item tenha LIFNR resolvido
+    const itemsComLifnr = [];
+    for (const it of items) {
+      const lifnr = await resolveLifnrForItem(it).catch(err => {
+        throw req.error(400, err.userMessage ? err.message : `Falha ao resolver LIFNR: ${err.message}`);
+      });
+      itemsComLifnr.push({ ...it, lifnr });
+    }
+    // 3) Agrupar por fornecedor
+    const grupos = itemsComLifnr.reduce((acc, it) => {
+      (acc[it.lifnr] ||= []).push(it);
+      return acc;
+    }, {});
+    // 4) Executar simulações em série (ou em paralelo com Promise.all se seu backend suportar)
+    const respostas = [];
+    for (const [lifnr, grupo] of Object.entries(grupos)) {
+      const cab = { ...header, fornecedor: lifnr }; // força fornecedor por grupo
+      try {
+        const resp = await simularPO(grupo, cab);
+        respostas.push({ lifnr, ...resp });
+      } catch (e) {
+        // agrega erro do grupo com contexto de LIFNR
+        const msg = e.userMessage || e.message || `Erro ao simular para LIFNR ${lifnr}`;
+        return req.error(400, msg);
+      }
+    }
+    // 5) Agregar numa resposta só (formato compatível com a sua UI atual)
+    // Você pode unificar as tabelas e mensagens:
+    const success = respostas.every(r => r.success);
+    const messages = respostas.flatMap(r => r.messages || []);
+    const tabelaItens = respostas.flatMap(r =>
+      (r.tabelaItens || []).map(line => ({ ...line, fornecedor: r.lifnr }))
+    );
+    const purchaseOrder = null; // Em TESTRUN pode não ter, e multi-fornecedor geraria múltiplas ordens.
+
+    return { success, messages, purchaseOrder, tabelaItens };
   });
+
 }

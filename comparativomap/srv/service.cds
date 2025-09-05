@@ -7,9 +7,9 @@ service service {
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
   /* ==================== Tipos já existentes ==================== */
-  type QuoteRow : {
+  type QuoteRow             : {
     ItemId                          : String(30);
-    itemDEscription                 : String(255);   // mantido como está
+    itemDEscription                 : String(255); // mantido como está
     quantity                        : Decimal(15, 3);
     unitOfMeasure                   : String(12);
     price                           : Decimal(15, 2);
@@ -35,7 +35,7 @@ service service {
     supplierName                    : String(255);
   }
 
-  type AribaHeader : {
+  type AribaHeader          : {
     docId                  : String;
     tipoPedido             : String;
     purchasingOrganization : String;
@@ -44,14 +44,16 @@ service service {
     incoterms1             : String;
     incoterms2             : String;
     paymentTerms           : String;
+    fornecedor             : String(10);
+    moeda                  : String(3);
   };
 
-  type QuotesResponse : {
+  type QuotesResponse       : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
 
-  function GetQuotes(docId: String) returns QuotesResponse;
+  function GetQuotes(docId: String)                            returns QuotesResponse;
 
   /* ==================== Tipos p/ Simulação BAPI ==================== */
 
@@ -59,20 +61,21 @@ service service {
   // e acrescenta campos usados na sua lógica (PREQ_*).
   // Também expõe "itemDescription" como alias opcional
   // para cobrir o typo "itemDEscription" sem quebrar nada.
-  type SimulateItemInput : QuoteRow {
-    PREQ_NO    : String(10);
-    PREQ_ITEM  : String(5);
-    itemDescription : String(255);  // opcional, alias aceito pelo backend
+  type SimulateItemInput    : QuoteRow {
+    lifnr          : String(10);
+    PREQ_NO         : String(10);
+    PREQ_ITEM       : String(5);
+    itemDescription : String(255); // opcional, alias aceito pelo backend
   };
 
   // Mensagem retornada pela BAPI
-  type BapiMessage : {
-    type : String(1);      // 'S', 'W', 'E', 'A', ...
+  type BapiMessage          : {
+    type : String(1); // 'S', 'W', 'E', 'A', ...
     text : String(220);
   };
 
   // Linha da tabela simulada que você exibe no fragment
-  type SimulateItemResult : {
+  type SimulateItemResult   : {
     item           : String(5);
     material       : String(18);
     descricao      : String(255);
@@ -93,19 +96,18 @@ service service {
     categoriaItem  : String(40);
     preqNo         : String(10);
     preqItem       : String(5);
+    lifnr          : String(10);
   };
 
   // Payload de retorno completo
   type SimulateBapiResponse : {
-    success        : Boolean;
-    messages       : many BapiMessage;
-    purchaseOrder  : String(20);          // pode vir null em TESTRUN
-    tabelaItens    : many SimulateItemResult;
+    success       : Boolean;
+    messages      : many BapiMessage;
+    purchaseOrder : String(20); // pode vir null em TESTRUN
+    tabelaItens   : many SimulateItemResult;
   };
 
   /* ==================== Action de Simulação (UNBOUND) ==================== */
-  action simulateBapiPoCreate(
-    header : AribaHeader,
-    items  : many SimulateItemInput
-  ) returns SimulateBapiResponse;
+  action   SimulateBapiPoCreate(header: AribaHeader,
+                                items: many SimulateItemInput) returns SimulateBapiResponse;
 }
