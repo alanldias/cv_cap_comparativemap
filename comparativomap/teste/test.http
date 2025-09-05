@@ -1,28 +1,12 @@
-### OData - listar tudo
-GET http://localhost:4004/odata/v4/service/AribaQuotes
+### Chamar a action (CAP v8 costuma expor /odata/v4/<nomeDoService>)
+### Se seu service tem @path:'/service', use a linha de baixo:
+POST http://localhost:4004/odata/v4/service/getTaxCode
+Content-Type: application/json
 
-### OData - filtro docId
-GET http://localhost:4004/odata/v4/service/AribaQuotes?$filter=docId eq 'ARIBA-2025-000123'
+{}
 
-### REST - listar tudo
-GET http://localhost:4004/api/comparativemap/quotes
+### Testar OData via Destination
+POST http://localhost:4004/odata/v4/service/testInfoRecordOData
+Content-Type: application/json
 
-### REST - docId + supplier
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
-
-
-### Health
-GET http://localhost:4004/api/health
-
-### Mock local (USE_REMOTE=false)
-GET http://localhost:4004/api/comparativemap/quotes
-
-### Mock local com filtros
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&lineNumber=10
-
-### Quando ligar o remoto (USE_REMOTE=true e ARIBA_API_BASE setado)
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123
-
-### Ariba Header
-GET http://localhost:4004/odata/v4/service/aribaHeader(projectId='WS1639759115')
-Accept: application/json
+{}

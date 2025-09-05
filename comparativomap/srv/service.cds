@@ -64,4 +64,23 @@ service service {
   }
 
   function GetQuotes(docId: String)           returns QuotesResponse;
+
+   @readonly
+  action getTaxCode(
+    VENDOR            : String(10),
+    MATERIAL          : String(18),
+    PURCH_ORG         : String(4),
+    PURCHASINGINFOREC : String(10),
+  ) returns {
+    taxCode           : String(2);
+    infoRecord        : String(10);
+    vendor            : String(10);
+    purchOrg          : String(4);
+    matchedCount      : Integer;
+    rawItem           : LargeString; // opcional: JSON do item que bateu, p/ debug
+    returnMessages    : LargeString; // opcional: JSON de BAPIRETURN
+  };
+
+    action testInfoRecordOData() returns LargeString; // ou returns String(100000)
+
 };

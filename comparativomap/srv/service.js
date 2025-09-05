@@ -3,6 +3,11 @@ require('dotenv').config()
 const cds = require('@sap/cds')
 const axios = require('axios')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
+const path = require('path')
+const { getSoapService } = require('./soap-client')
+const { executeHttpRequest } = require('@sap-cloud-sdk/http-client')
+
+
 // tenta usar o helper se a sua versão do SDK expor; caso contrário, caímos no fallback
 let addDestinationToRequestConfig
 try {
@@ -15,6 +20,7 @@ const LOG = cds.log('ariba-service')
 
 // Token dos ENDPOINTS de EVENTS (teu projeto)
 const { getAccessToken } = require('../srv/auth/aribaOauth')
+const { url } = require('inspector')
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
@@ -664,4 +670,94 @@ module.exports = function () {
       return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
     }
   })
+
+  this.on('getTaxCode', async (req) => {
+    const VENDOR = '1000034808'
+    const MATERIAL = '000000000000084363' // MATNR
+    const PURCH_ORG = 'C001'
+    const PURCHASINGINFOREC = '5300000217'
+
+    // cria client SOAP usando Destination + WSDL
+    const endpoint = { url: null }
+    const wsdl = path.join(__dirname, 'external', 'zbapi_inforecord_getlist.wsdl')
+    const client = await getSoapService('BAPI_INFORECORD_GETLIST', wsdl, endpoint, 'POST')
+
+    // forçar o endpoint a ser o da Destination + path configurado
+    client.setEndpoint(endpoint.url)
+
+    console.log(endpoint.url)
+
+    // monta os PARÂMETROS (objeto JS)
+    const params = {
+      DELETED_INFORECORDS: '',
+      GENERAL_DATA: 'X',
+      INFORECORD_GENERAL: { item: [] },
+      INFORECORD_PURCHORG: { item: [] },
+      INFORECORD_SEGMENT: { item: [] },
+      INFO_TYPE: '',
+      MATERIAL: MATERIAL,
+      MATERIAL_EVG: {},
+      MATERIAL_LONG: '',
+      MAT_GRP: '',
+      PLANT: '',
+      PURCHASINGINFOREC: PURCHASINGINFOREC,
+      PURCHORG_DATA: 'X',
+      PURCHORG_VEND: 'X',
+      PURCH_ORG: PURCH_ORG,
+      PUR_GROUP: '',
+      RETURN: { item: [] },
+      VENDOR: VENDOR,
+      VEND_MAT: '',
+      VEND_MATG: '',
+      VEND_PART: ''
+    }
+
+    try {
+      // chama a operação gerada pelo WSDL (sem construir SOAP na mão)
+      const resp = await client.BAPI_INFORECORD_GETLISTAsync(params)
+
+      // resp[0] = objeto parseado (JS) da resposta SOAP (as tabelas etc.)
+      return resp[0]
+    } catch (e) {
+      console.error('[getTaxCode] SOAP ERROR =>', e?.message || e)
+      throw req.error(`Erro na chamada SOAP via Destination: ${e?.message || 'sem mensagem'}`)
+    }
+  })
+
+   this.on('testInfoRecordOData', async (req) => {
+    const destinationName = process.env.DESTINATION_NAME || 'S4H_QAS_CQ5_MAPA'
+    const url = '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/?sap-client=300&$format=json'
+
+    try {
+      const resp = await executeHttpRequest(
+        { destinationName },
+        {
+          method: 'GET',
+          url,
+          headers: { Accept: 'application/json' },
+          responseType: 'text',   // devolve texto cru (alguns gateways retornam JSON com charset diferente)
+          timeout: 20000
+        },
+        { fetchCsrfToken: false } // não precisa CSRF pra GET
+      )
+
+      return {
+        ok: true,
+        status: resp.status,
+        headers: resp.headers,
+        body: resp.data           // JSON em texto (ou HTML/login se tiver SSO)
+      }
+    } catch (e) {
+      const status  = e?.response?.status
+      const headers = e?.response?.headers
+      const body    = e?.response?.data
+      console.error('[testInfoRecordOData] error =>', {
+        message: e?.message,
+        status,
+        bodySnippet: typeof body === 'string' ? body.slice(0, 600) : body
+      })
+      throw req.error(`Erro na chamada SOAP via Destination: ${e?.message || 'sem mensagem'}`)
+    }
+  })
+
 }
