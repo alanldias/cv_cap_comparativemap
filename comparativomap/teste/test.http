@@ -2,11 +2,120 @@
 ### Se seu service tem @path:'/service', use a linha de baixo:
 POST http://localhost:4004/odata/v4/service/getTaxCode
 Content-Type: application/json
+Accept: application/json
 
 {}
 
 ### Testar OData via Destination
-POST http://localhost:4004/odata/v4/service/testInfoRecordOData
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/$metadata?sap-client=300
 Content-Type: application/json
 
 {}
+
+### Testar OData via Destination
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData
+  ?$format=json
+  &$top=50
+  &$filter=Material eq '726133'
+  &sap-client=300
+Accept: application/json
+
+###
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/$metadata?sap-client=300
+
+###
+
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=TaxCode,Material,PurchasingInfoRecord,Supplier&$filter=Supplier eq '100067401'&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+###
+
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?
+  $format=json
+  &$select=TaxCode,Vendor,Material,PurchasingInfoRecord
+  &$filter=Material eq 558510
+  &sap-client=300
+Accept: application/json
+
+###
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=TaxCode,Vendor,Material,PurchasingInfoRecord&$filter=Material eq 558510 or Material eq 726133&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+
+###
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=TaxCode,Material,PurchasingInfoRecord,Supplier&$filter=Supplier eq '100067401'&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+##
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData
+Content-Type: application/json
+Accept: application/json
+
+# {
+#   "VENDOR": "1000034808",
+#   "MATERIAL": "84363",
+#   "PURCH_ORG": "C001",
+#   "PURCHASINGINFOREC": "5300000217"
+# }
+
+### LISTA SIMPLES (contexto + TaxCode)
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,TaxCode&sap-client=300
+Accept: application/json
+
+### FILTRO POR PIR + ORG
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,TaxCode&$filter=PurchasingInfoRecord%20eq%20'5300000000'%20and%20PurchasingOrganization%20eq%20'1000'&sap-client=300
+Accept: application/json
+
+### FILTRO POR PIR + ORG + PLANT
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,TaxCode&$filter=PurchasingInfoRecord%20eq%20'5300000000'%20and%20PurchasingOrganization%20eq%20'1000'%20and%20(Plant%20eq%20'1000'%20or%20Plant%20eq%20'1100')&sap-client=300
+Accept: application/json
+
+### FILTRO POR MATERIAL (com PIR + ORG para precisão)
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,Material,TaxCode&$filter=Material%20eq%20'000000000000084363'%20and%20PurchasingOrganization%20eq%20'1000'%20and%20PurchasingInfoRecord%20eq%20'5300000000'&sap-client=300
+Accept: application/json
+
+### FILTRO POR MATERIAL + SUPPLIER + PIR + ORG
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,Material,Supplier,TaxCode&$filter=Material%20eq%20'000000000000084363'%20and%20Supplier%20eq%20'1000034808'%20and%20PurchasingOrganization%20eq%20'1000'%20and%20PurchasingInfoRecord%20eq%20'5300000000'&sap-client=300
+Accept: application/json
+
+### filtro funcionando pelo supplier
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=TaxCode,Material,PurchasingInfoRecord,Supplier&$filter=Supplier eq '100067401'&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+### filtro de supplier + material 
+
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Material,PurchasingInfoRecord,Supplier,TaxCode&$filter=Supplier eq '100581343' and Material eq '558510'&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+### filtrando 2 itens com supplier igual e material diferente
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Material,PurchasingInfoRecord,Supplier,TaxCode&$filter=(Supplier eq '100067401' and Material eq '726133') or (Supplier eq '100067401' and Material eq '726164')&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+### teste com dados do postman
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Material,PurchasingInfoRecord,Supplier,TaxCode&$filter=(Supplier eq '100581343' and Material eq '726133') or (Supplier eq '100593191' and Material eq '558510') or (Supplier eq '100581341' and Material eq '726133')&$top=50&sap-client=300 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+### teste action
+POST http://localhost:4004/odata/v4/service/getTaxCodeBulk
+Content-Type: application/json
+
+{
+  "items": [
+    { "Supplier": "100067401", "Material": "726133" },
+    { "Supplier": "100067401", "Material": "726164" }
+  ]
+}
+
+### teste da url montada pela action
+http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100067401'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100067401'%20and%20Material%20eq%20'726164')&sap-client=300

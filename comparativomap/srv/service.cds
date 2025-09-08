@@ -4,16 +4,6 @@ using comparativemap as comparativemap from '../db/schema';
 
 service service {
 
-  @requires: 'ECCOperator' // manter alinhado com ROLE_REQUIRED
-  action   consultarPedidoECC(numero: String) returns {
-    DOC_TYPE   : String;
-    PURCH_ORG  : String;
-    PUR_GROUP  : String;
-    COMP_CODE  : String;
-    INCOTERMS1 : String;
-    INCOTERMS2 : String;
-    PMNTTRMS   : String;
-  };
 
   // Projeção OData V4 da entidade persistida
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
@@ -63,24 +53,20 @@ service service {
     items  : many QuoteRow; // linhas de cotação
   }
 
-  function GetQuotes(docId: String)           returns QuotesResponse;
+  function GetQuotes(docId: String) returns QuotesResponse;
 
-   @readonly
-  action getTaxCode(
-    VENDOR            : String(10),
-    MATERIAL          : String(18),
-    PURCH_ORG         : String(4),
-    PURCHASINGINFOREC : String(10),
-  ) returns {
-    taxCode           : String(2);
-    infoRecord        : String(10);
-    vendor            : String(10);
-    purchOrg          : String(4);
-    matchedCount      : Integer;
-    rawItem           : LargeString; // opcional: JSON do item que bateu, p/ debug
-    returnMessages    : LargeString; // opcional: JSON de BAPIRETURN
+
+  action   getTaxCodeBulk(items: array of {
+    Supplier               : String(10);
+    Material               : String(40);
+    PurchasingOrganization : String(4);
+    Plant                  : String(4);
+  })                                returns array of {
+    Supplier               : String(10);
+    Material               : String(40);
+    PurchasingOrganization : String(4);
+    Plant                  : String(4);
+    TaxCode                : String(2);
   };
-
-    action testInfoRecordOData() returns LargeString; // ou returns String(100000)
 
 };

@@ -31,30 +31,24 @@
   },
   "cds": {
     "requires": {
-       "BAPI_INFORECORD_GETLIST": {
+      "[production]": {
+        "auth": "xsuaa"
+      },
+      "[prod-local]": {
+        "auth": "mocked",
+        "db": {
+          "kind": "sqlite",
+          "credentials": {
+            "database": "db/dev.db"
+          }
+        }
+      },
+      "BAPI_INFORECORD_GETLIST": {
         "credentials": {
           "destination": "S4H_QAS_CQ5_MAPA",
           "path": "/sap/bc/srt/scs/sap/zbapi_inforecord_getlist?sap-client=300"
         }
-      },
-      "db": {
-        "kind": "sqlite",
-        "credentials": {
-          "database": "db/dev.db"
-        }
-      },
-      "[production]": {
-        "auth": "xsuaa"
-      },
-      "AribaApproval": {
-        "kind": "rest",
-        "credentials": {
-          "url": "${ARIBA_API_BASE}"
-        }
-      },
-      "connectivity": true,
-      "destinations": true,
-      "html5-runtime": true
+      }
     }
   }
 }
