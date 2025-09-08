@@ -579,6 +579,97 @@ async function fetchSupplierInvitationById(docId, round, resourceId, headersComm
     supplierEmail: emailDetected
   }
 }
+// buscar o iva por pedido enviado
+async function enrichWithTaxCode(items, options = {}) {
+  const arr = Array.isArray(items) ? items : []
+  if (!arr.length) return []
+
+  const DEST_NAME  = options.destinationName || process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
+  const SAP_CLIENT = options.sapClient || process.env.S4H_SAP_CLIENT || '300'
+  const ODATA_PATH = options.path || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
+  const TIMEOUT_MS = Number(options.timeoutMs || process.env.HTTP_TIMEOUT_MS || 30000)
+
+  // monta $filter com OR de cada par Supplier/Material (+Org/Plant se vierem)
+  const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
+    const parts = []
+    if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
+    if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
+    if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
+    if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
+    return `(${parts.join(' and ')})`
+  }).filter(c => c !== '()')
+
+  // evita query "aberta" caso todos os itens venham incompletos
+  const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
+
+  const $select = [
+    'Supplier','Material','PurchasingOrganization','Plant',
+    'PurchasingInfoRecord','TaxCode'
+  ].join(',')
+
+  const query = [
+    '$format=json',
+    `$select=${$select}`,
+    `$filter=${encodeURIComponent($filter)}`,
+    `sap-client=${encodeURIComponent(SAP_CLIENT)}`
+  ].join('&')
+
+  const relativeUrl = `${ODATA_PATH}?${query}`
+
+  // Destination + log da URL completa (pra você testar no seu HTTP client)
+  const dest = await getDestination({ destinationName: DEST_NAME })
+  if (!dest) throw new Error(`Destination '${DEST_NAME}' não encontrada.`)
+
+  const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
+  const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
+  console.log('[enrichWithTaxCode] OData URL =>', fullUrl)
+
+  // chamada GET no OData
+  let data
+  try {
+    const resp = await executeHttpRequest(
+      dest,
+      { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: TIMEOUT_MS },
+      { fetchCsrfToken: false }
+    )
+    data = resp.data
+  } catch (e) {
+    const status = e?.response?.status || 502
+    const msg = e?.response?.data?.error?.message || e?.message
+    LOG?.error?.('[enrichWithTaxCode] Erro OData S/4:', status, msg)
+    throw e
+  }
+
+  // OData V2 (data.d.results) ou V4 (data.value)
+  const rows = data?.d?.results ?? data?.value ?? []
+
+  // index por chave composta para casar com o input
+  const byKey = new Map()
+  for (const r of rows) {
+    const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
+    if (!byKey.has(key)) byKey.set(key, r)
+  }
+
+  // devolve o mesmo array, enriquecido
+  return arr.map(it => {
+    const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
+    const r = byKey.get(key)
+    return {
+      ...it,
+      TaxCode: r?.TaxCode ?? null,
+      PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
+    }
+  })
+}
+
+// --- helpers locais (fora de module.exports) ---
+function _escapeOData(v = '') {
+  return String(v).replace(/'/g, "''").trim()
+}
+function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
+  return [Supplier, Material, PurchasingOrganization, Plant]
+    .map(v => (v ?? '').trim()).join('|')
+}
 
 // ==================== HANDLER ODATA ====================
 module.exports = function () {
@@ -680,83 +771,5 @@ module.exports = function () {
       return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
     }
   })
-
-   this.on('getTaxCodeBulk', async (req) => {
-    const items = Array.isArray(req.data?.items) ? req.data.items : []
-    if (!items.length) return []
-
-    // monta cláusulas (Supplier/Material obrigatórios; Org/Plant opcionais)
-    const clauses = items.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
-      const parts = []
-      if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
-      if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
-      if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
-      if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
-      return `(${parts.join(' and ')})`
-    })
-
-    const $filter = clauses.join(' or ')
-    const $select = [
-      'Supplier','Material','PurchasingOrganization','Plant',
-      'PurchasingInfoRecord','TaxCode' // seleciono chaves p/ casar + TaxCode
-    ].join(',')
-    const query = [
-      '$format=json',
-      `$select=${$select}`,
-      `$filter=${encodeURIComponent($filter)}`,
-      `sap-client=${encodeURIComponent(S4H_SAP_CLIENT)}`
-    ].join('&')
-
-    const relativeUrl = `${S4H_ODATA_PATH}?${query}`
-
-    // loga a URL completa p/ você testar no HTTP client
-    const dest = await getDestination({ destinationName: S4H_DEST })
-    if (!dest) return req.error(500, `Destination '${S4H_DEST}' não encontrada.`)
-    const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
-    const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
-    console.log('[getTaxCodeBulk] OData URL =>', fullUrl)
-
-    // chamada via Cloud SDK (funciona com Connectivity/Cloud Connector)
-    let data
-    try {
-      const resp = await executeHttpRequest(
-        dest,
-        { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: Number(HTTP_TIMEOUT_MS) || 30000 },
-        { fetchCsrfToken: false }
-      )
-      data = resp.data
-    } catch (e) {
-      const status = e?.response?.status || 502
-      const msg = e?.response?.data?.error?.message || e?.message
-      LOG.error?.('[getTaxCodeBulk] Erro OData S/4:', status, msg)
-      return req.error(status, 'Falha ao consultar Info Record no S/4.')
-    }
-
-    // OData v2 (data.d.results) / v4 (data.value)
-    const rows = data?.d?.results ?? data?.value ?? []
-
-    // indexa por chave composta p/ casar com o input
-    const byKey = new Map()
-    for (const r of rows) {
-      const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
-      if (!byKey.has(key)) byKey.set(key, r) // mantém o primeiro se vier duplicado
-    }
-
-    // retorna mesmo array enriquecido com TaxCode
-    const out = items.map(it => {
-      const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
-      const r = byKey.get(key)
-      return {
-        Supplier: it.Supplier,
-        Material: it.Material,
-        PurchasingOrganization: it.PurchasingOrganization ?? null,
-        Plant: it.Plant ?? null,
-        TaxCode: r?.TaxCode ?? null
-      }
-    })
-
-    return out
-  })
-
    
 }
