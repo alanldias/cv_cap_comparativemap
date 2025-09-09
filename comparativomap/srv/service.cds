@@ -9,7 +9,7 @@ service service {
   /* ==================== Tipos já existentes ==================== */
   type QuoteRow             : {
     ItemId                          : String(30);
-    itemDEscription                 : String(255); // mantido como está
+    itemDescription                 : String(255); // mantido como está
     quantity                        : Decimal(15, 3);
     unitOfMeasure                   : String(12);
     price                           : Decimal(15, 2);
@@ -33,6 +33,9 @@ service service {
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
     supplierName                    : String(255);
+    itemId            : Integer64;      // novo (opcional, mantemos os dois por compatibilidade)
+    invitationId      : String(200);    // novo
+    invitationEmail   : String(200);    // novo (fallback útil)
   }
 
   type AribaHeader          : {
@@ -60,7 +63,7 @@ service service {
   // Entrada do item na simulação: herda o que vem do Ariba
   // e acrescenta campos usados na sua lógica (PREQ_*).
   // Também expõe "itemDescription" como alias opcional
-  // para cobrir o typo "itemDEscription" sem quebrar nada.
+  // para cobrir o typo "itemDescription" sem quebrar nada.
   type SimulateItemInput    : QuoteRow {
     lifnr          : String(10);
     PREQ_NO         : String(10);
@@ -110,4 +113,25 @@ service service {
   /* ==================== Action de Simulação (UNBOUND) ==================== */
   action   SimulateBapiPoCreate(header: AribaHeader,
                                 items: many SimulateItemInput) returns SimulateBapiResponse;
+
+  // === Tipos da premiação ===
+type SupplierBidInput : {
+  itemId            : Integer64;     // ID do item do evento (ex.: 4094721049)
+  invitationId      : String(200);   // invitationId COMPLETO: "NNNNNNNNN_email@domínio.com"
+  winningSplitType  : Integer;       // 1 = percentual (default no backend)
+  winningSplitValue : Decimal(9,3);  // ex.: 100
+  bidType           : String(20);    // ex.: 'Primary'
+}
+@odata.draft.enabled
+  action CreateScenario(
+    eventId      : String,
+    title        : String,
+    scenarioType : Integer,     // ex.: 0 (manual)
+    supplierBids : many SupplierBidInput
+  ) returns {
+    success        : Boolean;
+    scenarioId     : String;
+    aribaResponse  : LargeString;  // eco do que o Ariba devolver
+    correlationId  : String;
+  };
 }

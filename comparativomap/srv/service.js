@@ -370,6 +370,16 @@ async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   return toArr(data)
 }
 
+async function destPost (destName, relativePath, body, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+  const destination = await getDestination({ destinationName: destName })
+  const reqCfg = await addDestinationToRequestConfig(
+    { method: 'post', url: relativePath, data: body, params, headers, timeout: timeoutMs },
+    destination
+  )
+  const resp = await axios.request(reqCfg)
+  return { data: resp.data, headers: resp.headers }
+}
+
 /**
  * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
  */
@@ -499,9 +509,10 @@ module.exports = function () {
       const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
       const itemsOut = results.map(r => {
         const supplierName = r._invitationId ? (nameCache.get(r._invitationId) || null) : null
+        const email = emailByInvId.get(String(r._invitationId)) || null
         // remove campos internos antes de expor
         const { _invitationId, _itemId, ...pub } = r
-        return { ...pub, supplierName }
+        return { ...pub, supplierName, itemId: r._itemId, invitationId: r._invitationId, invitationEmail: email     }
       })
 
       return { header: headerWithDoc, items: itemsOut }
@@ -514,7 +525,7 @@ module.exports = function () {
     }
   })
 
-  this.on('SimulateBapiPoCreate', async req => {
+  this.on('SimulateBapiPoCreate1', async req => {
     // Esses logs só aparecem se a validação do CAP deixar passar.
     LOG.info("[SimulateBapiPoCreate] req.data =", JSON.stringify(req.data, null, 2));
 
@@ -574,4 +585,97 @@ module.exports = function () {
     return { success, messages, purchaseOrder, tabelaItens };
   });
 
+  this.on('SimulateBapiPoCreate', async (req) => {
+    try {
+      const { items = [], header = {} } = req.data ?? {};
+      // chama a simulação (modo mock por padrão; ver flags de ambiente abaixo)
+      const resp = await simularPO(items, header);
+      return resp; // contém 'rows' que seu fragment lê em res>/rows
+    } catch (e) {
+      const msg = e.userMessage || e.message || 'Falha ao simular pedido.';
+      return req.error(400, msg);
+    }
+  });
+
+  this.on('CreateScenario', async (req) => {
+    const { eventId, title, scenarioType, supplierBids } = req.data || {}
+    if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.")
+    if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
+      return req.error(400, "'supplierBids' deve ser um array com pelo menos 1 item.")
+    }
+
+    // Monta o payload exatamente como o Ariba espera
+    const payload = {
+      eventId,
+      title: title || 'Cenário via API',
+      scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
+      supplierBids: supplierBids.map(it => ({
+        eventId,
+        itemId: Number(it.itemId),
+        invitationId: String(it.invitationId || ''),
+        bidType: it.bidType || 'Primary',
+        winningSplitType: Number(it.winningSplitType ?? 1),
+        winningSplitValue: Number(it.winningSplitValue ?? 100)
+      }))
+    }
+
+    // Caminho relativo (quando usando Destination) ou composição de URL (quando .env)
+    const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`
+    const timeout = Number(HTTP_TIMEOUT_MS) || 30000
+
+    try {
+      let data, headers
+
+      if (USE_DESTINATION) {
+        // Recomendado: colocar realm/user/passwordAdapter como "Additional Properties"
+        // da Destination (URL.queries.realm/user/passwordAdapter). Se não tiver, passe aqui:
+        const params = {} // ex.: { realm: 'xxx', user: 'yyy', passwordAdapter: 'ThirdPartyUser' }
+        const extraHeaders = {} // ex.: { apiKey: '...' } se a destination não injetar
+        ;({ data, headers } = await destPost(EVENTS_DEST, relPath, payload, {
+          params, headers: extraHeaders, timeoutMs: timeout
+        }))
+      } else {
+        // Sem destination: token OAuth + apiKey no header e queries obrigatórias
+        const token = await getAccessToken()
+        const url = `${ARIBA_BASE_URL_EVENTS}${relPath}`
+        const resp = await axios.post(url, payload, {
+          params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
+          headers: {
+            apiKey: ARIBA_API_KEY_EVENTS,
+            Authorization: `Bearer ${token}`,
+            'Content-Type': 'application/json',
+            Accept: 'application/json'
+          },
+          timeout
+        })
+        data = resp.data
+        headers = resp.headers
+      }
+
+      const correlationId =
+        headers?.['x-correlation-id'] || headers?.['x-correlationid'] || null
+
+      // A API retorna o objeto do cenário criado; normalmente contém um ID
+      // (ex.: "scenarioId" ou similar dependendo da versão/região).
+      // Vamos tentar capturar algo representativo:
+      const scenarioId = data?.scenarioId || data?.id || data?.scenarioID || null
+
+      return {
+        success: true,
+        scenarioId,
+        aribaResponse: JSON.stringify(data),
+        correlationId
+      }
+    } catch (e) {
+      const status = e.response?.status || 502
+      const msg = e.response?.data?.message || e.response?.data || e.message
+      LOG.error('[CreateScenario] Falha no POST /scenarios:', status, msg)
+      // repassa o correlation id pra você rastrear no Ariba
+      const correlationId =
+        e.response?.headers?.['x-correlation-id'] || e.response?.headers?.['x-correlationid'] || null
+      return req.error(status, `Falha ao criar cenário no Ariba. ${msg}`, { correlationId })
+    }
+  })
+
 }
+

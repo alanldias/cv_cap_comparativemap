@@ -1,28 +1,26 @@
-### OData - listar tudo
-GET http://localhost:4004/odata/v4/service/AribaQuotes
+# CAP + Ariba — GET Scenarios
+# Use com a extensão "REST Client" (humao.rest-client) no VS Code.
 
-### OData - filtro docId
-GET http://localhost:4004/odata/v4/service/AribaQuotes?$filter=docId eq 'ARIBA-2025-000123'
+### Variáveis comuns
+@cap = http://localhost:4004
+@service = /odata/v4/service
+@docId = Doc4328033187
 
-### REST - listar tudo
-GET http://localhost:4004/api/comparativemap/quotes
-
-### REST - docId + supplier
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&supplierId=SUP-0002
-
-
-### Health
-GET http://localhost:4004/api/health
-
-### Mock local (USE_REMOTE=false)
-GET http://localhost:4004/api/comparativemap/quotes
-
-### Mock local com filtros
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123&lineNumber=10
-
-### Quando ligar o remoto (USE_REMOTE=true e ARIBA_API_BASE setado)
-GET http://localhost:4004/api/comparativemap/quotes?docId=ARIBA-2025-000123
-
-### Ariba Header
-GET http://localhost:4004/odata/v4/service/aribaHeader(projectId='WS1639759115')
+### ====== [1] VIA CAP (recomendado) ======
+# Requer que o backend tenha a action/function GetScenarios(eventId: String).
+GET {{cap}}{{service}}/GetScenarios(eventId='{{docId}}')
 Accept: application/json
+
+### ====== [2] DIRETO NA ARIBA (se precisar) ======
+# Preencha suas credenciais e token (obtido via OAuth).
+@ariba = https://openapi.ariba.com/api/sourcing-event/v2/prod
+@realm = 744701080-T
+@userUniqueName = acopino.consult
+@passwordAdapter = ThirdPartyUser
+@apiKey = SKUVVJwBe5Yrw8jpC6gTkPj1OS6ReVL2
+@bearer = PREENCHER_TOKEN
+
+GET {{ariba}}/events/{{docId}}/scenarios?realm={{realm}}&user={{userUniqueName}}&passwordAdapter={{passwordAdapter}}
+Accept: application/json
+apikey: {{apiKey}}
+Authorization: Bearer {{bearer}}

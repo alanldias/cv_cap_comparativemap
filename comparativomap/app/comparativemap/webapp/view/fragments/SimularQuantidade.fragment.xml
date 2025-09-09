@@ -1,23 +1,24 @@
 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
-  <Dialog id="dlgSim" title="Quantidades para SIMULAÇÃO" contentWidth="900px" draggable="true" resizable="true">
-    <Table items="{qm>/items}" mode="None" sticky="ColumnHeaders">
+  <Dialog id="dlgSimLegacy" title="Quantidades para SIMULAÇÃO" contentWidth="900px" draggable="true" resizable="true">
+    <Table id="_IDGenTable" items="{qm>/items}" mode="None" sticky="ColumnHeaders"
+           autoPopinMode="true" growing="true">
       <columns>
-        <Column width="12rem"><header><Text text="Fornecedor"/></header></Column>
-        <Column width="10rem"><header><Text text="Item"/></header></Column>
-        <Column width="16rem"><header><Text text="Descrição"/></header></Column>
-        <Column width="7rem"><header><Text text="Mestre"/></header></Column>
-        <Column width="7rem"><header><Text text="Disponível"/></header></Column>
-        <Column width="10rem" hAlign="Center"><header><Text text="Qtd p/ simular"/></header></Column>
+        <Column id="_IDGenColumn" width="12rem"><header><Text id="_IDGenText" text="Fornecedor"/></header></Column>
+        <Column id="_IDGenColumn1" width="10rem"><header><Text id="_IDGenText1" text="Item"/></header></Column>
+        <Column id="_IDGenColumn2" width="16rem"><header><Text id="_IDGenText2" text="Descrição"/></header></Column>
+        <Column id="_IDGenColumn3" width="7rem"><header><Text id="_IDGenText3" text="Mestre"/></header></Column>
+        <Column id="_IDGenColumn4" width="7rem"><header><Text id="_IDGenText4" text="Disponível"/></header></Column>
+        <Column id="_IDGenColumn5" width="10rem" hAlign="Center"><header><Text id="_IDGenText5" text="Qtd p/ simular"/></header></Column>
       </columns>
       <items>
-        <ColumnListItem>
+        <ColumnListItem id="_IDGenColumnListItem">
           <cells>
-            <Text text="{qm>supplierName}" />
-            <Text text="{qm>materialCode}" />
-            <Text text="{qm>description}" maxLines="2" wrapping="true" />
-            <ObjectNumber number="{qm>masterQty}" />
-            <ObjectNumber number="{qm>supplierQty}" />
-            <Input type="Number"
+            <Text id="_IDGenText6" text="{qm>supplierName}" />
+            <Text id="_IDGenText7" text="{qm>materialCode}" />
+            <Text id="_IDGenText8" text="{qm>description}" maxLines="2" wrapping="true" />
+            <ObjectNumber id="_IDGenObjectNumber" number="{qm>masterQty}" />
+            <ObjectNumber id="_IDGenObjectNumber1" number="{qm>supplierQty}" />
+            <Input id="_IDGenInput" type="Number"
                    value="{path:'qm>qtySim', type: 'sap.ui.model.type.Integer'}"
                    liveChange=".onSimQtyChange"
                    width="7rem" />
@@ -27,10 +28,10 @@
     </Table>
 
     <beginButton>
-      <Button text="Simular" type="Emphasized" press=".onConfirmSimulate"/>
+      <Button id="_IDGenButton1" text="Simular" type="Emphasized" press=".onConfirmSimulate"/>
     </beginButton>
     <endButton>
-      <Button text="Cancelar" press=".onCloseDialog"/>
+      <Button id="_IDGenButton2" text="Cancelar" press=".onCloseDialog"/>
     </endButton>
   </Dialog>
 </core:FragmentDefinition>

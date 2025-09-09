@@ -1,35 +1,55 @@
 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
   <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="1000px" draggable="true" resizable="true">
-    <Table items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect">
+    <Table id="_IDGenTable2" items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect"
+           autoPopinMode="true" growing="true">
       <columns>
-        <Column width="12rem"><header><Text text="Fornecedor"/></header></Column>
-        <Column width="10rem"><header><Text text="Item"/></header></Column>
-        <Column width="6rem" hAlign="End"><header><Text text="Qtd"/></header></Column>
-        <Column width="8rem" hAlign="End"><header><Text text="Preço"/></header></Column>
-        <Column width="8rem" hAlign="End"><header><Text text="ICMS"/></header></Column>
-        <Column width="8rem" hAlign="End"><header><Text text="IPI"/></header></Column>
-        <Column width="8rem" hAlign="End"><header><Text text="Total"/></header></Column>
+        <Column id="_IDGenColumn14" width="12rem"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column>
+        <Column id="_IDGenColumn15" width="10rem"><header><Text id="_IDGenText25" text="Item"/></header></Column>
+        <Column id="_IDGenColumn30" width="6rem"  hAlign="End"><header><Text id="_IDGenText47" text="Quantidade"/></header></Column>
+        <Column id="_IDGenColumn16" width="6rem" hAlign="End"><header><Text id="_IDGenText26" text="Qtd Simulada"/></header></Column>
+        <Column id="_IDGenColumn29" width="9rem" hAlign="Center"><header><Text id="_IDGenText46" text="Qtd p/ premiar"/></header></Column>
+        <Column id="_IDGenColumn17" width="8rem" hAlign="End"><header><Text id="_IDGenText27" text="Preço"/></header></Column>
+        <Column id="_IDGenColumn18" width="8rem" hAlign="End"><header><Text id="_IDGenText28" text="ICMS"/></header></Column>
+        <Column id="_IDGenColumn19" width="8rem" hAlign="End"><header><Text id="_IDGenText29" text="IPI"/></header></Column>
+        <Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column>
+
+        <!-- DEBUG: IDs que serão levados para o diálogo de premiação -->
+        <Column id="_IDGenColumn21" visible="false" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column>
+        <Column id="_IDGenColumn22" visible="false" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
+        
       </columns>
+
       <items>
-        <ColumnListItem>
+        <ColumnListItem id="_IDGenColumnListItem2">
           <cells>
-            <Text text="{res>supplierName}"/>
-            <Text text="{res>materialCode}"/>
-            <ObjectNumber number="{res>quantity}"/>
-            <ObjectNumber number="{res>price}" unit="{res>currency}"/>
-            <ObjectNumber number="{res>icms}"/>
-            <ObjectNumber number="{res>ipi}"/>
-            <ObjectNumber number="{res>total}" unit="{res>currency}"/>
+            <Text id="_IDGenText33" text="{res>supplierName}"/>
+            <Text id="_IDGenText34" text="{res>materialCode}"/>
+            <ObjectNumber id="_IDGenObjectNumber12"  number="{res>originalQty}"/>
+            <ObjectNumber id="_IDGenObjectNumber4" number="{res>quantity}"/>
+            <Input id="_IDGenInput3" type="Number"
+                   value="{path:'res>qtyAward', type:'sap.ui.model.type.Integer'}"
+                   liveChange=".onAwardQtyChangeRes"
+                   width="7rem"/>
+            <ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/>
+            <ObjectNumber id="_IDGenObjectNumber6" number="{res>icms}"/>
+            <ObjectNumber id="_IDGenObjectNumber7" number="{res>ipi}"/>
+            <ObjectNumber id="_IDGenObjectNumber8" number="{res>total}" unit="{res>currency}"/>
+
+            <!-- DEBUG cells -->
+            <Text id="_IDGenText35" text="{res>itemId}"/>
+            <Text id="_IDGenText36" text="{res>invitationId}"/>
+            
+
           </cells>
         </ColumnListItem>
       </items>
     </Table>
 
     <beginButton>
-      <Button text="Premiar Fornecedores" type="Emphasized" press=".onOpenAwardDialog"/>
+      <Button id="_IDGenButton4" text="Premiar" type="Emphasized" press=".onAwardDirect"/>
     </beginButton>
     <endButton>
-      <Button text="Fechar" press=".onCloseDialog"/>
+      <Button id="_IDGenButton6" text="Fechar" press=".onCloseDialog"/>
     </endButton>
   </Dialog>
 </core:FragmentDefinition>
