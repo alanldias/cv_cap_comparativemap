@@ -138,6 +138,7 @@ sap.ui.define([
         MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
+      console.log(selecionados)
 
       const items = selecionados.map((r, i) => {
         const obj = {

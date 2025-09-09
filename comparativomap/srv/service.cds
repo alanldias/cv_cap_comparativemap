@@ -32,6 +32,7 @@ service service {
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
     supplierName                    : String(255);
+    DELIVERY_DATE_RAW               : String(50);
   }
 
   type AribaHeader    : {
@@ -136,5 +137,20 @@ service service {
     returnMessages    : LargeString; // opcional: JSON de BAPIRETURN
   };
 
-    action testInfoRecordOData() returns LargeString; // ou returns String(100000)
+  action testInfoRecordOData() returns LargeString; // ou returns String(100000)
+
+
+  action   getTaxCodeBulk(items: array of {
+    Supplier               : String(10);
+    Material               : String(40);
+    PurchasingOrganization : String(4);
+    Plant                  : String(4);
+  })                                returns array of {
+    Supplier               : String(10);
+    Material               : String(40);
+    PurchasingOrganization : String(4);
+    Plant                  : String(4);
+    TaxCode                : String(2);
+  };
+
 };

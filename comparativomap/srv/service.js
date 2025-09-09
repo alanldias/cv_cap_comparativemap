@@ -4,9 +4,9 @@ const cds = require('@sap/cds')
 const soap = require('soap');
 const axios = require('axios')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
-const path = require('path')
-const { getSoapService } = require('./soap-client')
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client')
+
+
 
 
 // tenta usar o helper se a sua versão do SDK expor; caso contrário, caímos no fallback
@@ -22,7 +22,6 @@ const LOG = cds.log('ariba-service')
 
 // Token dos ENDPOINTS de EVENTS (teu projeto)
 const { getAccessToken } = require('../srv/auth/aribaOauth')
-const { url } = require('inspector')
 
 
 // ==================== PARA CHAMADA SOAP ====================
@@ -38,9 +37,21 @@ const PROJECTS_DEST = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Sourcing_Project
 
 const EVENTS_API_PREFIX = process.env.ARIBA_EVENTS_API_PREFIX || '/api/sourcing-event/v2/prod'
 const PM_API_PREFIX = process.env.ARIBA_PM_API_PREFIX || '/api/sourcing-project-management/v2/prod'
-
+const S4H_DEST = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
+const S4H_SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
+const S4H_ODATA_PATH = process.env.S4H_ODATA_PATH
+  || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
+const S4H_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 30000
 
 const _destTokenCache = {} // cache simples por tokenUrl|clientId
+
+
+function _escapeOData(v = '') {
+  return String(v).replace(/'/g, "''").trim()
+}
+function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
+  return [Supplier, Material, PurchasingOrganization, Plant].map(v => (v ?? '').trim()).join('|')
+}
 
 
 async function _fetchTokenFromDestination(destination) {
@@ -286,16 +297,6 @@ function mapAribaHeader(p) {
   }
 }
 
-async function fetchAribaHeader(projectId) {
-  const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
-    // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
-    realm: ARIBA_REALM,
-    user: ARIBA_USER,
-    passwordAdapter: ARIBA_PASSWORD_ADAPTER
-  })
-  return mapAribaHeader(data || {})
-}
-
 // ==================== HELPERS (EVENTS) ====================
 const toArr = (d) =>
   Array.isArray(d?.payload) ? d.payload :
@@ -343,6 +344,34 @@ function pickSupplierNameByInvitation(rows, invId) {
   )
 }
 
+function extractSapVendorId(obj) {
+  const org = obj?.organization ?? obj?.supplier ?? null
+  if (!org) return null
+  const arr = org.organizationIDs || org.organizationIds || obj.organizationIDs || obj.organizationIds || []
+  const hit = Array.isArray(arr) ? arr.find(x => String(x?.domain).toLowerCase() === 'sap') : null
+  return hit?.value ?? org?.erpVendorID ?? null
+}
+
+function extractSapOrgEntry(obj) {
+  const org = obj?.organization ?? obj?.supplier ?? null
+  if (!org) return null
+  const arr = org.organizationIDs || org.organizationIds || obj.organizationIDs || obj.organizationIds || []
+  if (!Array.isArray(arr)) return null
+  const entry = arr.find(x => String(x?.domain).toLowerCase() === 'sap') || null
+  return entry ? { domain: entry.domain, value: entry.value } : null
+}
+
+//CHAMADA DE API /api/sourcing-project-management/v2/prod/projects/WS
+async function fetchAribaHeader(projectId) {
+  const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
+    // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
+    realm: ARIBA_REALM,
+    user: ARIBA_USER,
+    passwordAdapter: ARIBA_PASSWORD_ADAPTER
+  })
+  return mapAribaHeader(data || {})
+}
+
 /**
  * 1) supplierBids:
  *    - Para CADA fornecedor (row) e CADA itemId em itemsWithBid, gera um resultado.
@@ -351,6 +380,8 @@ function pickSupplierNameByInvitation(rows, invId) {
  *    - Retorna:
  *        { rows, results: [ { mappedFields..., _invitationId, _itemId } ] }
  */
+
+//CHAMADA DE API /api/sourcing-event/v2/prod/events/DocId/supplierBids
 async function fetchSupplierBids(docId, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/supplierBids`
   let data
@@ -421,6 +452,9 @@ async function fetchSupplierBids(docId, headersCommon) {
       const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
       const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
+      // pega o valor bruto, independente se vem em .value ou direto
+      const deliveryRaw = byId['REQUESTDELIVERYDATE']?.value ?? byId['REQUESTDELIVERYDATE'] ?? null
+
       const mapped = {
         ItemId: itemId,
         itemDescription: targetRow?.item?.title ?? null,
@@ -446,7 +480,8 @@ async function fetchSupplierBids(docId, headersCommon) {
         ItemCategory: itemCategory,
         TAX_CODE: taxCode,
         MaterialCode: materialCode,
-        grupo_de_materias: grupoMaterias
+        grupo_de_materias: grupoMaterias,
+        DELIVERY_DATE_RAW: deliveryRaw ?? null
       }
 
       // guardamos internamente pra resolver supplierName depois
@@ -460,6 +495,7 @@ async function fetchSupplierBids(docId, headersCommon) {
 /**
  * 2) Identifiers → parentProjectId
  */
+//CHAMADA DE API /sourcing-event/v2/prod/events/identifiers
 async function fetchParentProjectId(docId, headersCommon) {
   // 1ª tentativa: /events/{docId}
   const pathEvent = `/events/${encodeURIComponent(docId)}`
@@ -519,9 +555,7 @@ async function fetchParentProjectId(docId, headersCommon) {
   return hit?.parentProjectId ?? null
 }
 
-/**
- * 3) Lista de supplier invitations do round
- */
+// CHAMADA DE API /sourcing-event/v2/prod/events/DocId/rounds/1/supplierInvitation/
 async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
   let data
@@ -539,59 +573,180 @@ async function fetchSupplierInvitationsList(docId, round, headersCommon) {
     })
     data = resp.data
   }
-  return toArr(data)
+  console.log(data)
+  return toArr(data) // <— apenas o array de registros
 }
 
-/**
- * 4) Supplier Invitation por ID COMPLETO (não concatena email!)
- */
-async function fetchSupplierInvitationById(docId, round, resourceId, headersCommon) {
-  if (!resourceId) return null
-  const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`
+// buscar o iva por pedido enviado
+async function enrichWithTaxCode(items, options = {}) {
+  const arr = Array.isArray(items) ? items : []
+  if (!arr.length) return []
+
+  const S4H_DEST = options.destinationName ?? S4H_DEST
+  const SAP_CLIENT = options.sapClient ?? S4H_SAP_CLIENT
+  const ODATA_PATH = options.path ?? S4H_ODATA_PATH
+  const TIMEOUT_MS = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
+
+  // monta $filter com OR por item
+  const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
+    const parts = []
+    if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
+    if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
+    if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
+    if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
+    return `(${parts.join(' and ')})`
+  }).filter(c => c !== '()')
+
+  const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
+  const $select = [
+    'Supplier', 'Material', 'PurchasingOrganization', 'Plant',
+    'PurchasingInfoRecord', 'TaxCode'
+  ].join(',')
+
+  const query = [
+    '$format=json',
+    `$select=${$select}`,
+    `$filter=${encodeURIComponent($filter)}`,
+    `sap-client=${encodeURIComponent(SAP_CLIENT)}`
+  ].join('&')
+
+  const relativeUrl = `${ODATA_PATH}?${query}`
+
+  // Destination + log da URL completa (pra testar via HTTP)
+  const dest = await getDestination({ destinationName: DEST_NAME })
+  if (!dest) throw new Error(`Destination '${DEST_NAME}' não encontrada.`)
+
+  const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
+  const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
+  console.log('[enrichWithTaxCode] OData URL =>', fullUrl)
+
+  // chamada GET no OData
   let data
-  if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  } else {
-    const url = `${ARIBA_BASE_URL_EVENTS}${path}`
-    const resp = await axios.get(url, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
+  try {
+    const resp = await executeHttpRequest(
+      dest,
+      { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: TIMEOUT_MS },
+      { fetchCsrfToken: false }
+    )
     data = resp.data
+  } catch (e) {
+    const status = e?.response?.status || 502
+    const msg = e?.response?.data?.error?.message || e?.message
+    LOG?.error?.('[enrichWithTaxCode] Erro OData S/4:', status, msg)
+    throw e
   }
 
-  const supplierName =
-    data?.organization?.name ||
-    data?.mainContact?.orgName ||
-    data?.mainContact?.organization ||
-    (Array.isArray(data?.contacts) && (data.contacts[0]?.orgName || data.contacts[0]?.organization)) ||
-    data?.organizationName ||
-    data?.supplier?.organizationName ||
-    data?.supplier?.name ||
-    data?.supplierName ||
-    null
+  const rows = data?.d?.results ?? data?.value ?? []
 
-  const emailDetected =
-    data?.mainContact?.emailAddress ||
-    data?.emailAddress ||
-    data?.supplier?.email ||
-    data?.supplierEmail ||
-    data?.contact?.email ||
-    (String(resourceId).includes('_') ? String(resourceId).split('_')[1] : null) ||
-    null
-
-  return {
-    supplierName: supplierName || (emailDetected ? String(emailDetected).split('@')[0] : null),
-    supplierEmail: emailDetected
+  const byKey = new Map()
+  for (const r of rows) {
+    const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
+    if (!byKey.has(key)) byKey.set(key, r)
   }
+
+  return arr.map(it => {
+    const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
+    const r = byKey.get(key)
+    return {
+      ...it,
+      TaxCode: r?.TaxCode ?? null,
+      PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
+    }
+  })
+}
+
+// --- helpers locais 
+function _escapeOData(v = '') {
+  return String(v).replace(/'/g, "''").trim()
+}
+function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
+  return [Supplier, Material, PurchasingOrganization, Plant]
+    .map(v => (v ?? '').toString().trim()).join('|')
 }
 
 // ==================== HANDLER ODATA ====================
 module.exports = function () {
+  //action apenas para testes
+  this.on('getTaxCodeBulk', async (req) => {
+    const items = Array.isArray(req.data?.items) ? req.data.items : []
+    if (!items.length) return []
+
+    // ====== tirar isso 
+    const DEST_NAME = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
+    const SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
+    const ODATA_PATH = process.env.S4H_ODATA_PATH
+      || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
+    const TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 30000
+
+    // ====== FILTER ======
+    const clauses = items.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
+      const parts = []
+      if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
+      if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
+      if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
+      if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
+      return `(${parts.join(' and ')})`
+    }).filter(c => c !== '()')
+
+    const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
+    const $select = [
+      'Supplier', 'Material', 'PurchasingOrganization', 'Plant',
+      'PurchasingInfoRecord', 'TaxCode'
+    ].join(',')
+
+    const query = [
+      '$format=json',
+      `$select=${$select}`,
+      `$filter=${encodeURIComponent($filter)}`,
+      `sap-client=${encodeURIComponent(SAP_CLIENT)}`
+    ].join('&')
+
+    const relativeUrl = `${ODATA_PATH}?${query}`
+
+    const dest = await getDestination({ destinationName: DEST_NAME })
+    if (!dest) return req.error(500, `Destination '${DEST_NAME}' não encontrada.`)
+
+    const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
+    const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
+    console.log('[getTaxCodeBulk] OData URL =>', fullUrl)
+
+    let data
+    try {
+      const resp = await executeHttpRequest(
+        dest,
+        { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: TIMEOUT_MS },
+        { fetchCsrfToken: false }
+      )
+      data = resp.data
+    } catch (e) {
+      const status = e?.response?.status || 502
+      const msg = e?.response?.data?.error?.message || e?.message
+      LOG?.error?.('[getTaxCodeBulk] Erro OData S/4:', status, msg)
+      return req.error(status, 'Falha ao consultar Info Record no S/4.')
+    }
+
+    const rows = data?.d?.results ?? data?.value ?? []
+
+    const byKey = new Map()
+    for (const r of rows) {
+      const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
+      if (!byKey.has(key)) byKey.set(key, r)
+    }
+
+    return items.map(it => {
+      const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
+      const r = byKey.get(key)
+      return {
+        Supplier: it.Supplier,
+        Material: it.Material,
+        PurchasingOrganization: it.PurchasingOrganization ?? null,
+        Plant: it.Plant ?? null,
+        TaxCode: r?.TaxCode ?? null,
+        PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
+      }
+    })
+  })
+
   this.on('GetQuotes', async (req) => {
     const { docId } = (req.data || {})
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
@@ -614,49 +769,34 @@ module.exports = function () {
       const { rows, results } = await fetchSupplierBids(docId, headersCommon)
       if (!rows.length || !results.length) return { header: null, items: [] }
 
-      // 2) resolver supplierName por invitationId (com cache)
-      const inviteIds = [...new Set(results.map(r => r._invitationId).filter(Boolean))]
-      const nameCache = new Map()
-
-      // tenta resolver em massa usando a lista do round (um GET só)
-      let list = []
-      try { list = await fetchSupplierInvitationsList(docId, round, headersCommon) } catch (e) { /* noop */ }
-
+      // 2) resolver supplierName + email + SAP Vendor + entry domain/value por invitationId (um GET só)
+      const list = await fetchSupplierInvitationsList(docId, round, headersCommon).catch(() => [])
+      const nameByInvId = new Map()
       const emailByInvId = new Map()
+      const vendorByInvId = new Map()      // string (valor)
+
       for (const it of list) {
         const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
         if (!invId) continue
-        const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
-        if (email) emailByInvId.set(invId, email)
-        // nome direto se já vier
+
         const name =
           it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
-        if (name) nameCache.set(invId, name)
+        const email =
+          it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
+
+        const sapEntry = extractSapOrgEntry(it) // objeto { domain, value }
+        const sapId = sapEntry?.value ?? extractSapVendorId(it) // string fallback
+
+        if (name) nameByInvId.set(invId, name)
+        if (email) emailByInvId.set(invId, email)
+        if (sapId) vendorByInvId.set(invId, sapId)
       }
 
-      // para cada convite pendente, busca por ID completo (se necessário)
-      for (const invId of inviteIds) {
-        if (nameCache.has(invId)) continue
-
-        let resourceId = null
-        if (String(invId).includes('_')) {
-          resourceId = String(invId)
-        } else {
-          const email = emailByInvId.get(String(invId))
-          if (email) resourceId = `${String(invId)}_${String(email)}`
-        }
-
-        if (resourceId) {
-          try {
-            const inv = await fetchSupplierInvitationById(docId, round, resourceId, headersCommon)
-            if (inv?.supplierName) nameCache.set(invId, inv.supplierName)
-          } catch (e) { /* continua */ }
-        }
-
-        // fallback por rows caso ainda vazio
-        if (!nameCache.has(invId)) {
-          const fallback = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
-          if (fallback) nameCache.set(invId, fallback)
+      // Fallback de nome por rows se faltar na lista
+      for (const invId of new Set(results.map(r => r._invitationId).filter(Boolean))) {
+        if (!nameByInvId.has(invId)) {
+          const fb = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
+          if (fb) nameByInvId.set(invId, fb)
         }
       }
 
@@ -674,10 +814,16 @@ module.exports = function () {
       // 5) monta retorno com TODOS os itens
       const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
       const itemsOut = results.map(r => {
-        const supplierName = r._invitationId ? (nameCache.get(r._invitationId) || null) : null
+        const invId = r._invitationId
+        const supplierName = invId ? (nameByInvId.get(invId) || null) : null
+        const supplierIdSap = invId ? (vendorByInvId.get(invId) || null) : null
+
         // remove campos internos antes de expor
         const { _invitationId, _itemId, ...pub } = r
-        return { ...pub, supplierName }
+        // acrescenta:
+        // - Supplier: string (ID SAP)
+        // - SupplierOrgId: objeto original do Ariba { domain: 'sap', value: '...' }
+        return { ...pub, supplierName, SupplierCode: supplierIdSap }
       })
 
       return { header: headerWithDoc, items: itemsOut }
@@ -983,3 +1129,4 @@ function cut(s, max=800) {
   })
 
 }
+
