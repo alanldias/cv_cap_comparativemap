@@ -121,6 +121,9 @@
                             <Column id="colCategoriaItem" width="10rem" hAlign="Center"><header><Text id="txtHdrCategoriaItem" text="Categoria do Item"/></header></Column>
                             <Column id="colReq" width="10rem" hAlign="Center"><header><Text id="txtHdrReq" text="Código da Requisição"/></header></Column>
                             <Column id="colGrpMateriais" width="10rem" hAlign="Center"><header><Text id="txtHdrGrpMateriais" text="Grupo de Materiais"/></header></Column>
+                            <Column id = "coluna" visible="false"><Text id = "textotax" text="deliverydate"/></Column>
+                            <Column id = "colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
+
                         </columns>
 
                         <items>
@@ -151,7 +154,8 @@
                                     <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                || '-'}"    wrapping="false"/>
                                     <Text id="cellReq"            text="{= ${vm>requisicaoCodigo} || ${vm>ItemId} || '-'}" wrapping="false"/>
                                     <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}           || '-'}"    wrapping="false"/>
-
+                                    <Text  id = "deliverydate"     text="{= ${vm>DELIVERY_DATE_RAW}           || '-'}" visible="false"/>
+                                    <Text  id = "suppliercodeText"     text="{= ${vm>suppliercode}           || '-'}" visible="false"/>
                                 </cells>
                             </ColumnListItem>
                         </items>

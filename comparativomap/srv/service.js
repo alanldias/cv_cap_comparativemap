@@ -412,6 +412,9 @@ async function fetchSupplierBids(docId, headersCommon) {
       const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
       const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
+      // pega o valor bruto, independente se vem em .value ou direto
+      const deliveryRaw = byId['REQUESTDELIVERYDATE']?.value ?? byId['REQUESTDELIVERYDATE'] ?? null
+
       const mapped = {
         ItemId: itemId,
         itemDescription: targetRow?.item?.title ?? null,
@@ -435,7 +438,8 @@ async function fetchSupplierBids(docId, headersCommon) {
         ItemCategory: itemCategory,
         TAX_CODE: taxCode,
         MaterialCode: materialCode,
-        grupo_de_materias: grupoMaterias
+        grupo_de_materias: grupoMaterias,
+        DELIVERY_DATE_RAW: deliveryRaw ?? null
       }
 
       // guardamos internamente pra resolver supplierName depois
@@ -448,9 +452,6 @@ async function fetchSupplierBids(docId, headersCommon) {
 
 /**
  * 2) Identifiers → parentProjectId
- */
-/**
- * 2) Identifiers → parentProjectId (robusto)
  */
 async function fetchParentProjectId(docId, headersCommon) {
   // 1ª tentativa: /events/{docId}
@@ -511,9 +512,24 @@ async function fetchParentProjectId(docId, headersCommon) {
   return hit?.parentProjectId ?? null
 }
 
-/**
- * 3) Lista de supplier invitations do round
- */
+function extractSapVendorId(obj) {
+  const org = obj?.organization ?? obj?.supplier ?? null
+  if (!org) return null
+  const arr = org.organizationIDs || org.organizationIds || obj.organizationIDs || obj.organizationIds || []
+  const hit = Array.isArray(arr) ? arr.find(x => String(x?.domain).toLowerCase() === 'sap') : null
+  return hit?.value ?? org?.erpVendorID ?? null
+}
+
+function extractSapOrgEntry(obj) {
+  const org = obj?.organization ?? obj?.supplier ?? null
+  if (!org) return null
+  const arr = org.organizationIDs || org.organizationIds || obj.organizationIDs || obj.organizationIds || []
+  if (!Array.isArray(arr)) return null
+  const entry = arr.find(x => String(x?.domain).toLowerCase() === 'sap') || null
+  return entry ? { domain: entry.domain, value: entry.value } : null
+}
+
+// LISTA
 async function fetchSupplierInvitationsList(docId, round, headersCommon) {
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
   let data
@@ -531,60 +547,16 @@ async function fetchSupplierInvitationsList(docId, round, headersCommon) {
     })
     data = resp.data
   }
-  return toArr(data)
+  console.log(data)
+  return toArr(data) // <— apenas o array de registros
 }
 
-//
-async function fetchSupplierInvitationById(docId, round, resourceId, headersCommon) {
-  if (!resourceId) return null
-  const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations/${encodeURIComponent(resourceId)}`
-  let data
-  if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  } else {
-    const url = `${ARIBA_BASE_URL_EVENTS}${path}`
-    const resp = await axios.get(url, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-    data = resp.data
-  }
-
-  const supplierName =
-    data?.organization?.name ||
-    data?.mainContact?.orgName ||
-    data?.mainContact?.organization ||
-    (Array.isArray(data?.contacts) && (data.contacts[0]?.orgName || data.contacts[0]?.organization)) ||
-    data?.organizationName ||
-    data?.supplier?.organizationName ||
-    data?.supplier?.name ||
-    data?.supplierName ||
-    null
-
-  const emailDetected =
-    data?.mainContact?.emailAddress ||
-    data?.emailAddress ||
-    data?.supplier?.email ||
-    data?.supplierEmail ||
-    data?.contact?.email ||
-    (String(resourceId).includes('_') ? String(resourceId).split('_')[1] : null) ||
-    null
-
-  return {
-    supplierName: supplierName || (emailDetected ? String(emailDetected).split('@')[0] : null),
-    supplierEmail: emailDetected
-  }
-}
 // buscar o iva por pedido enviado
 async function enrichWithTaxCode(items, options = {}) {
   const arr = Array.isArray(items) ? items : []
   if (!arr.length) return []
 
-  const DEST_NAME  = options.destinationName || process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
+  const DEST_NAME = options.destinationName || process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
   const SAP_CLIENT = options.sapClient || process.env.S4H_SAP_CLIENT || '300'
   const ODATA_PATH = options.path || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
   const TIMEOUT_MS = Number(options.timeoutMs || process.env.HTTP_TIMEOUT_MS || 30000)
@@ -603,8 +575,8 @@ async function enrichWithTaxCode(items, options = {}) {
   const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
 
   const $select = [
-    'Supplier','Material','PurchasingOrganization','Plant',
-    'PurchasingInfoRecord','TaxCode'
+    'Supplier', 'Material', 'PurchasingOrganization', 'Plant',
+    'PurchasingInfoRecord', 'TaxCode'
   ].join(',')
 
   const query = [
@@ -673,103 +645,96 @@ function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
 
 // ==================== HANDLER ODATA ====================
 module.exports = function () {
-  
-  this.on('GetQuotes', async (req) => {
-    const { docId } = (req.data || {})
-    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
-    const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
 
-    // Headers de EVENTS só quando .env; com Destination não precisa
-    let headersCommon = {}
-    if (!USE_DESTINATION) {
-      const token = await getAccessToken()
-      headersCommon = {
-        apiKey: ARIBA_API_KEY_EVENTS,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    }
+  // ==================== HANDLER ODATA ====================
+    this.on('GetQuotes', async (req) => {
+      const { docId } = (req.data || {})
+      if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
+      const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
 
-    try {
-      // 1) supplierBids (EVENTS) -> pega TODOS os itens/fornecedores (+ guarda invitationId interno)
-      const { rows, results } = await fetchSupplierBids(docId, headersCommon)
-      if (!rows.length || !results.length) return { header: null, items: [] }
-
-      // 2) resolver supplierName por invitationId (com cache)
-      const inviteIds = [...new Set(results.map(r => r._invitationId).filter(Boolean))]
-      const nameCache = new Map()
-
-      // tenta resolver em massa usando a lista do round (um GET só)
-      let list = []
-      try { list = await fetchSupplierInvitationsList(docId, round, headersCommon) } catch (e) { /* noop */ }
-
-      const emailByInvId = new Map()
-      for (const it of list) {
-        const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
-        if (!invId) continue
-        const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
-        if (email) emailByInvId.set(invId, email)
-        // nome direto se já vier
-        const name =
-          it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
-        if (name) nameCache.set(invId, name)
-      }
-
-      // para cada convite pendente, busca por ID completo (se necessário)
-      for (const invId of inviteIds) {
-        if (nameCache.has(invId)) continue
-
-        let resourceId = null
-        if (String(invId).includes('_')) {
-          resourceId = String(invId)
-        } else {
-          const email = emailByInvId.get(String(invId))
-          if (email) resourceId = `${String(invId)}_${String(email)}`
-        }
-
-        if (resourceId) {
-          try {
-            const inv = await fetchSupplierInvitationById(docId, round, resourceId, headersCommon)
-            if (inv?.supplierName) nameCache.set(invId, inv.supplierName)
-          } catch (e) { /* continua */ }
-        }
-
-        // fallback por rows caso ainda vazio
-        if (!nameCache.has(invId)) {
-          const fallback = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
-          if (fallback) nameCache.set(invId, fallback)
+      // Headers de EVENTS só quando .env; com Destination não precisa
+      let headersCommon = {}
+      if (!USE_DESTINATION) {
+        const token = await getAccessToken()
+        headersCommon = {
+          apiKey: ARIBA_API_KEY_EVENTS,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+          Authorization: `Bearer ${token}`
         }
       }
 
-      // 3) identifiers → parentProjectId (EVENTS)
-      let parentProjectId = null
-      try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
-      LOG.info?.('[GetQuotes] parentProjectId resolvido:', parentProjectId)
-
-      // 4) header (PROJECTS/PM)
-      let header = null
       try {
-        if (parentProjectId) header = await fetchAribaHeader(parentProjectId)
-      } catch (e) { /* noop */ }
+        // 1) supplierBids (EVENTS) -> pega TODOS os itens/fornecedores (+ guarda invitationId interno)
+        const { rows, results } = await fetchSupplierBids(docId, headersCommon)
+        if (!rows.length || !results.length) return { header: null, items: [] }
 
-      // 5) monta retorno com TODOS os itens
-      const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
-      const itemsOut = results.map(r => {
-        const supplierName = r._invitationId ? (nameCache.get(r._invitationId) || null) : null
-        // remove campos internos antes de expor
-        const { _invitationId, _itemId, ...pub } = r
-        return { ...pub, supplierName }
-      })
+        // 2) resolver supplierName + email + SAP Vendor + entry domain/value por invitationId (um GET só)
+        const list = await fetchSupplierInvitationsList(docId, round, headersCommon).catch(() => [])
+        const nameByInvId = new Map()
+        const emailByInvId = new Map()
+        const vendorByInvId = new Map()      // string (valor)
 
-      return { header: headerWithDoc, items: itemsOut }
+        for (const it of list) {
+          const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
+          if (!invId) continue
 
-    } catch (e) {
-      const status = e.response?.status || 502
-      const msg = e.response?.data?.message || e.response?.data || e.message
-      LOG.error('[GetQuotes] Erro Ariba:', status, msg)
-      return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
-    }
-  })
-   
-}
+          const name =
+            it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
+          const email =
+            it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
+
+          const sapEntry = extractSapOrgEntry(it) // objeto { domain, value }
+          const sapId = sapEntry?.value ?? extractSapVendorId(it) // string fallback
+
+          if (name) nameByInvId.set(invId, name)
+          if (email) emailByInvId.set(invId, email)
+          if (sapId) vendorByInvId.set(invId, sapId)
+        }
+
+        // Fallback de nome por rows se faltar na lista
+        for (const invId of new Set(results.map(r => r._invitationId).filter(Boolean))) {
+          if (!nameByInvId.has(invId)) {
+            const fb = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
+            if (fb) nameByInvId.set(invId, fb)
+          }
+        }
+
+        // 3) identifiers → parentProjectId (EVENTS)
+        let parentProjectId = null
+        try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
+        LOG.info?.('[GetQuotes] parentProjectId resolvido:', parentProjectId)
+
+        // 4) header (PROJECTS/PM)
+        let header = null
+        try {
+          if (parentProjectId) header = await fetchAribaHeader(parentProjectId)
+        } catch (e) { /* noop */ }
+
+        // 5) monta retorno com TODOS os itens
+        const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
+        const itemsOut = results.map(r => {
+          const invId = r._invitationId
+          const supplierName = invId ? (nameByInvId.get(invId) || null) : null
+          const supplierIdSap = invId ? (vendorByInvId.get(invId) || null) : null
+
+          // remove campos internos antes de expor
+          const { _invitationId, _itemId, ...pub } = r
+          // acrescenta:
+          // - Supplier: string (ID SAP)
+          // - SupplierOrgId: objeto original do Ariba { domain: 'sap', value: '...' }
+          return { ...pub, supplierName, SupplierCode: supplierIdSap }
+        })
+
+        return { header: headerWithDoc, items: itemsOut }
+
+      } catch (e) {
+        const status = e.response?.status || 502
+        const msg = e.response?.data?.message || e.response?.data || e.message
+        LOG.error('[GetQuotes] Erro Ariba:', status, msg)
+        return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
+      }
+    })
+
+  }
+
