@@ -24,7 +24,7 @@
     },
     "dataSources": {
       "mainService": {
-        "uri": "/odata/v4/service/",
+        "uri": "odata/v4/main/",
         "type": "OData",
         "settings": {
           "annotations": [],
@@ -70,7 +70,12 @@
       "i18n": {
         "type": "sap.ui.model.resource.ResourceModel",
         "settings": {
-          "bundleName": "comparativemap.comparativemap.i18n.i18n"
+          "bundleName": "comparativemap.comparativemap.i18n.i18n",
+          "supportedLocales": [
+            "",
+            "en",
+            "pt"
+          ]
         }
       },
       "": {
