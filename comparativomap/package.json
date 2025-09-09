@@ -43,18 +43,32 @@
       "[production]": {
         "auth": "xsuaa"
       },
-      "AribaApproval": {
+      "ARIBA_Event_Management_Test": {
         "kind": "rest",
-        "credentials": {
-          "url": "${ARIBA_API_BASE}"
+        "[production]": {
+          "credentials": {
+            "destination": "ARIBA_Event_Management_Test"
+          }
         }
       },
-      "BAPI_INFORECORD_GETLIST": {
+      "ARIBA_Sourcing_Project_Management_Test": {
+        "kind": "rest",
+        "[production]": {
+          "credentials": {
+            "destination": "ARIBA_Sourcing_Project_Management_Test"
+          }
+        }
+      },
+     "API_INFORECORD_PROCESS_SRV": {
+      "kind": "odata-v2",
+      "model": "srv/external/API_INFORECORD_PROCESS_SRV.csn.json",
+      "[production]": {
         "credentials": {
           "destination": "S4H_QAS_CQ5_MAPA",
-          "path": "/sap/bc/srt/scs/sap/zbapi_inforecord_getlist?sap-client=300"
+          "path": "/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV"
         }
       }
+    }
     }
   }
 }
