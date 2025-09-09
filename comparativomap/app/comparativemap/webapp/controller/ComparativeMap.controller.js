@@ -135,6 +135,7 @@ sap.ui.define([
         MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
+      console.log(selecionados)
 
       sap.ui.core.BusyIndicator.show(0);
       try {
