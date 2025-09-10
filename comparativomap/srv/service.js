@@ -857,10 +857,12 @@ module.exports = function () {
         POITEM_len: payload.POITEM?.item?.length,
         POSCHEDULE_len: payload.POSCHEDULE?.item?.length
       });
+      console.dir(payload, { depth: null, colors: true });
 
       // 2) Cria o cliente SOAP
       console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
       const endpoint = { url: null };
+      console.log('[simularPO] Endpoint inicial:', endpoint)
       const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
       console.log('[simularPO] Endpoint efetivo:', endpoint.url);
 
