@@ -19,9 +19,8 @@ try {
 const LOG = cds.log('ariba-service')
 
 // Token dos ENDPOINTS de EVENTS (teu projeto)
-const { getAccessToken } = require('../srv/auth/aribaOauth')
+// const { getAccessToken } = require('../srv/auth/aribaOauth')
 
-// ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
 const EVENTS_DEST = process.env.ARIBA_DEST_EVENTS || 'ARIBA_Event_Management_Test'
 const PROJECTS_DEST = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Sourcing_Project_Management_Test'
@@ -33,8 +32,14 @@ const S4H_SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
 const S4H_ODATA_PATH = process.env.S4H_ODATA_PATH
   || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
 const S4H_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 30000
+const _destTokenCache = {}
 
-const _destTokenCache = {} // cache simples por tokenUrl|clientId
+let getAccessToken
+if (!USE_DESTINATION) {
+  // ({ getAccessToken } = require('./auth/aribaOauth'))
+} else {
+  getAccessToken = async () => { throw new Error('getAccessToken não deve ser usado com Destination') }
+}
 
 
 function _escapeOData(v = '') {
@@ -119,13 +124,13 @@ const {
 
 // ==================== HELPER: GET via Destination (robusto) ====================
 async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
-  const destination = await getDestination({ destinationName: destName })
-  if (!destination) throw new Error(`Destination ${destName} não encontrada (ver process.env.destinations / VCAP_SERVICES)`)
+  // 0) SEM cache pra pegar mudanças do cockpit imediatamente
+  const destination = await getDestination({ destinationName: destName, useCache: false })
+  if (!destination) throw new Error(`Destination ${destName} não encontrada`)
 
-  // 1) normaliza caminho (ex.: /events/... → /api/sourcing-event/v2/prod/events/...)
   const urlPath = _maybePrefixPath(destName, relativePath)
 
-  // 2) config base da chamada
+  // base
   const baseCfg = {
     method: 'get',
     url: urlPath,
@@ -134,16 +139,25 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     timeout: Number(timeoutMs) || 30000
   }
 
-  // 3) para EVENTS, se não veio nos params, injeta realm/user/passwordAdapter do .env
-  if (destName === EVENTS_DEST || destName === PROJECTS_DEST) {
-    if (ARIBA_REALM && baseCfg.params.realm == null) baseCfg.params.realm = ARIBA_REALM
-    if (ARIBA_USER && baseCfg.params.user == null) baseCfg.params.user = ARIBA_USER
-    if (ARIBA_PASSWORD_ADAPTER && baseCfg.params.passwordAdapter == null) {
-      baseCfg.params.passwordAdapter = ARIBA_PASSWORD_ADAPTER
+  // 1) Pega Additional Properties do Destination Service
+  const op = destination.originalProperties || {}
+  // URL.headers.<nome>
+  for (const [k, v] of Object.entries(op)) {
+    const m = /^URL\.headers\.(.+)$/i.exec(k)
+    if (m && v != null && v !== '') {
+      const hName = m[1] // mantém o nome como veio (apiKey, APIKey, apikey...)
+      baseCfg.headers[hName] = String(v)
+    }
+  }
+  // URL.queries.<nome>
+  for (const [k, v] of Object.entries(op)) {
+    const m = /^URL\.queries\.(.+)$/i.exec(k)
+    if (m && v != null && v !== '' && baseCfg.params[m[1]] == null) {
+      baseCfg.params[m[1]] = String(v)
     }
   }
 
-  // 4) tenta usar o helper oficial (se existir nessa versão)
+  // 2) helper oficial se disponível
   let reqCfg
   if (addDestinationToRequestConfig) {
     try {
@@ -153,17 +167,17 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     }
   }
 
-  // 5) fallback manual (merge baseURL + headers + auth + apikey)
+  // 3) fallback manual
   if (!reqCfg) {
     reqCfg = {
-      baseURL: destination.url,              // ex.: https://openapi.ariba.com
+      baseURL: destination.url,
       ...baseCfg,
       headers: { ...(destination.headers || {}), ...(baseCfg.headers || {}) }
     }
 
-    // Authorization → usa authTokens da binding OU busca via OAuth2 Client Credentials
+    // Bearer
     if (destination.authTokens?.[0]?.value) {
-      reqCfg.headers.authorization = reqCfg.headers.authorization || `Bearer ${destination.authTokens[0].value}`
+      reqCfg.headers.authorization ||= `Bearer ${destination.authTokens[0].value}`
     } else if ((destination.authentication || '').toLowerCase() === 'oauth2clientcredentials') {
       try {
         const token = await _fetchTokenFromDestination(destination)
@@ -172,21 +186,34 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
         LOG.error?.('[destGet] erro ao obter token:', e.message)
       }
     }
-
-    // apikey → da destination.headers primeiro; se não houver, cai pro fallback do .env
-    if (!reqCfg.headers.apikey && destination.headers?.apikey) reqCfg.headers.apikey = destination.headers.apikey
-    if (!reqCfg.headers.apikey && destName === EVENTS_DEST && ARIBA_API_KEY_EVENTS) reqCfg.headers.apikey = ARIBA_API_KEY_EVENTS
-    if (!reqCfg.headers.apikey && destName === PROJECTS_DEST && ARIBA_API_KEY_PROJECTS) reqCfg.headers.apikey = ARIBA_API_KEY_PROJECTS
-
-    // defaults de conteúdo
-    if (!reqCfg.headers.Accept) reqCfg.headers.Accept = 'application/json'
-    if (!reqCfg.headers['Content-Type']) reqCfg.headers['Content-Type'] = 'application/json'
   }
 
-  // 6) executa
+  // 4) API Key resiliente (pega de vários lugares)
+  const dh = destination.headers || {}
+  const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
+  const apiKey =
+      reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
+   || dh.apiKey          || dh.APIKey          || dh.apikey
+   || keyFromOP
+   || (destName === EVENTS_DEST ? ARIBA_API_KEY_EVENTS
+       : destName === PROJECTS_DEST ? ARIBA_API_KEY_PROJECTS : null)
+
+  if (apiKey) {
+    // seta em várias variantes para garantir
+    reqCfg.headers.apiKey  = apiKey
+    reqCfg.headers.APIKey  = apiKey
+    reqCfg.headers.apikey  = apiKey
+  }
+
+  // defaults
+  reqCfg.headers.Accept ??= 'application/json'
+  reqCfg.headers['Content-Type'] ??= 'application/json'
+
+  // 5) dispara
   const { data } = await axios.request(reqCfg)
   return data
 }
+
 
 // ==================== CÓDIGO PM (PROJECTS) ====================
 // cache simples de token (fallback .env; não usado quando USE_DESTINATION=true)
@@ -562,10 +589,11 @@ async function enrichWithTaxCode(items, options = {}) {
   const arr = Array.isArray(items) ? items : []
   if (!arr.length) return []
 
-  const S4H_DEST = options.destinationName ?? S4H_DEST
-  const SAP_CLIENT = options.sapClient ?? S4H_SAP_CLIENT
-  const ODATA_PATH = options.path ?? S4H_ODATA_PATH
-  const TIMEOUT_MS = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
+  // ❗ use nomes diferentes para não sombrear as constantes globais
+  const s4hDest   = options.destinationName ?? S4H_DEST
+  const sapClient = options.sapClient       ?? S4H_SAP_CLIENT
+  const odataPath = options.path            ?? S4H_ODATA_PATH
+  const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
 
   // monta $filter com OR por item
   const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
@@ -587,14 +615,14 @@ async function enrichWithTaxCode(items, options = {}) {
     '$format=json',
     `$select=${$select}`,
     `$filter=${encodeURIComponent($filter)}`,
-    `sap-client=${encodeURIComponent(SAP_CLIENT)}`
+    `sap-client=${encodeURIComponent(sapClient)}`
   ].join('&')
 
-  const relativeUrl = `${ODATA_PATH}?${query}`
+  const relativeUrl = `${odataPath}?${query}`
 
   // Destination + log da URL completa (pra testar via HTTP)
-  const dest = await getDestination({ destinationName: DEST_NAME })
-  if (!dest) throw new Error(`Destination '${DEST_NAME}' não encontrada.`)
+  const dest = await getDestination({ destinationName: s4hDest })
+  if (!dest) throw new Error(`Destination '${s4hDest}' não encontrada.`)
 
   const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
   const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
@@ -605,7 +633,7 @@ async function enrichWithTaxCode(items, options = {}) {
   try {
     const resp = await executeHttpRequest(
       dest,
-      { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: TIMEOUT_MS },
+      { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: timeoutMs },
       { fetchCsrfToken: false }
     )
     data = resp.data
@@ -617,7 +645,6 @@ async function enrichWithTaxCode(items, options = {}) {
   }
 
   const rows = data?.d?.results ?? data?.value ?? []
-
   const byKey = new Map()
   for (const r of rows) {
     const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
@@ -652,7 +679,7 @@ module.exports = function () {
     if (!items.length) return []
 
     // ====== tirar isso 
-    const DEST_NAME = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
+    const S4H_DEST = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
     const SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
     const ODATA_PATH = process.env.S4H_ODATA_PATH
       || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
@@ -683,8 +710,8 @@ module.exports = function () {
 
     const relativeUrl = `${ODATA_PATH}?${query}`
 
-    const dest = await getDestination({ destinationName: DEST_NAME })
-    if (!dest) return req.error(500, `Destination '${DEST_NAME}' não encontrada.`)
+    const dest = await getDestination({ destinationName: S4H_DEST  })
+    if (!dest) return req.error(500, `Destination '${S4H_DEST }' não encontrada.`)
 
     const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
     const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`

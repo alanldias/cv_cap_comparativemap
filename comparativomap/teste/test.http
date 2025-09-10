@@ -53,7 +53,7 @@ Accept: application/json
 # }
 
 ### LISTA SIMPLES (contexto + TaxCode)
-GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$top=50&$select=PurchasingInfoRecord,PurchasingOrganization,Plant,TaxCode&sap-client=300
+POST http://s4h-qas-cq5:50255/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300
 Accept: application/json
 
 ### FILTRO POR PIR + ORG
@@ -116,4 +116,7 @@ http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfo
 http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
 
 ### 3 teste da url montada pela action
+http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
+
+###
 http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
