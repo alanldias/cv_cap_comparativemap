@@ -6,6 +6,9 @@ const axios = require('axios')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client')
 
+const path = require('path');
+const { getSoapService } = require('./soap-destination');
+
 
 
 
@@ -26,9 +29,7 @@ const { getAccessToken } = require('../srv/auth/aribaOauth')
 
 // ==================== PARA CHAMADA SOAP ====================
 const WSDL_PATH = './srv/external/bapi_po_create1.wsdl';
-const ENDPOINT = 'http://rseccasq05ha1.cvale.com.br:8080/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300';
-const USER = '<USER>';
-const PASS = '<PASS>';
+
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
 const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
@@ -837,8 +838,9 @@ module.exports = function () {
   })
 
   this.on('simularPO', async req => {
-     const t0 = Date.now();
+    const t0 = Date.now();
     console.log('========== [simularPO] START ==========');
+    console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
 
     try {
       // 1) Coleta a entrada e monta payload de fumaça se nada vier
@@ -857,8 +859,10 @@ module.exports = function () {
       });
 
       // 2) Cria o cliente SOAP
-      console.log('[simularPO] Criando client SOAP com WSDL:', WSDL_PATH);
-      const client = await soap.createClientAsync(WSDL_PATH);
+      console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
+      const endpoint = { url: null };
+      const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
+      console.log('[simularPO] Endpoint efetivo:', endpoint.url);
 
       // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
       try {
@@ -872,16 +876,6 @@ module.exports = function () {
         }
       } catch (wErr) {
         console.warn('[simularPO] Aviso ao inspecionar WSDL:', wErr?.message || wErr);
-      }
-
-      // Segurança básica (se seu endpoint exigir)
-      client.setSecurity(new soap.BasicAuthSecurity(USER, PASS));
-
-      if (ENDPOINT && ENDPOINT.trim()) {
-        client.setEndpoint(ENDPOINT);
-        console.log('[simularPO] Forçando ENDPOINT:', ENDPOINT);
-      } else {
-        console.log('[simularPO] Usando o endpoint do WSDL (sem setEndpoint).');
       }
 
       // 3) Listeners de debug do node-soap
@@ -898,7 +892,7 @@ module.exports = function () {
       // 4) Chama a BAPI
       console.log('[simularPO] Chamando BAPI_PO_CREATE1Async...');
       const resp = await client.BAPI_PO_CREATE1Async(payload);
-      const r0   = Array.isArray(resp) ? resp[0] : resp;
+      const r0 = Array.isArray(resp) ? resp[0] : resp;
 
       // 5) Normaliza resposta para o contrato OData
       const expHeader = { poNumber: r0?.EXPHEADER?.PO_NUMBER || '' };
@@ -923,122 +917,122 @@ module.exports = function () {
     }
   });
 
-/* =================== Helpers =================== */
+  /* =================== Helpers =================== */
 
-// Payload "fumaça": se nada vier do front, monta o mínimo p/ a BAPI responder algo.
-function buildSmokePayload(header, items, schedules, testRun) {
-  const hdr = {
-    DOC_TYPE  : header.docType  || 'NB',
-    COMP_CODE : header.compCode || '1000',
-    PURCH_ORG : header.purchOrg || '1000',
-    PUR_GROUP : header.purchGroup|| '001',
-    VENDOR    : padLeft(String(header.vendor || '123456'), 10, '0'),
-    CURRENCY  : header.currency || 'BRL',
-    ...(header.incoterms1 ? { INCOTERMS1: header.incoterms1 } : {}),
-    ...(header.incoterms2 ? { INCOTERMS2: header.incoterms2 } : {})
-  };
-  const hdrX = markX(hdr);
-
-  const itemList = (Array.isArray(items) && items.length > 0) ? items : [{
-    poItem   : 10,
-    plant    : 'BR01',
-    shortText: 'Teste chamada BAPI',
-    quantity : 1,
-    unit     : 'PC',
-    taxCode  : 'I1'
-  }];
-
-  const poitem  = [];
-  const poitemx = [];
-  itemList.forEach((it, i) => {
-    const PO_ITEM = padLeft(String(Number.isInteger(it.poItem) ? it.poItem : (i + 1) * 10), 5, '0');
-    const rec = {
-      PO_ITEM,
-      PLANT    : it.plant,
-      QUANTITY : String(it.quantity),
-      PO_UNIT  : it.unit,
-      ...(it.material  ? { MATERIAL  : padLeft(String(it.material).trim(), 18, '0') } : {}),
-      ...(it.shortText ? { SHORT_TEXT: String(it.shortText).slice(0, 40) } : {}),
-      ...(it.taxCode   ? { TAX_CODE  : String(it.taxCode).slice(0, 2) } : {}),
-      ...(it.netPrice != null ? { NET_PRICE: String(it.netPrice) } : {})
+  // Payload "fumaça": se nada vier do front, monta o mínimo p/ a BAPI responder algo.
+  function buildSmokePayload(header, items, schedules, testRun) {
+    const hdr = {
+      DOC_TYPE: header.docType || 'NB',
+      COMP_CODE: header.compCode || '1000',
+      PURCH_ORG: header.purchOrg || '1000',
+      PUR_GROUP: header.purchGroup || '001',
+      VENDOR: padLeft(String(header.vendor || '123456'), 10, '0'),
+      CURRENCY: header.currency || 'BRL',
+      ...(header.incoterms1 ? { INCOTERMS1: header.incoterms1 } : {}),
+      ...(header.incoterms2 ? { INCOTERMS2: header.incoterms2 } : {})
     };
-    poitem.push(rec);
-    poitemx.push(markX(rec, { PO_ITEM }));
-  });
+    const hdrX = markX(hdr);
 
-  const today = isoDate(new Date());
-  const schedList = (Array.isArray(schedules) && schedules.length > 0)
-    ? schedules.map((s, idx) => ({
-        PO_ITEM      : padLeft(String(Number.isInteger(s.poItem) ? s.poItem : (idx + 1) * 10), 5, '0'),
-        SCHED_LINE   : padLeft(String(s.schedLine ?? 1), 4, '0'),
+    const itemList = (Array.isArray(items) && items.length > 0) ? items : [{
+      poItem: 10,
+      plant: 'BR01',
+      shortText: 'Teste chamada BAPI',
+      quantity: 1,
+      unit: 'PC',
+      taxCode: 'I1'
+    }];
+
+    const poitem = [];
+    const poitemx = [];
+    itemList.forEach((it, i) => {
+      const PO_ITEM = padLeft(String(Number.isInteger(it.poItem) ? it.poItem : (i + 1) * 10), 5, '0');
+      const rec = {
+        PO_ITEM,
+        PLANT: it.plant,
+        QUANTITY: String(it.quantity),
+        PO_UNIT: it.unit,
+        ...(it.material ? { MATERIAL: padLeft(String(it.material).trim(), 18, '0') } : {}),
+        ...(it.shortText ? { SHORT_TEXT: String(it.shortText).slice(0, 40) } : {}),
+        ...(it.taxCode ? { TAX_CODE: String(it.taxCode).slice(0, 2) } : {}),
+        ...(it.netPrice != null ? { NET_PRICE: String(it.netPrice) } : {})
+      };
+      poitem.push(rec);
+      poitemx.push(markX(rec, { PO_ITEM }));
+    });
+
+    const today = isoDate(new Date());
+    const schedList = (Array.isArray(schedules) && schedules.length > 0)
+      ? schedules.map((s, idx) => ({
+        PO_ITEM: padLeft(String(Number.isInteger(s.poItem) ? s.poItem : (idx + 1) * 10), 5, '0'),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, '0'),
         DELIVERY_DATE: s.deliveryDate ? isoDate(new Date(s.deliveryDate)) : today,
-        QUANTITY     : String(s.quantity ?? '0')
+        QUANTITY: String(s.quantity ?? '0')
       }))
-    : poitem.map(p => ({
-        PO_ITEM      : p.PO_ITEM,
-        SCHED_LINE   : '0001',
+      : poitem.map(p => ({
+        PO_ITEM: p.PO_ITEM,
+        SCHED_LINE: '0001',
         DELIVERY_DATE: today,
-        QUANTITY     : p.QUANTITY
+        QUANTITY: p.QUANTITY
       }));
 
-  const posched  = [];
-  const poschedx = [];
-  schedList.forEach(s => {
-    posched.push(s);
-    poschedx.push(markX(s));
-  });
+    const posched = [];
+    const poschedx = [];
+    schedList.forEach(s => {
+      posched.push(s);
+      poschedx.push(markX(s));
+    });
 
-  return {
-    TESTRUN     : testRun ? 'X' : '',
-    POHEADER    : hdr,
-    POHEADERX   : hdrX,
-    POITEM      : { item: poitem },
-    POITEMX     : { item: poitemx },
-    POSCHEDULE  : { item: posched },
-    POSCHEDULEX : { item: poschedx }
-  };
-}
-
-function padLeft(str, len, ch = '0') {
-  str = String(str ?? '');
-  return str.length >= len ? str : ch.repeat(len - str.length) + str;
-}
-function isoDate(d) {
-  const y = d.getFullYear(), m = String(d.getMonth()+1).padStart(2,'0'), day = String(d.getDate()).padStart(2,'0');
-  return `${y}-${m}-${day}`; // troque para YYYYMMDD se seu backend exigir
-}
-function markX(obj, extra = {}) {
-  const x = { ...extra };
-  for (const [k, v] of Object.entries(obj)) {
-    if (k === 'PO_ITEM' || k === 'SCHED_LINE') { x[k] = obj[k]; continue; }
-    if (v !== undefined && v !== null && String(v) !== '') x[k] = 'X';
+    return {
+      TESTRUN: testRun ? 'X' : '',
+      POHEADER: hdr,
+      POHEADERX: hdrX,
+      POITEM: { item: poitem },
+      POITEMX: { item: poitemx },
+      POSCHEDULE: { item: posched },
+      POSCHEDULEX: { item: poschedx }
+    };
   }
-  return x;
-}
 
-// Constrói um objeto legível com os principais campos de erro
-function safeErr(e = {}) {
-  const info = {
-    name       : e.name,
-    message    : e.message,
-    code       : e.code,
-    errno      : e.errno,
-    address    : e.address,
-    port       : e.port,
-    statusCode : e.statusCode,
-    // Alguns campos específicos do node-soap / axios / request:
-    responseStatus: e.response?.status || e.status,
-    responseBody  : (e.body || e.response?.data || e.response?.body || e.root) ? cut(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
-    fault        : e.fault || e.root?.Envelope?.Body?.Fault,
-    stack       : e.stack ? cut(e.stack, 1200) : undefined
-  };
-  return info;
-}
+  function padLeft(str, len, ch = '0') {
+    str = String(str ?? '');
+    return str.length >= len ? str : ch.repeat(len - str.length) + str;
+  }
+  function isoDate(d) {
+    const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`; // troque para YYYYMMDD se seu backend exigir
+  }
+  function markX(obj, extra = {}) {
+    const x = { ...extra };
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === 'PO_ITEM' || k === 'SCHED_LINE') { x[k] = obj[k]; continue; }
+      if (v !== undefined && v !== null && String(v) !== '') x[k] = 'X';
+    }
+    return x;
+  }
 
-function cut(s, max=800) {
-  if (!s) return s;
-  return s.length > max ? (s.slice(0, max) + ` ... (${s.length - max} chars more)`) : s;
-}
+  // Constrói um objeto legível com os principais campos de erro
+  function safeErr(e = {}) {
+    const info = {
+      name: e.name,
+      message: e.message,
+      code: e.code,
+      errno: e.errno,
+      address: e.address,
+      port: e.port,
+      statusCode: e.statusCode,
+      // Alguns campos específicos do node-soap / axios / request:
+      responseStatus: e.response?.status || e.status,
+      responseBody: (e.body || e.response?.data || e.response?.body || e.root) ? cut(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
+      fault: e.fault || e.root?.Envelope?.Body?.Fault,
+      stack: e.stack ? cut(e.stack, 1200) : undefined
+    };
+    return info;
+  }
+
+  function cut(s, max = 800) {
+    if (!s) return s;
+    return s.length > max ? (s.slice(0, max) + ` ... (${s.length - max} chars more)`) : s;
+  }
   this.on('getTaxCode', async (req) => {
     const VENDOR = '1000034808'
     const MATERIAL = '000000000000084363' // MATNR
@@ -1092,7 +1086,7 @@ function cut(s, max=800) {
     }
   })
 
-   this.on('testInfoRecordOData', async (req) => {
+  this.on('testInfoRecordOData', async (req) => {
     const destinationName = process.env.DESTINATION_NAME || 'S4H_QAS_CQ5_MAPA'
     const url = '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/?sap-client=300&$format=json'
 
@@ -1116,9 +1110,9 @@ function cut(s, max=800) {
         body: resp.data           // JSON em texto (ou HTML/login se tiver SSO)
       }
     } catch (e) {
-      const status  = e?.response?.status
+      const status = e?.response?.status
       const headers = e?.response?.headers
-      const body    = e?.response?.data
+      const body = e?.response?.data
       console.error('[testInfoRecordOData] error =>', {
         message: e?.message,
         status,

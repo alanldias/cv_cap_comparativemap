@@ -821,11 +821,11 @@ sap.ui.define([
         console.table(items);
 
         // 5) Schedules (1 por item) com data de hoje (Edm.Date 'YYYY-MM-DD')
-        const schedules = items.map(it => ({
-          poItem: it.poItem,
+        const schedules = rows.map((r, i) => ({
+          poItem: items[i].poItem,
           schedLine: 1,
-          deliveryDate: this._toEdmDate(new Date()),
-          quantity: it.quantity
+          deliveryDate: this._getDeliveryDateFromRow(r), // ← usa a data do Ariba
+          quantity: items[i].quantity
         }));
         console.table(schedules);
 
@@ -886,7 +886,6 @@ sap.ui.define([
      * HEADER: pega do VM e mapeia Ariba → BAPI
      * - Usa vm>/headerRows[0] (sua tabela de cabeçalho)
      * - Fallback de moeda: usa a do primeiro item se header não tiver
-     * - LIFNR: usa o do header se vier; senão MOCK "100573116" (zero-padded)
      ************************************************************* */
     _getHeaderFromVM: function (vm) {
       let h = vm.getProperty("/headerRows");
@@ -903,9 +902,14 @@ sap.ui.define([
       // Fallback de moeda: se header.moeda não vier, usa do primeiro item selecionado
       const currency = (h.moeda || firstRow?.currency || "BRL").toString().toUpperCase().slice(0, 3);
 
-      // Vendor (LIFNR): se não vier no header, usa MOCK "100573116" (zero-padded → 10)
-      const vendorRaw = h.fornecedor && String(h.fornecedor).trim() ? String(h.fornecedor) : "100573116";
-      const vendor = this._zpad(vendorRaw.replace(/\D/g, ""), 10); // só números, pad left
+      // Vendor (LIFNR): tenta header.fornecedor; se vazio, usa SupplierCode da 1ª linha selecionada
+      const vendorRaw =
+        (h.fornecedor && String(h.fornecedor).trim()) ||
+        firstRow?.SupplierCode ||
+        firstRow?.suppliercode ||
+        firstRow?.supplierId ||
+        firstRow?.lifnr;
+      const vendor = this._zpad(String(vendorRaw).replace(/\D/g, ""), 10);
       const rawTipo = (h.tipoPedido || "NB").toString().trim();
       const m = rawTipo.match(/([A-Z0-9]{2,4})\s*$/i); // último bloco 2–4 chars
       const docType = (m ? m[1] : rawTipo).toUpperCase().slice(0, 4);
@@ -975,6 +979,31 @@ sap.ui.define([
     },
 
     /** ********** Helpers utilitários ********** */
+
+    // Converte vários formatos → 'YYYY-MM-DD' (Edm.Date)
+    _normalizeDate: function (val) {
+      if (!val) return this._toEdmDate(new Date());
+      let s = typeof val === "object" && val.dateValue ? val.dateValue : String(val).trim();
+
+      // 'YYYY-MM-DD'
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+      // 'YYYYMMDD'
+      if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+
+      // ISO '2025-09-29T10:55:00.000+0000' etc.
+      const d = new Date(s);
+      if (!isNaN(d)) return this._toEdmDate(d);
+
+      throw new Error(`Data inválida: ${val}`);
+    },
+
+    // Pega a data do Ariba na linha e normaliza
+    _getDeliveryDateFromRow: function (r) {
+      const raw = r?.DELIVERY_DATE_RAW?.dateValue || r?.DELIVERY_DATE_RAW || r?.deliveryDate;
+      return this._normalizeDate(raw || new Date());
+    },
+
 
     // Converte Date JS → 'YYYY-MM-DD' (Edm.Date)
     _toEdmDate: function (d) {

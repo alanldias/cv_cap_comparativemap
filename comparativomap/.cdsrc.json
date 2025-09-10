@@ -1,0 +1,43 @@
+{
+  "requires": {
+    "auth": {
+      "kind": "basic",
+      "users": {
+        "EADIAS": {
+          "password": "m2E%h^H6Rn"
+        }
+      },
+      "[production]": {
+        "kind": "xsuaa"
+      }
+    },
+    "BAPI_PO_CREATE": {
+      "credentials": {
+        "destination": "S4H_QAS_CQ5_MAPA",
+        "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300",
+        "requestTimeout": 300000
+      }
+    }
+  },
+  "folders": {  
+    "srv": "srv/"
+  },
+  "cov2ap": {
+    "plugin": true
+  },
+  "build": {
+    "target": "gen",
+    "tasks": [      
+      {
+        "for": "nodejs",
+        "srv": "srv",
+        "options": {
+          "model": [
+            "srv",
+            "srv/external/bapi_po_create1"
+          ]
+        }
+      }
+    ]
+  }
+}

@@ -27,6 +27,7 @@
   },
   "scripts": {
     "start": "cds-serve",
+    
     "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false",
     "build": "mbt build -t .",
     "deploy": "cf deploy comparativomap_1.0.0.mtar",
@@ -49,12 +50,20 @@
           "url": "${ARIBA_API_BASE}"
         }
       },
+      "BAPI_PO_CREATE": {
+        "credentials": {
+          "destination": "S4H_QAS_CQ5_MAPA",
+          "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300"
+        }
+      },
       "BAPI_INFORECORD_GETLIST": {
         "credentials": {
           "destination": "S4H_QAS_CQ5_MAPA",
           "path": "/sap/bc/srt/scs/sap/zbapi_inforecord_getlist?sap-client=300"
         }
       }
+      
     }
+    
   }
 }
