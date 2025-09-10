@@ -1,10 +1,11 @@
 <mvc:View controllerName="comparativemap.comparativemap.controller.ComparativeMap"
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
-    xmlns:l="sap.ui.layout">
+    xmlns:l="sap.ui.layout"
+    xmlns:core="sap.ui.core">
     <Page id="page" showHeader="false">
 
-        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo">
+        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo sapUiSmallMarginBottom">
             <HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween">
                 <HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo">
                     <Image id="logoTopoNf"
@@ -23,8 +24,8 @@
         </Toolbar>
 
         <l:VerticalLayout id="searchLayout" class="sapUiContentPadding">
-            <HBox id="searchHBox" class="sapUiTinyMarginBottom">
-                <Label id="labelDoc" labelFor="inputDoID"/>
+            <HBox id="searchHBox" alignItems="Center" >
+                <Label id="labelDoc" text="Doc ID:" labelFor="inputDoID" class="sapUiTinyMarginEnd"/>
                 <Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"
                        submit=".onBuscar" />
                 <Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"
@@ -37,93 +38,130 @@
                 <Text id="tituloTabelaAriba"
                       text="{i18n>tituloTabela}"
                       class="textoTabela" />
-                <ToolbarSpacer id="spacerTabela"/>
-                <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
-                        icon="sap-icon://simulate" class="sapUiTinyMarginBegin"
-                        press=".onSimularCompra" />
             </Toolbar>
-            
-            <Table id="tblDocs"
+
+            <Table id="tblHeader"
+                   class="wideTable sapUiSmallMarginBottom"
                    inset="false"
-                   mode="MultiSelect"
-                   growing="true"
-                   noDataText="{i18n>instrucaoTabela}"
-                   items="{vm>/rows}">
-
+                   mode="SingleSelectMaster"
+                   includeItemInSelection="true"
+                   sticky="ColumnHeaders"
+                   selectionChange=".onHeaderSelect"
+                   items="{vm>/headerRows}">
                 <columns>
-                    <Column id="colFornecedores" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerFornecedores" text="{i18n>coluna1}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colNomeItem" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerNomeItem" text="{i18n>coluna2}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colTipoPedido" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerTipoPedido" text="{i18n>coluna3}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colOrgCompras" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerOrgCompras" text="{i18n>coluna4}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colGrpCompradores" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerGrpCompradores" text="{i18n>coluna5}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colEmpresa" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerEmpresa" text="{i18n>coluna6}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colIncoterms" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerIncoterms" text="{i18n>coluna7}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colLocalIncoterms" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerLocalIncoterms" text="{i18n>coluna8}"/>
-                        </header>
-                    </Column>
-
-                    <Column id="colCondPagamento" width="11%" hAlign="Left">
-                        <header>
-                            <Text id="headerCondPagamento" text="{i18n>coluna9}"/>
-                        </header>
-                    </Column>
+                    <Column id="colHdrDocId" width="5rem" hAlign="Center"><header><Text id="txtHdrDocId" text="Doc ID"/></header></Column>
+                    <Column id="colHdrTipoPedido" width="5rem" hAlign="Center"><header><Text id="txtHdrTipoPedido" text="Tipo Pedido"/></header></Column>
+                    <Column id="colHdrOrgCompras" width="5rem" hAlign="Center"><header><Text id="txtHdrOrgCompras" text="Org. Compras"/></header></Column>
+                    <Column id="colHdrGrpCompradores" width="5rem" hAlign="Center"><header><Text id="txtHdrGrpCompradores" text="Grp. Compradores"/></header></Column>
+                    <Column id="colHdrEmpresa" width="5rem" hAlign="Center"><header><Text id="txtHdrEmpresa" text="Empresa"/></header></Column>
+                    <Column id="colHdrIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrIncoterms" text="Incoterms"/></header></Column>
+                    <Column id="colHdrLocalIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrLocalIncoterms" text="Local Incoterms"/></header></Column>
+                    <Column id="colHdrCondPagamento" width="5rem" hAlign="Center"><header><Text id="txtHdrCondPagamento" text="Cond. Pagamento"/></header></Column>
                 </columns>
-
                 <items>
-                    <ColumnListItem id="itemTemplate" vAlign="Middle">
+                    <ColumnListItem id="hdrItemTemplate" type="Inactive">
                         <cells>
-                            <Text id="txtFornecedor" text="{vm>fornecedor}" wrapping="false" tooltip="{vm>fornecedor}" />
-                            <Text id="txtNomeItem" text="{vm>nomeItem}" wrapping="false" tooltip="{vm>nomeItem}"/>
-                            <Text id="txtTipoDocumento" text="{vm>arb_Document_Type}" wrapping="false" tooltip="{vm>arb_Document_Type}"/>
-                            <Text id="txtOrgCompras" text="{vm>arb_PurchasingOrganization}" wrapping="false" tooltip="{vm>arb_PurchasingOrganization}"/>
-                            <Text id="txtGrpCompradores" text="{vm>arb_PurchasingGroup}" wrapping="false" tooltip="{vm>arb_PurchasingGroup}"/>
-                            <Text id="txtEmpresa" text="{vm>arb_CompanyCode}" wrapping="false" tooltip="{vm>arb_CompanyCode}"/>
-                            <Text id="txtIncoterms" text="{vm>incoterms}" wrapping="false" tooltip="{vm>incoterms}"/>
-                            <Text id="txtLocalIncoterms" text="{vm>localIncoterms}" wrapping="false" tooltip="{vm>localIncoterms}" />
-                            <Text id="txtCondPagamento" text="{vm>arb_PaymentTerms}" wrapping="false" tooltip="{vm>arb_PaymentTerms}"/>
+                            <Text id="cellHdrDocId" text="{vm>docId}" wrapping="false"/>
+                            <Text id="cellHdrTipoPedido" text="{vm>tipoPedido}" wrapping="false"/>
+                            <Text id="cellHdrOrgCompras" text="{vm>purchasingOrganization}" wrapping="false"/>
+                            <Text id="cellHdrGrpCompradores" text="{vm>purchasingGroup}" wrapping="false"/>
+                            <Text id="cellHdrEmpresa" text="{vm>companyCode}" wrapping="false"/>
+                            <Text id="cellHdrIncoterms" text="{vm>incoterms1}" wrapping="false"/>
+                            <Text id="cellHdrLocalIncoterms" text="{vm>incoterms2}" wrapping="false"/>
+                            <Text id="cellHdrCondPagamento" text="{vm>paymentTerms}" wrapping="false"/>
                         </cells>
                     </ColumnListItem>
                 </items>
-
             </Table>
-        
+            
+            <VBox id="detailsVBox" class="sapUiSmallMarginTop">
+                <Toolbar id="detailsToolbar">
+                    <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
+                            icon="sap-icon://simulate"
+                            press=".onSimularCompra" />
+                    <ToolbarSpacer id="spacerTabela"/>
+                    <Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/>
+                    <Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
+                    <Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/>
+                </Toolbar>
+                <ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false">
+                    <Table id="tblDocs"
+                           inset="false"
+                           mode="MultiSelect"
+                           growing="true"
+                           noDataText="{i18n>instrucaoTabela}"
+                           items="{vm>/rows}">
+                        
+                        <infoToolbar>
+                            <OverflowToolbar id="vsdFilterBar" visible="false">
+                                <Text id="vsdFilterLabel" />
+                            </OverflowToolbar>
+                        </infoToolbar>
+                        
+                        <columns>
+                            <Column id="colFornecedor" width="6rem" hAlign="Center"><header><Text id="txtHdrFornecedor" text="Fornecedor"/></header></Column>
+                            <Column id="colCodMaterial" width="8rem" hAlign="Center"><header><Text id="txtHdrCodMaterial" text="Código Material"/></header></Column>
+                            <Column id="colNomeItem" width="7rem" hAlign="Center"><header><Text id="txtHdrNomeItem" text="Nome do Item"/></header></Column>
+                            <Column id="colPreco" width="7rem" hAlign="Center"><header><Text id="txtHdrPreco" text="Preço do Item"/></header></Column>
+                            <Column id="colMoeda" width="5rem" hAlign="Center"><header><Text id="txtHdrMoeda" text="Moeda"/></header></Column>
+                            <Column id="colNCM" width="5rem" hAlign="Center"><header><Text id="txtHdrNCM" text="NCM"/></header></Column>
+                            <Column id="colMVA" width="5rem" hAlign="Center"><header><Text id="txtHdrMVA" text="MVA (%)"/></header></Column>
+                            <Column id="colAliqICMS" width="9rem" hAlign="Center"><header><Text id="txtHdrAliqICMS" text="Alíquota ICMS (%)"/></header></Column>
+                            <Column id="colICMSAp" width="7rem" hAlign="Center"><header><Text id="txtHdrICMSAp" text="ICMS Apurado"/></header></Column>
+                            <Column id="colAliqIPI" width="8rem" hAlign="Center"><header><Text id="txtHdrAliqIPI" text="Alíquota IPI (%)"/></header></Column>
+                            <Column id="colIPIAp" width="6rem" hAlign="Center"><header><Text id="txtHdrIPIAp" text="IPI Apurado"/></header></Column>
+                            <Column id="colAliqPIS" width="8rem" hAlign="Center"><header><Text id="txtHdrAliqPIS" text="Alíquota PIS (%)"/></header></Column>
+                            <Column id="colPISAp" width="7rem" hAlign="Center"><header><Text id="txtHdrPISAp" text="PIS Apurado"/></header></Column>
+                            <Column id="colAliqCOFINS" width="10rem" hAlign="Center"><header><Text id="txtHdrAliqCOFINS" text="Alíquota COFINS (%)"/></header></Column>
+                            <Column id="colCOFINSAp" width="8rem" hAlign="Center"><header><Text id="txtHdrCOFINSAp" text="COFINS Apurado"/></header></Column>
+                            <Column id="colAliqICMSIntra" width="9rem" hAlign="Center"><header><Text id="txtHdrAliqICMSIntra" text="Alíquota ICMS Interna (%)"/></header></Column>
+                            <Column id="colOrigem" width="9rem" hAlign="Center"><header><Text id="txtHdrOrigem" text="Origem do Material"/></header></Column>
+                            <Column id="colPrecoEstendido" width="9rem" hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column>
+                            <Column id="colCentro" width="7rem" hAlign="Center"><header><Text id="txtHdrCentro" text="Centro"/></header></Column>
+                            <Column id="colCategoriaItem" width="10rem" hAlign="Center"><header><Text id="txtHdrCategoriaItem" text="Categoria do Item"/></header></Column>
+                            <Column id="colReq" width="10rem" hAlign="Center"><header><Text id="txtHdrReq" text="Código da Requisição"/></header></Column>
+                            <Column id="colGrpMateriais" width="10rem" hAlign="Center"><header><Text id="txtHdrGrpMateriais" text="Grupo de Materiais"/></header></Column>
+                            <Column id = "coluna" visible="false"><Text id = "textotax" text="deliverydate"/></Column>
+                            <Column id = "colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
+
+                        </columns>
+
+                        <items>
+                            <ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress">
+                                <cells>
+                                 <Text id="cellFornecedor"     text="{= ${vm>supplierName} || '-'}" wrapping="false" tooltip="{vm>supplierName}"/>
+                                    <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}  || '-'}" wrapping="false" tooltip="{vm>MaterialCode}"/>
+                                    <Text id="cellNomeItem"       text="{= ${vm>itemDescription} || '-'}" wrapping="false" tooltip="{vm>itemDescription}"/>
+                                    <Text id="cellPreco"          text="{= ${vm>price}          || '0.00'}" textAlign="End" />
+                                    <Text id="cellMoeda"          text="{= ${vm>currency}       || '-'}" wrapping="false"/>
+
+                                    <Text id="cellNCM"            text="{= ${vm>ncm}                          || '-'}"    wrapping="false"/>
+                                    <Text id="cellMVA"            text="{= ${vm>mva}                          || '0.00'}" textAlign="End"/>
+
+                                    <Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}              || '0.00'}" textAlign="End"/>
+                                    <Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}                || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}                || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}            || '0.00'}" textAlign="End"/>
+                                    <Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}             || '0.00'}" textAlign="End"/>
+                                    <Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna}      || '0.00'}" textAlign="End"/>
+                                    <Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}         || '-'}"    wrapping="false"/>
+
+                                    <Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}               || '0.00'}" textAlign="End"/>
+                                    <Text id="cellCentro"         text="{= ${vm>PLANT}                       || '-'}"    wrapping="false"/>
+                                    <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                || '-'}"    wrapping="false"/>
+                                    <Text id="cellReq"            text="{= ${vm>requisicaoCodigo} || ${vm>ItemId} || '-'}" wrapping="false"/>
+                                    <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}           || '-'}"    wrapping="false"/>
+                                    <Text  id = "deliverydate"     text="{= ${vm>DELIVERY_DATE_RAW}           || '-'}" visible="false"/>
+                                    <Text  id = "suppliercodeText"     text="{= ${vm>suppliercode}           || '-'}" visible="false"/>
+                                </cells>
+                            </ColumnListItem>
+                        </items>
+                    </Table>
+                </ScrollContainer>
+            </VBox>
         </VBox>
 
     </Page>
