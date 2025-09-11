@@ -1,12 +1,9 @@
-require('dotenv').config()
 
 const cds = require('@sap/cds')
 const soap = require('soap');
 const axios = require('axios')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client')
-
-const path = require('path');
 const { getSoapService } = require('./soap-destination');
 
 
@@ -32,25 +29,31 @@ const WSDL_PATH = './srv/external/bapi_po_create1.wsdl';
 
 
 // ==================== SWITCH DESTINATION vs .ENV ====================
-const USE_DESTINATION = (process.env.USE_DESTINATION || 'false') === 'true'
-const EVENTS_DEST = process.env.ARIBA_DEST_EVENTS || 'ARIBA_Event_Management_Test'
-const PROJECTS_DEST = process.env.ARIBA_DEST_PROJECTS || 'ARIBA_Sourcing_Project_Management_Test'
+const HTTP_TIMEOUT_MS = 30000
+const ARIBA_EVENT_ROUND = 1
+const EVENTS_DEST = 'ARIBA_Event_Management_Test'
+const PROJECTS_DEST = 'ARIBA_Sourcing_Project_Management_Test'
 
-const EVENTS_API_PREFIX = process.env.ARIBA_EVENTS_API_PREFIX || '/api/sourcing-event/v2/prod'
-const PM_API_PREFIX = process.env.ARIBA_PM_API_PREFIX || '/api/sourcing-project-management/v2/prod'
-const S4H_DEST = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
-const S4H_SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
-const S4H_ODATA_PATH = process.env.S4H_ODATA_PATH
-  || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
-const S4H_TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 30000
+const EVENTS_API_PREFIX = '/api/sourcing-event/v2/prod'
+const PM_API_PREFIX = '/api/sourcing-project-management/v2/prod'
+
+// ==== S/4 Defaults ====
+const S4H_DEST = 'S4H_QAS_CQ5_MAPA'
+const S4H_SAP_CLIENT = '300'
+const S4H_ODATA_PATH = '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
+const S4H_TIMEOUT_MS = HTTP_TIMEOUT_MS
+
+// ==== Token cache (OAuth dest) ====
 const _destTokenCache = {}
 
-let getAccessToken
-if (!USE_DESTINATION) {
-  // ({ getAccessToken } = require('./auth/aribaOauth'))
-} else {
-  getAccessToken = async () => { throw new Error('getAccessToken não deve ser usado com Destination') }
-}
+const DBG_PREFIX = '[ARIBA]';
+const dbg = (...args) => console.log(DBG_PREFIX, ...args);
+const mask = (s) => {
+  if (s == null) return s;
+  const t = String(s);
+  if (t.length <= 6) return '***';
+  return `${t.slice(0, 4)}***${t.slice(-2)}`;
+};
 
 
 function _escapeOData(v = '') {
@@ -62,24 +65,45 @@ function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
 
 
 async function _fetchTokenFromDestination(destination) {
-  // a base do token na sua destination é https://api.ariba.com/v2 — aqui acrescentamos /oauth/token se faltar
-  const base = destination.tokenServiceUrl || destination.tokenUrl || destination.token_service_url
-  if (!base) throw new Error('Destination não possui tokenServiceUrl')
-  const tokenUrl = /\/oauth\b/i.test(base) ? base : base.replace(/\/$/, '') + '/oauth/token'
+  const op = destination.originalProperties || {}
 
-  const clientId = destination.clientId || destination.clientid || destination.client_id
-  const clientSecret = destination.clientSecret || destination.clientsecret || destination.client_secret
-  const grantType = destination.grantType || destination.grant_type || 'client_credentials'
+  // Tenta várias chaves para o token URL
+  let base =
+    destination.tokenServiceUrl ||
+    destination.tokenUrl ||
+    destination.token_service_url ||
+    op.tokenServiceURL ||
+    op.TokenServiceURL ||
+    op['URL.tokenServiceURL']
+
+  if (!base) throw new Error('Destination não possui tokenServiceUrl')
+  const tokenUrl = /\/oauth\b/i.test(base) ? base.replace(/\/$/, '') : base.replace(/\/$/, '') + '/oauth/token'
+  dbg('[token] tokenUrl decidido =', tokenUrl)
+
+  // Tenta várias chaves para clientId/secret
+  const clientId =
+    destination.clientId || destination.clientid || destination.client_id ||
+    op.clientId || op.clientid || op.client_id
+  const clientSecret =
+    destination.clientSecret || destination.clientsecret || destination.client_secret ||
+    op.clientSecret || op.clientsecret || op.client_secret
+  dbg('[token] clientId =', mask(clientId), '| clientSecret = (oculto)')
+
+  const grantType =
+    destination.grantType || destination.grant_type || op.grantType || op.grant_type || 'client_credentials'
+  dbg('[token] grantType =', grantType)
+
   if (!clientId || !clientSecret) throw new Error('Faltando clientId/clientSecret no destination')
 
   const key = tokenUrl + '|' + clientId
   const now = Date.now()
   if (_destTokenCache[key] && now < _destTokenCache[key].exp - 60_000) return _destTokenCache[key].token
+  dbg('[token] cache miss → solicitando novo token')
 
   const includeGrantInBody = !/\bgrant_type=/.test(tokenUrl)
   const body = new URLSearchParams()
   if (includeGrantInBody) body.append('grant_type', grantType)
-  if (destination.scope) body.append('scope', destination.scope)
+  if (destination.scope || op.scope) body.append('scope', destination.scope || op.scope)
 
   const basic = Buffer.from(`${clientId}:${clientSecret}`).toString('base64')
   const resp = await axios.post(tokenUrl, body.toString(), {
@@ -87,6 +111,7 @@ async function _fetchTokenFromDestination(destination) {
     timeout: Number(HTTP_TIMEOUT_MS) || 15000
   })
   const { access_token, expires_in } = resp.data || {}
+  dbg('[token] obtido com sucesso. expires_in =', expires_in)
   _destTokenCache[key] = { token: access_token, exp: now + (expires_in ?? 3600) * 1000 }
   return access_token
 }
@@ -107,39 +132,68 @@ function _maybePrefixPath(destName, relativePath) {
   return relativePath
 }
 
-// ==================== ENV VARS (fallback .env) ====================
-const {
-  // EVENTS
-  ARIBA_BASE_URL_EVENTS,
-  ARIBA_API_KEY_EVENTS,
+// === Helpers de normalização de Destination ===
+function _op(dest) {
+  return dest?.originalProperties || {}
+}
 
-  // PROJECTS / PM
-  ARIBA_BASE_URL_PROJECTS,
-  ARIBA_API_KEY_PROJECTS,
+function _mergeQueryParamsFromDestination(destination, params = {}) {
+  const op = _op(destination)
+  const out = { ...params }
 
-  // Comuns
-  ARIBA_REALM,
-  ARIBA_USER,
-  ARIBA_PASSWORD_ADAPTER,
-  HTTP_TIMEOUT_MS,
+  // 1) Pega URL.queries.*
+  for (const [k, v] of Object.entries(op)) {
+    const m = /^URL\.queries\.(.+)$/i.exec(k)
+    if (m && v != null && v !== '' && out[m[1]] == null) out[m[1]] = String(v)
+  }
 
-  // OAuth PM (fallback .env)
-  ARIBA_PM_OAUTH_TOKEN_URL,
-  ARIBA_PM_OAUTH_CLIENT_ID,
-  ARIBA_PM_OAUTH_CLIENT_SECRET,
-  ARIBA_PM_OAUTH_GRANT_TYPE,
+  // 2) Tolerância: chaves soltas (realm/user/passwordAdapter/sap-client)
+  for (const k of ['realm', 'user', 'passwordAdapter', 'sap-client']) {
+    if (out[k] != null) continue
+    const candidates = [
+      op[k], op[k?.toLowerCase?.()], op[k?.toUpperCase?.()],
+      destination[k]
+    ]
+    const val = candidates.find(x => x != null && x !== '')
+    if (val != null) out[k] = String(val)
+  }
+  return out
+}
 
-  // Round padrão para supplier invitations (se não usar Destination)
-  ARIBA_EVENT_ROUND
-} = process.env
+function _mergeHeadersFromDestination(destination, headers = {}) {
+  const op = _op(destination)
+  const out = { ...headers }
+
+  // 1) Pega URL.headers.*
+  for (const [k, v] of Object.entries(op)) {
+    const m = /^URL\.headers\.(.+)$/i.exec(k)
+    if (m && v != null && v !== '' && out[m[1]] == null) out[m[1]] = String(v)
+  }
+
+  // 2) Tolerância: apiKey em variações e defaults comuns
+  for (const name of ['apiKey', 'apikey', 'APIKey']) {
+    if (out[name] != null && out[name] !== '') continue
+    const val = op[name] ?? destination.headers?.[name]
+    if (val != null && val !== '') out[name] = String(val)
+  }
+
+  // (opcional) se quiser garantir Accept/Content-Type por aqui
+  out.Accept ??= 'application/json'
+  out['Content-Type'] ??= 'application/json'
+
+  return out
+}
 
 // ==================== HELPER: GET via Destination (robusto) ====================
 async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+  dbg('[destGet] START', { destName, relativePath })
   // 0) SEM cache pra pegar mudanças do cockpit imediatamente
   const destination = await getDestination({ destinationName: destName, useCache: false })
   if (!destination) throw new Error(`Destination ${destName} não encontrada`)
+  dbg('[destGet] destination.url =', destination.url)
 
   const urlPath = _maybePrefixPath(destName, relativePath)
+  dbg('[destGet] computed path =', urlPath)
 
   // base
   const baseCfg = {
@@ -153,28 +207,22 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   // 1) Pega Additional Properties do Destination Service
   const op = destination.originalProperties || {}
   // URL.headers.<nome>
-  for (const [k, v] of Object.entries(op)) {
-    const m = /^URL\.headers\.(.+)$/i.exec(k)
-    if (m && v != null && v !== '') {
-      const hName = m[1] // mantém o nome como veio (apiKey, APIKey, apikey...)
-      baseCfg.headers[hName] = String(v)
-    }
-  }
-  // URL.queries.<nome>
-  for (const [k, v] of Object.entries(op)) {
-    const m = /^URL\.queries\.(.+)$/i.exec(k)
-    if (m && v != null && v !== '' && baseCfg.params[m[1]] == null) {
-      baseCfg.params[m[1]] = String(v)
-    }
-  }
+  baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params)
+
+  baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers)
+
+  dbg('[destGet] merged params keys =', Object.keys(baseCfg.params))
+  dbg('[destGet] merged headers keys =', Object.keys(baseCfg.headers))
 
   // 2) helper oficial se disponível
   let reqCfg
   if (addDestinationToRequestConfig) {
     try {
       reqCfg = await addDestinationToRequestConfig(baseCfg, destination)
+      dbg('[destGet] usando addDestinationToRequestConfig (SDK)')
     } catch (e) {
       LOG.warn?.('[destGet] addDestinationToRequestConfig falhou; usando fallback:', e.message)
+      dbg('[destGet] SDK helper falhou → fallback manual')
     }
   }
 
@@ -189,12 +237,15 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     // Bearer
     if (destination.authTokens?.[0]?.value) {
       reqCfg.headers.authorization ||= `Bearer ${destination.authTokens[0].value}`
+      dbg('[destGet] usando auth token já presente na destination')
     } else if ((destination.authentication || '').toLowerCase() === 'oauth2clientcredentials') {
       try {
         const token = await _fetchTokenFromDestination(destination)
         if (token) reqCfg.headers.authorization = `Bearer ${token}`
+        dbg('[destGet] token OAuth adicionado ao header Authorization')
       } catch (e) {
         LOG.error?.('[destGet] erro ao obter token:', e.message)
+        dbg('[destGet] erro ao obter token:', e.message)
       }
     }
   }
@@ -203,79 +254,41 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   const dh = destination.headers || {}
   const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
   const apiKey =
-      reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
-   || dh.apiKey          || dh.APIKey          || dh.apikey
-   || keyFromOP
-   || (destName === EVENTS_DEST ? ARIBA_API_KEY_EVENTS
-       : destName === PROJECTS_DEST ? ARIBA_API_KEY_PROJECTS : null)
+    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
+    || dh.apiKey || dh.APIKey || dh.apikey
+    || keyFromOP
 
   if (apiKey) {
     // seta em várias variantes para garantir
-    reqCfg.headers.apiKey  = apiKey
-    reqCfg.headers.APIKey  = apiKey
-    reqCfg.headers.apikey  = apiKey
+    reqCfg.headers.apiKey = apiKey
+    reqCfg.headers.APIKey = apiKey
+    reqCfg.headers.apikey = apiKey
+    dbg('[destGet] apiKey presente (valor oculto)')
+  } else {
+    dbg('[destGet] apiKey AUSENTE (ok se endpoint não exigir)')
   }
 
   // defaults
   reqCfg.headers.Accept ??= 'application/json'
   reqCfg.headers['Content-Type'] ??= 'application/json'
+  dbg('[destGet] final headers keys =', Object.keys(reqCfg.headers))
+  dbg('[destGet] REQUEST =>', { method: reqCfg.method || 'GET', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
 
   // 5) dispara
-  const { data } = await axios.request(reqCfg)
-  return data
+  const resp = await axios.request(reqCfg)
+  const len = Array.isArray(resp.data) ? resp.data.length : (resp.data?.payload?.length ?? 'n/a')
+  dbg('[destGet] RESPONSE OK status =', resp.status, '| data.len =', len)
+  return resp.data
 }
 
 
 // ==================== CÓDIGO PM (PROJECTS) ====================
-// cache simples de token (fallback .env; não usado quando USE_DESTINATION=true)
-let _pmOauthCache = { token: null, exp: 0 }
-
-async function getPmAccessToken() {
-  if (USE_DESTINATION) throw new Error('getPmAccessToken não deve ser usado com Destination')
-  const now = Date.now()
-  if (_pmOauthCache.token && now < _pmOauthCache.exp - 60_000) return _pmOauthCache.token
-
-  const basic = Buffer.from(`${ARIBA_PM_OAUTH_CLIENT_ID}:${ARIBA_PM_OAUTH_CLIENT_SECRET}`).toString('base64')
-  const grantType = ARIBA_PM_OAUTH_GRANT_TYPE || 'client_credentials'
-
-  const { data } = await axios.post(
-    ARIBA_PM_OAUTH_TOKEN_URL,
-    `grant_type=${encodeURIComponent(grantType)}`,
-    { headers: { Authorization: `Basic ${basic}`, 'Content-Type': 'application/x-www-form-urlencoded' } }
-  )
-  _pmOauthCache.token = data.access_token
-  _pmOauthCache.exp = now + (data.expires_in ?? 3600) * 1000
-  return _pmOauthCache.token
-}
 
 async function aribaPmGet(path, params = {}) {
-  if (USE_DESTINATION) {
-    // IMPORTANTE: repassar params para a Destination
-    return await destGet(PROJECTS_DEST, path, {
-      params, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  }
-  const token = await getPmAccessToken()
-  try {
-    const { data } = await axios.get(`${ARIBA_BASE_URL_PROJECTS}${path}`, {
-      params,
-      headers: { apikey: ARIBA_API_KEY_PROJECTS, Authorization: `Bearer ${token}` },
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-    return data
-  } catch (e) {
-    if (e?.response?.status === 401) {
-      _pmOauthCache = { token: null, exp: 0 }
-      const newToken = await getPmAccessToken()
-      const { data } = await axios.get(`${ARIBA_BASE_URL_PROJECTS}${path}`, {
-        params,
-        headers: { apikey: ARIBA_API_KEY_PROJECTS, Authorization: `Bearer ${newToken}` },
-        timeout: Number(HTTP_TIMEOUT_MS) || 30000
-      })
-      return data
-    }
-    throw e
-  }
+  dbg('[aribaPmGet] path =', path, '| params =', params)
+  return await destGet(PROJECTS_DEST, path, {
+    params, headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
+  })
 }
 
 // ==================== MAPEAMENTO HEADER PM ====================
@@ -392,12 +405,8 @@ function extractSapOrgEntry(obj) {
 
 //CHAMADA DE API /api/sourcing-project-management/v2/prod/projects/WS
 async function fetchAribaHeader(projectId) {
-  const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`, {
-    // pode mover estes 3 para a Destination (Additional Properties → URL.queries.*)
-    realm: ARIBA_REALM,
-    user: ARIBA_USER,
-    passwordAdapter: ARIBA_PASSWORD_ADAPTER
-  })
+  dbg('[fetchAribaHeader] projectId =', projectId)
+  const data = await aribaPmGet(`/projects/${encodeURIComponent(projectId)}`)
   return mapAribaHeader(data || {})
 }
 
@@ -411,25 +420,16 @@ async function fetchAribaHeader(projectId) {
  */
 
 //CHAMADA DE API /api/sourcing-event/v2/prod/events/DocId/supplierBids
-async function fetchSupplierBids(docId, headersCommon) {
+async function fetchSupplierBids(docId) {
+  dbg('[fetchSupplierBids] docId =', docId)
   const path = `/events/${encodeURIComponent(docId)}/supplierBids`
-  let data
-  if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  } else {
-    const urlBids = `${ARIBA_BASE_URL_EVENTS}${path}`
-    const resp = await axios.get(urlBids, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-    data = resp.data
-  }
+
+  const data = await destGet(EVENTS_DEST, path, {
+    params: {}, headers: {}, timeoutMs: HTTP_TIMEOUT_MS
+  })
 
   const rows = toArr(data)
+  dbg('[fetchSupplierBids] rows =', Array.isArray(rows) ? rows.length : 0)
   if (!rows.length) return { rows: [], results: [] }
 
   const results = []
@@ -517,7 +517,7 @@ async function fetchSupplierBids(docId, headersCommon) {
       results.push({ ...mapped, _invitationId: invId, _itemId: itemId })
     }
   }
-
+  dbg('[fetchSupplierBids] results mapeados =', results.length)
   return { rows, results }
 }
 
@@ -525,96 +525,59 @@ async function fetchSupplierBids(docId, headersCommon) {
  * 2) Identifiers → parentProjectId
  */
 //CHAMADA DE API /sourcing-event/v2/prod/events/identifiers
-async function fetchParentProjectId(docId, headersCommon) {
+async function fetchParentProjectId(docId) {
+  dbg('[fetchParentProjectId] docId =', docId)
   // 1ª tentativa: /events/{docId}
   const pathEvent = `/events/${encodeURIComponent(docId)}`
   try {
-    let dataEvt
-    if (USE_DESTINATION) {
-      dataEvt = await destGet(EVENTS_DEST, pathEvent, {
-        params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-        headers: {},
-        timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-      })
-    } else {
-      const urlEvt = `${ARIBA_BASE_URL_EVENTS}${pathEvent}`
-      const respEvt = await axios.get(urlEvt, {
-        params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-        headers: headersCommon,
-        timeout: Number(HTTP_TIMEOUT_MS) || 30000
-      })
-      dataEvt = respEvt.data
-    }
+    const dataEvt = await destGet(EVENTS_DEST, pathEvent, {
+      params: {}, headers: {}, timeoutMs: HTTP_TIMEOUT_MS
+    })
     const pid =
       dataEvt?.parentProjectId ||
       dataEvt?.projectId ||
       dataEvt?.parentProjectUniqueName ||
       null
+    dbg('[fetchParentProjectId] tentativa 1 →', pid ? 'OK' : 'sem pid')
     if (pid) return pid
   } catch (e) {
-    // segue para fallback
+    dbg('[fetchParentProjectId] tentativa 1 falhou:', e?.message)
   }
 
   // 2ª tentativa (fallback): /events/identifiers com filtro por internalId
   const pathIds = `/events/identifiers`
-  let data
-  const idsParams = {
-    realm: ARIBA_REALM,
-    user: ARIBA_USER,
-    passwordAdapter: ARIBA_PASSWORD_ADAPTER,
-    $filter: `(internalId eq ${encodeURIComponent(docId)})`
-  }
-  if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, pathIds, {
-      params: idsParams,
-      headers: {},
-      timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  } else {
-    const urlIds = `${ARIBA_BASE_URL_EVENTS}${pathIds}`
-    const resp = await axios.get(urlIds, {
-      params: idsParams,
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-    data = resp.data
-  }
+  const data = await destGet(EVENTS_DEST, pathIds, {
+    params: { $filter: `(internalId eq ${encodeURIComponent(docId)})` },
+    headers: {}, timeoutMs: HTTP_TIMEOUT_MS
+  })
   const arr = toArr(data)
+  dbg('[fetchParentProjectId] tentativa 2 → registros =', Array.isArray(arr) ? arr.length : 0)
   const hit = arr.find(x => String(x?.internalId) === String(docId))
   return hit?.parentProjectId ?? null
 }
 
 // CHAMADA DE API /sourcing-event/v2/prod/events/DocId/rounds/1/supplierInvitation/
-async function fetchSupplierInvitationsList(docId, round, headersCommon) {
+async function fetchSupplierInvitationsList(docId, round) {
+  dbg('[fetchSupplierInvitationsList] docId =', docId, '| round =', round)
   const path = `/events/${encodeURIComponent(docId)}/rounds/${encodeURIComponent(round)}/supplierInvitations`
-  let data
-  if (USE_DESTINATION) {
-    data = await destGet(EVENTS_DEST, path, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: {}, timeoutMs: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-  } else {
-    const url = `${ARIBA_BASE_URL_EVENTS}${path}`
-    const resp = await axios.get(url, {
-      params: { realm: ARIBA_REALM, user: ARIBA_USER, passwordAdapter: ARIBA_PASSWORD_ADAPTER },
-      headers: headersCommon,
-      timeout: Number(HTTP_TIMEOUT_MS) || 30000
-    })
-    data = resp.data
-  }
-  console.log(data)
-  return toArr(data) // <— apenas o array de registros
+  const data = await destGet(EVENTS_DEST, path, {
+    params: {}, headers: {}, timeoutMs: HTTP_TIMEOUT_MS
+  })
+  const out = toArr(data)
+  dbg('[fetchSupplierInvitationsList] invitations =', Array.isArray(out) ? out.length : 0)
+  return out // <— apenas o array de registros
 }
 
 // buscar o iva por pedido enviado
 async function enrichWithTaxCode(items, options = {}) {
+  dbg('[enrichWithTaxCode] items =', Array.isArray(items) ? items.length : 0)
   const arr = Array.isArray(items) ? items : []
   if (!arr.length) return []
 
   // ❗ use nomes diferentes para não sombrear as constantes globais
-  const s4hDest   = options.destinationName ?? S4H_DEST
-  const sapClient = options.sapClient       ?? S4H_SAP_CLIENT
-  const odataPath = options.path            ?? S4H_ODATA_PATH
+  const s4hDest = options.destinationName ?? S4H_DEST
+  const sapClient = options.sapClient ?? S4H_SAP_CLIENT
+  const odataPath = options.path ?? S4H_ODATA_PATH
   const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
 
   // monta $filter com OR por item
@@ -659,10 +622,12 @@ async function enrichWithTaxCode(items, options = {}) {
       { fetchCsrfToken: false }
     )
     data = resp.data
+    dbg('[enrichWithTaxCode] OData status =', resp.status, '| payload ok')
   } catch (e) {
     const status = e?.response?.status || 502
     const msg = e?.response?.data?.error?.message || e?.message
     LOG?.error?.('[enrichWithTaxCode] Erro OData S/4:', status, msg)
+    dbg('[enrichWithTaxCode] ERRO OData →', status, msg)
     throw e
   }
 
@@ -684,122 +649,27 @@ async function enrichWithTaxCode(items, options = {}) {
   })
 }
 
-// --- helpers locais 
-function _escapeOData(v = '') {
-  return String(v).replace(/'/g, "''").trim()
-}
-function _makeKey(Supplier, Material, PurchasingOrganization, Plant) {
-  return [Supplier, Material, PurchasingOrganization, Plant]
-    .map(v => (v ?? '').toString().trim()).join('|')
-}
-
 // ==================== HANDLER ODATA ====================
 module.exports = function () {
-  //action apenas para testes
-  this.on('getTaxCodeBulk', async (req) => {
-    const items = Array.isArray(req.data?.items) ? req.data.items : []
-    if (!items.length) return []
-
-    // ====== tirar isso 
-    const S4H_DEST = process.env.S4H_DEST || 'S4H_QAS_CQ5_MAPA'
-    const SAP_CLIENT = process.env.S4H_SAP_CLIENT || '300'
-    const ODATA_PATH = process.env.S4H_ODATA_PATH
-      || '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData'
-    const TIMEOUT_MS = Number(process.env.HTTP_TIMEOUT_MS) || 30000
-
-    // ====== FILTER ======
-    const clauses = items.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
-      const parts = []
-      if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
-      if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
-      if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
-      if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
-      return `(${parts.join(' and ')})`
-    }).filter(c => c !== '()')
-
-    const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
-    const $select = [
-      'Supplier', 'Material', 'PurchasingOrganization', 'Plant',
-      'PurchasingInfoRecord', 'TaxCode'
-    ].join(',')
-
-    const query = [
-      '$format=json',
-      `$select=${$select}`,
-      `$filter=${encodeURIComponent($filter)}`,
-      `sap-client=${encodeURIComponent(SAP_CLIENT)}`
-    ].join('&')
-
-    const relativeUrl = `${ODATA_PATH}?${query}`
-
-    const dest = await getDestination({ destinationName: S4H_DEST  })
-    if (!dest) return req.error(500, `Destination '${S4H_DEST }' não encontrada.`)
-
-    const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
-    const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
-    console.log('[getTaxCodeBulk] OData URL =>', fullUrl)
-
-    let data
-    try {
-      const resp = await executeHttpRequest(
-        dest,
-        { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: TIMEOUT_MS },
-        { fetchCsrfToken: false }
-      )
-      data = resp.data
-    } catch (e) {
-      const status = e?.response?.status || 502
-      const msg = e?.response?.data?.error?.message || e?.message
-      LOG?.error?.('[getTaxCodeBulk] Erro OData S/4:', status, msg)
-      return req.error(status, 'Falha ao consultar Info Record no S/4.')
-    }
-
-    const rows = data?.d?.results ?? data?.value ?? []
-
-    const byKey = new Map()
-    for (const r of rows) {
-      const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
-      if (!byKey.has(key)) byKey.set(key, r)
-    }
-
-    return items.map(it => {
-      const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
-      const r = byKey.get(key)
-      return {
-        Supplier: it.Supplier,
-        Material: it.Material,
-        PurchasingOrganization: it.PurchasingOrganization ?? null,
-        Plant: it.Plant ?? null,
-        TaxCode: r?.TaxCode ?? null,
-        PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
-      }
-    })
-  })
-
   this.on('GetQuotes', async (req) => {
+    dbg('[GetQuotes] START data =', req.data)
     const { docId } = (req.data || {})
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
     const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
 
-    // Headers de EVENTS só quando .env; com Destination não precisa
-    let headersCommon = {}
-    if (!USE_DESTINATION) {
-      const token = await getAccessToken()
-      headersCommon = {
-        apiKey: ARIBA_API_KEY_EVENTS,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-        Authorization: `Bearer ${token}`
-      }
-    }
 
     try {
       // 1) supplierBids (EVENTS) -> pega TODOS os itens/fornecedores (+ guarda invitationId interno)
-      const { rows, results } = await fetchSupplierBids(docId, headersCommon)
+      const { rows, results } = await fetchSupplierBids(docId)
+      dbg('[GetQuotes] supplierBids → rows:', rows.length, '| results:', results.length)
       if (!rows.length || !results.length) return { header: null, items: [] }
 
       // 2) resolver supplierName + email + SAP Vendor + entry domain/value por invitationId (um GET só)
-      const list = await fetchSupplierInvitationsList(docId, round, headersCommon).catch(() => [])
+      const list = await fetchSupplierInvitationsList(docId, round).catch((e) => {
+        dbg('[GetQuotes] supplierInvitations ERRO:', e?.message)
+        return []
+      })
+      dbg('[GetQuotes] invitations list:', Array.isArray(list) ? list.length : 0)
       const nameByInvId = new Map()
       const emailByInvId = new Map()
       const vendorByInvId = new Map()      // string (valor)
@@ -831,14 +701,18 @@ module.exports = function () {
 
       // 3) identifiers → parentProjectId (EVENTS)
       let parentProjectId = null
-      try { parentProjectId = await fetchParentProjectId(docId, headersCommon) } catch (e) { /* noop */ }
+      try {
+        parentProjectId = await fetchParentProjectId(docId)
+      } catch (e) { /* noop */ }
       LOG.info?.('[GetQuotes] parentProjectId resolvido:', parentProjectId)
+      dbg('[GetQuotes] parentProjectId =', parentProjectId)
 
       // 4) header (PROJECTS/PM)
       let header = null
       try {
         if (parentProjectId) header = await fetchAribaHeader(parentProjectId)
       } catch (e) { /* noop */ }
+      dbg('[GetQuotes] header mapeado =', header ? 'OK' : 'null')
 
       // 5) monta retorno com TODOS os itens
       const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null }) // opcional no header
@@ -855,17 +729,20 @@ module.exports = function () {
         return { ...pub, supplierName, SupplierCode: supplierIdSap }
       })
 
+      dbg('[GetQuotes] END → itemsOut =', itemsOut.length)
       return { header: headerWithDoc, items: itemsOut }
 
     } catch (e) {
       const status = e.response?.status || 502
       const msg = e.response?.data?.message || e.response?.data || e.message
       LOG.error('[GetQuotes] Erro Ariba:', status, msg)
+      dbg('[GetQuotes] ERROR:', status, msg)
       return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
     }
   })
 
   this.on('simularPO', async req => {
+    dbg('[simularPO] START data =', req.data)
     const t0 = Date.now();
     console.log('========== [simularPO] START ==========');
     console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
@@ -893,6 +770,7 @@ module.exports = function () {
       console.log('[simularPO] Endpoint inicial:', endpoint)
       const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
       console.log('[simularPO] Endpoint efetivo:', endpoint.url);
+      dbg('[simularPO] endpoint.url =', endpoint.url)
 
       // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
       try {
@@ -933,6 +811,7 @@ module.exports = function () {
 
       console.log('[simularPO] Resultado:', { expHeader, msgCount: messages.length });
       console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
+      dbg('[simularPO] END OK. poNumber =', expHeader.poNumber, '| msgs =', messages.length)
       return { expHeader, returnMessages: messages };
 
     } catch (e) {
@@ -941,6 +820,7 @@ module.exports = function () {
       console.error('========== [simularPO] ERROR ==========');
       console.error('[simularPO] Detalhes do erro:', info);
       console.error('=======================================');
+      dbg('[simularPO] ERROR:', info)
 
       // Propaga erro mais legível no OData (evita [object Object])
       return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
@@ -1052,105 +932,18 @@ module.exports = function () {
       statusCode: e.statusCode,
       // Alguns campos específicos do node-soap / axios / request:
       responseStatus: e.response?.status || e.status,
-      responseBody: (e.body || e.response?.data || e.response?.body || e.root) ? cut(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
+      responseBody: (e.body || e.response?.data || e.response?.body || e.root) ? clip(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
       fault: e.fault || e.root?.Envelope?.Body?.Fault,
-      stack: e.stack ? cut(e.stack, 1200) : undefined
+      stack: e.stack ? clip(e.stack, 1200) : undefined
     };
     return info;
   }
 
-  function cut(s, max = 800) {
+  function clip(s, max = 800) {
     if (!s) return s;
     return s.length > max ? (s.slice(0, max) + ` ... (${s.length - max} chars more)`) : s;
   }
-  this.on('getTaxCode', async (req) => {
-    const VENDOR = '1000034808'
-    const MATERIAL = '000000000000084363' // MATNR
-    const PURCH_ORG = 'C001'
-    const PURCHASINGINFOREC = '5300000217'
 
-    // cria client SOAP usando Destination + WSDL
-    const endpoint = { url: null }
-    const wsdl = path.join(__dirname, 'external', 'zbapi_inforecord_getlist.wsdl')
-    const client = await getSoapService('BAPI_INFORECORD_GETLIST', wsdl, endpoint, 'POST')
-
-    // forçar o endpoint a ser o da Destination + path configurado
-    client.setEndpoint(endpoint.url)
-
-    console.log(endpoint.url)
-
-    // monta os PARÂMETROS (objeto JS)
-    const params = {
-      DELETED_INFORECORDS: '',
-      GENERAL_DATA: 'X',
-      INFORECORD_GENERAL: { item: [] },
-      INFORECORD_PURCHORG: { item: [] },
-      INFORECORD_SEGMENT: { item: [] },
-      INFO_TYPE: '',
-      MATERIAL: MATERIAL,
-      MATERIAL_EVG: {},
-      MATERIAL_LONG: '',
-      MAT_GRP: '',
-      PLANT: '',
-      PURCHASINGINFOREC: PURCHASINGINFOREC,
-      PURCHORG_DATA: 'X',
-      PURCHORG_VEND: 'X',
-      PURCH_ORG: PURCH_ORG,
-      PUR_GROUP: '',
-      RETURN: { item: [] },
-      VENDOR: VENDOR,
-      VEND_MAT: '',
-      VEND_MATG: '',
-      VEND_PART: ''
-    }
-
-    try {
-      // chama a operação gerada pelo WSDL (sem construir SOAP na mão)
-      const resp = await client.BAPI_INFORECORD_GETLISTAsync(params)
-
-      // resp[0] = objeto parseado (JS) da resposta SOAP (as tabelas etc.)
-      return resp[0]
-    } catch (e) {
-      console.error('[getTaxCode] SOAP ERROR =>', e?.message || e)
-      throw req.error(`Erro na chamada SOAP via Destination: ${e?.message || 'sem mensagem'}`)
-    }
-  })
-
-  this.on('testInfoRecordOData', async (req) => {
-    const destinationName = process.env.DESTINATION_NAME || 'S4H_QAS_CQ5_MAPA'
-    const url = '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/?sap-client=300&$format=json'
-
-    try {
-      const resp = await executeHttpRequest(
-        { destinationName },
-        {
-          method: 'GET',
-          url,
-          headers: { Accept: 'application/json' },
-          responseType: 'text',   // devolve texto cru (alguns gateways retornam JSON com charset diferente)
-          timeout: 20000
-        },
-        { fetchCsrfToken: false } // não precisa CSRF pra GET
-      )
-
-      return {
-        ok: true,
-        status: resp.status,
-        headers: resp.headers,
-        body: resp.data           // JSON em texto (ou HTML/login se tiver SSO)
-      }
-    } catch (e) {
-      const status = e?.response?.status
-      const headers = e?.response?.headers
-      const body = e?.response?.data
-      console.error('[testInfoRecordOData] error =>', {
-        message: e?.message,
-        status,
-        bodySnippet: typeof body === 'string' ? body.slice(0, 600) : body
-      })
-      throw req.error(`Erro na chamada SOAP via Destination: ${e?.message || 'sem mensagem'}`)
-    }
-  })
 
 }
 
