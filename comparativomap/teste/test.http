@@ -6,6 +6,13 @@ Accept: application/json
 
 {}
 
+###
+GET /api/sourcing-event/v2/prod/events/Doc1708133868/supplierBids?realm=744701080-T&user=acopino.consult&passwordAdapter=ThirdPartyUser HTTP/1.1
+Host: openapi.ariba.com
+apikey: SKUVVJwBe5Yrw8jpC6gTkPj1OS6ReVL2
+Content-Type: application/json
+Authorization: Bearer 2cf11df5-45b0-497c-8cd5-69258d65f1bf
+
 ### Testar OData via Destination
 GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/$metadata?sap-client=300
 Content-Type: application/json

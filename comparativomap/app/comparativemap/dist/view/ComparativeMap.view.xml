@@ -78,7 +78,7 @@
                 <Toolbar id="detailsToolbar">
                     <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
                             icon="sap-icon://simulate"
-                            press=".onSimularCompra" />
+                            press=".onSimularPress" />
                     <ToolbarSpacer id="spacerTabela"/>
                     <Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/>
                     <Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
@@ -86,6 +86,7 @@
                 </Toolbar>
                 <ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false">
                     <Table id="tblDocs"
+                        
                            inset="false"
                            mode="MultiSelect"
                            growing="true"
@@ -99,63 +100,63 @@
                         </infoToolbar>
                         
                         <columns>
-                            <Column id="colFornecedor" width="6rem" hAlign="Center"><header><Text id="txtHdrFornecedor" text="Fornecedor"/></header></Column>
-                            <Column id="colCodMaterial" width="8rem" hAlign="Center"><header><Text id="txtHdrCodMaterial" text="Código Material"/></header></Column>
-                            <Column id="colNomeItem" width="7rem" hAlign="Center"><header><Text id="txtHdrNomeItem" text="Nome do Item"/></header></Column>
-                            <Column id="colPreco" width="7rem" hAlign="Center"><header><Text id="txtHdrPreco" text="Preço do Item"/></header></Column>
-                            <Column id="colMoeda" width="5rem" hAlign="Center"><header><Text id="txtHdrMoeda" text="Moeda"/></header></Column>
-                            <Column id="colNCM" width="5rem" hAlign="Center"><header><Text id="txtHdrNCM" text="NCM"/></header></Column>
-                            <Column id="colMVA" width="5rem" hAlign="Center"><header><Text id="txtHdrMVA" text="MVA (%)"/></header></Column>
-                            <Column id="colAliqICMS" width="9rem" hAlign="Center"><header><Text id="txtHdrAliqICMS" text="Alíquota ICMS (%)"/></header></Column>
-                            <Column id="colICMSAp" width="7rem" hAlign="Center"><header><Text id="txtHdrICMSAp" text="ICMS Apurado"/></header></Column>
-                            <Column id="colAliqIPI" width="8rem" hAlign="Center"><header><Text id="txtHdrAliqIPI" text="Alíquota IPI (%)"/></header></Column>
-                            <Column id="colIPIAp" width="6rem" hAlign="Center"><header><Text id="txtHdrIPIAp" text="IPI Apurado"/></header></Column>
-                            <Column id="colAliqPIS" width="8rem" hAlign="Center"><header><Text id="txtHdrAliqPIS" text="Alíquota PIS (%)"/></header></Column>
-                            <Column id="colPISAp" width="7rem" hAlign="Center"><header><Text id="txtHdrPISAp" text="PIS Apurado"/></header></Column>
-                            <Column id="colAliqCOFINS" width="10rem" hAlign="Center"><header><Text id="txtHdrAliqCOFINS" text="Alíquota COFINS (%)"/></header></Column>
-                            <Column id="colCOFINSAp" width="8rem" hAlign="Center"><header><Text id="txtHdrCOFINSAp" text="COFINS Apurado"/></header></Column>
-                            <Column id="colAliqICMSIntra" width="9rem" hAlign="Center"><header><Text id="txtHdrAliqICMSIntra" text="Alíquota ICMS Interna (%)"/></header></Column>
-                            <Column id="colOrigem" width="9rem" hAlign="Center"><header><Text id="txtHdrOrigem" text="Origem do Material"/></header></Column>
-                            <Column id="colPrecoEstendido" width="9rem" hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column>
-                            <Column id="colCentro" width="7rem" hAlign="Center"><header><Text id="txtHdrCentro" text="Centro"/></header></Column>
-                            <Column id="colCategoriaItem" width="10rem" hAlign="Center"><header><Text id="txtHdrCategoriaItem" text="Categoria do Item"/></header></Column>
-                            <Column id="colReq" width="10rem" hAlign="Center"><header><Text id="txtHdrReq" text="Código da Requisição"/></header></Column>
-                            <Column id="colGrpMateriais" width="10rem" hAlign="Center"><header><Text id="txtHdrGrpMateriais" text="Grupo de Materiais"/></header></Column>
-                            <Column id = "coluna" visible="false"><Text id = "textotax" text="deliverydate"/></Column>
-                            <Column id = "colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
-
+                            <Column id="colFornecedor"      width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column>
+                            <Column id="colNomeItem"        width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column>
+                            <Column id="colQuantidade"      width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column>
+                            <Column id="colPreco"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column>
+                            <Column id="colMoeda"           width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column>
+                            <Column id="colNCM"             width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column>
+                            <Column id="colMVA"             width="5rem"     hAlign="Center"><header><Text id="txtHdrMVA"            text="MVA (%)"/></header></Column>
+                            <Column id="colAliqICMS"        width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMS"       text="Alíquota ICMS (%)"/></header></Column>
+                            <Column id="colICMSAp"          width="7rem"     hAlign="Center"><header><Text id="txtHdrICMSAp"         text="ICMS Apurado"/></header></Column>
+                            <Column id="colAliqIPI"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqIPI"        text="Alíquota IPI (%)"/></header></Column>
+                            <Column id="colIPIAp"           width="6rem"     hAlign="Center"><header><Text id="txtHdrIPIAp"          text="IPI Apurado"/></header></Column>
+                            <Column id="colAliqPIS"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqPIS"        text="Alíquota PIS (%)"/></header></Column>
+                            <Column id="colPISAp"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPISAp"          text="PIS Apurado"/></header></Column>
+                            <Column id="colAliqCOFINS"      width="10rem"    hAlign="Center"><header><Text id="txtHdrAliqCOFINS"     text="Alíquota COFINS (%)"/></header></Column>
+                            <Column id="colCOFINSAp"        width="8rem"     hAlign="Center"><header><Text id="txtHdrCOFINSAp"       text="COFINS Apurado"/></header></Column>
+                            <Column id="colAliqICMSIntra"   width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMSIntra"  text="Alíquota ICMS Interna (%)"/></header></Column>
+                            <Column id="colOrigem"          width="9rem"     hAlign="Center"><header><Text id="txtHdrOrigem"         text="Origem do Material"/></header></Column>
+                            <Column id="colPrecoEstendido"  width="9rem"     hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column>
+                            <Column id="colCentro"          width="15rem"    hAlign="Center"><header><Text id="txtHdrCentro"         text="Centro"/></header></Column>
+                            <Column id="colCategoriaItem"   width="10rem"    hAlign="Center"><header><Text id="txtHdrCategoriaItem"  text="Categoria do Item"/></header></Column>
+                            <Column id="colReq"             width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column>
+                            <Column id="colGrpMateriais"    width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column>
+                            <Column id="colCodMaterial"     width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column>
+                            <Column id="colIva"             width="8rem"     hAlign="Center"><header><Text id="txtHdrIva"            text="Campo Iva"/></header></Column>
+                            <Column id="coluna"             visible="false"><Text id = "textotax" text="deliverydate"/></Column>
+                            <Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
                         </columns>
 
                         <items>
                             <ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress">
                                 <cells>
-                                 <Text id="cellFornecedor"     text="{= ${vm>supplierName} || '-'}" wrapping="false" tooltip="{vm>supplierName}"/>
-                                    <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}  || '-'}" wrapping="false" tooltip="{vm>MaterialCode}"/>
-                                    <Text id="cellNomeItem"       text="{= ${vm>itemDescription} || '-'}" wrapping="false" tooltip="{vm>itemDescription}"/>
-                                    <Text id="cellPreco"          text="{= ${vm>price}          || '0.00'}" textAlign="End" />
-                                    <Text id="cellMoeda"          text="{= ${vm>currency}       || '-'}" wrapping="false"/>
-
-                                    <Text id="cellNCM"            text="{= ${vm>ncm}                          || '-'}"    wrapping="false"/>
-                                    <Text id="cellMVA"            text="{= ${vm>mva}                          || '0.00'}" textAlign="End"/>
-
-                                    <Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}              || '0.00'}" textAlign="End"/>
-                                    <Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}               || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}               || '0.00'}" textAlign="End"/>
-                                    <Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}                || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}               || '0.00'}" textAlign="End"/>
-                                    <Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}                || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}            || '0.00'}" textAlign="End"/>
-                                    <Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}             || '0.00'}" textAlign="End"/>
-                                    <Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna}      || '0.00'}" textAlign="End"/>
-                                    <Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}         || '-'}"    wrapping="false"/>
-
-                                    <Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}               || '0.00'}" textAlign="End"/>
-                                    <Text id="cellCentro"         text="{= ${vm>PLANT}                       || '-'}"    wrapping="false"/>
-                                    <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                || '-'}"    wrapping="false"/>
-                                    <Text id="cellReq"            text="{= ${vm>requisicaoCodigo} || ${vm>ItemId} || '-'}" wrapping="false"/>
-                                    <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}           || '-'}"    wrapping="false"/>
-                                    <Text  id = "deliverydate"     text="{= ${vm>DELIVERY_DATE_RAW}           || '-'}" visible="false"/>
-                                    <Text  id = "suppliercodeText"     text="{= ${vm>suppliercode}           || '-'}" visible="false"/>
+                                    <Text id="cellFornecedor"     text="{= ${vm>supplierName}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>supplierName}"/>
+                                    <Text id="cellNomeItem"       text="{= ${vm>itemDescription}                 || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/>
+                                    <Text id="cellQuantidade"     text="{= ${vm>quantity}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/>
+                                    <Text id="cellPreco"          text="{= ${vm>price}                           || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellMoeda"          text="{= ${vm>currency}                        || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellNCM"            text="{= ${vm>ncm}                             || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellMVA"            text="{= ${vm>mva}                             || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}         || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}          || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}          || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}           || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}          || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}           || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}       || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}        || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna} || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}    || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}                   || '0.00'}" wrapping="true" maxLines="2" />
+                                    <Text id="cellCentro"         text="{= ${vm>PLANT}                           || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>PLANT}"/>
+                                    <Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                    || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || '-'}"    wrapping="true" maxLines="2" />
+                                    <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/>
+                                    <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/>
+                                    <Text id="cellIva"            text="{= ${vm>TAX_CODE}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/>
+                                    <Text id="deliverydate"       text="{= ${vm>DELIVERY_DATE_RAW}               || '-'}"    visible="false"/>
+                                    <Text id="suppliercodeText"   text="{= ${vm>suppliercode}                    || '-'}"    visible="false"/>
                                 </cells>
                             </ColumnListItem>
                         </items>
@@ -163,6 +164,5 @@
                 </ScrollContainer>
             </VBox>
         </VBox>
-
     </Page>
 </mvc:View>
