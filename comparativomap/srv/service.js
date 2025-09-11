@@ -1,5 +1,6 @@
 require('dotenv').config()
 
+const { XMLParser } = require('fast-xml-parser');
 const cds = require('@sap/cds')
 const soap = require('soap');
 const axios = require('axios')
@@ -203,17 +204,17 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   const dh = destination.headers || {}
   const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
   const apiKey =
-      reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
-   || dh.apiKey          || dh.APIKey          || dh.apikey
-   || keyFromOP
-   || (destName === EVENTS_DEST ? ARIBA_API_KEY_EVENTS
-       : destName === PROJECTS_DEST ? ARIBA_API_KEY_PROJECTS : null)
+    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
+    || dh.apiKey || dh.APIKey || dh.apikey
+    || keyFromOP
+    || (destName === EVENTS_DEST ? ARIBA_API_KEY_EVENTS
+      : destName === PROJECTS_DEST ? ARIBA_API_KEY_PROJECTS : null)
 
   if (apiKey) {
     // seta em várias variantes para garantir
-    reqCfg.headers.apiKey  = apiKey
-    reqCfg.headers.APIKey  = apiKey
-    reqCfg.headers.apikey  = apiKey
+    reqCfg.headers.apiKey = apiKey
+    reqCfg.headers.APIKey = apiKey
+    reqCfg.headers.apikey = apiKey
   }
 
   // defaults
@@ -612,9 +613,9 @@ async function enrichWithTaxCode(items, options = {}) {
   if (!arr.length) return []
 
   // ❗ use nomes diferentes para não sombrear as constantes globais
-  const s4hDest   = options.destinationName ?? S4H_DEST
-  const sapClient = options.sapClient       ?? S4H_SAP_CLIENT
-  const odataPath = options.path            ?? S4H_ODATA_PATH
+  const s4hDest = options.destinationName ?? S4H_DEST
+  const sapClient = options.sapClient ?? S4H_SAP_CLIENT
+  const odataPath = options.path ?? S4H_ODATA_PATH
   const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
 
   // monta $filter com OR por item
@@ -732,8 +733,8 @@ module.exports = function () {
 
     const relativeUrl = `${ODATA_PATH}?${query}`
 
-    const dest = await getDestination({ destinationName: S4H_DEST  })
-    if (!dest) return req.error(500, `Destination '${S4H_DEST }' não encontrada.`)
+    const dest = await getDestination({ destinationName: S4H_DEST })
+    if (!dest) return req.error(500, `Destination '${S4H_DEST}' não encontrada.`)
 
     const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
     const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
@@ -924,16 +925,70 @@ module.exports = function () {
       const resp = await client.BAPI_PO_CREATE1Async(payload);
       const r0 = Array.isArray(resp) ? resp[0] : resp;
 
-      // 5) Normaliza resposta para o contrato OData
-      const expHeader = { poNumber: r0?.EXPHEADER?.PO_NUMBER || '' };
-      const messages = (r0?.RETURN?.item || []).map((m) => ({
+      // 5) ⬇️ Normaliza para um JSON simples (sem parser de XML)
+      const toArray = v => (Array.isArray(v) ? v : (v ? [v] : [])); // ajuda com nó único
+
+      const headerRaw = r0?.EXPHEADER || {};
+      const itensRaw = toArray(r0?.POITEM?.item);
+      const schedRaw = toArray(r0?.POSCHEDULE?.item);
+
+      // Agrupa schedules por item
+      const schedByItem = schedRaw.reduce((acc, s) => {
+        const key = String(s.PO_ITEM || '').padStart(5, '0');
+        (acc[key] ||= []).push({
+          schedLine: s.SCHED_LINE,
+          deliveryDate: s.DELIVERY_DATE,
+          qty: Number(s.QUANTITY || 0)
+        });
+        return acc;
+      }, {});
+
+      // Mapeia itens da BAPI no formato direto pro front
+      const itens = itensRaw.map(i => {
+        const key = String(i.PO_ITEM || '').padStart(5, '0');
+        return {
+          poItem: key,
+          material: i.MATERIAL_LONG || i.MATERIAL,
+          descricao: i.SHORT_TEXT,
+          quantidade: Number(i.QUANTITY || 0),
+          unidade: i.PO_UNIT,
+          netPrice: Number(i.NET_PRICE || 0),
+          priceUnit: Number(i.PRICE_UNIT || 1),
+          taxCode: i.TAX_CODE,
+          taxJurCode: i.TAXJURCODE,
+          ncm: i.BRAS_NBM,
+          priceDate: i.PRICE_DATE,
+          schedules: schedByItem[key] || []
+        };
+      });
+
+      const messages = toArray(r0?.RETURN?.item).map(m => ({
         type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
         logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
       }));
 
-      console.log('[simularPO] Resultado:', { expHeader, msgCount: messages.length });
+      const result = {
+        testRun: !!payload.TESTRUN,
+        header: {
+          empresa: headerRaw.COMP_CODE,
+          orgCompras: headerRaw.PURCH_ORG,
+          grupoCompras: headerRaw.PUR_GROUP,
+          fornecedor: headerRaw.VENDOR,
+          moeda: headerRaw.CURRENCY,
+          incoterms1: headerRaw.INCOTERMS1,
+          incoterms2: headerRaw.INCOTERMS2,
+          criadoEm: headerRaw.CREAT_DATE,
+          criadoPor: headerRaw.CREATED_BY,
+          poNumber: headerRaw.PO_NUMBER || '' // vazio em TESTRUN
+        },
+        itens,
+        mensagens: messages,
+        returnMessages: messages
+      };
+
+      console.log('[simularPO] Resultado simples:', { itens: itens.length, msgs: messages.length });
       console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
-      return { expHeader, returnMessages: messages };
+      return result;
 
     } catch (e) {
       // 6) Erro: log detalhado para diagnosticar 502, timeouts, TLS, etc.
@@ -941,8 +996,6 @@ module.exports = function () {
       console.error('========== [simularPO] ERROR ==========');
       console.error('[simularPO] Detalhes do erro:', info);
       console.error('=======================================');
-
-      // Propaga erro mais legível no OData (evita [object Object])
       return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
     }
   });

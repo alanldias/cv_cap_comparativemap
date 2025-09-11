@@ -48,12 +48,12 @@ service service {
     moeda                  : String(3);
   };
 
-  type QuotesResponse       : {
+  type QuotesResponse : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
-  
-  function GetQuotes(docId: String)           returns QuotesResponse;
+
+  function GetQuotes(docId: String)                    returns QuotesResponse;
 
   // ==== Axel ====
   type POHeader {
@@ -66,6 +66,7 @@ service service {
     incoterms1 : String(3); // INCOTERMS1
     incoterms2 : String(28); // INCOTERMS2 (lugar)
   }
+
 
   type POItem {
     poItem    : Integer; // PO_ITEM (00010, 00020, ...) - montar no handler
@@ -91,6 +92,40 @@ service service {
   // --------------------------------------
   // Tipos de retorno (para montar tabela de mensagens e header)
   // --------------------------------------
+  type SimulacaoPOHeader {
+    empresa      : String(4); // EXPHEADER.COMP_CODE
+    orgCompras   : String(4); // EXPHEADER.PURCH_ORG
+    grupoCompras : String(3); // EXPHEADER.PUR_GROUP
+    fornecedor   : String(10); // EXPHEADER.VENDOR
+    moeda        : String(5); // EXPHEADER.CURRENCY
+    incoterms1   : String(3); // EXPHEADER.INCOTERMS1
+    incoterms2   : String(28); // EXPHEADER.INCOTERMS2
+    criadoEm     : Date; // EXPHEADER.CREAT_DATE
+    criadoPor    : String(20); // EXPHEADER.CREATED_BY
+    poNumber     : String(10); // EXPHEADER.PO_NUMBER (vazio em TESTRUN)
+  }
+
+  type SimulacaoPOSchedule {
+    schedLine    : String(4); // SCHED_LINE (mantemos zero-padding)
+    deliveryDate : String(10); // DELIVERY_DATE como veio (ex.: 11.09.2025)
+    qty          : Decimal(13, 3);
+  }
+
+  type SimulacaoPOItem {
+    poItem     : String(5); // "00010" (com zero-padding)
+    material   : String(40); // MATERIAL_LONG ou MATERIAL
+    descricao  : String(80); // SHORT_TEXT
+    quantidade : Decimal(13, 3); // QUANTITY
+    unidade    : String(3); // PO_UNIT
+    netPrice   : Decimal(13, 2); // NET_PRICE
+    priceUnit  : Decimal(13, 3); // PRICE_UNIT
+    taxCode    : String(2); // TAX_CODE
+    taxJurCode : String(20); // TAXJURCODE
+    ncm        : String(20); // BRAS_NBM
+    priceDate  : Date; // PRICE_DATE
+    schedules  : array of SimulacaoPOSchedule;
+  }
+
   type ReturnMessage {
     type    : String(1); // S, E, W, I, A
     id      : String(20);
@@ -103,41 +138,35 @@ service service {
     v4      : String(50);
   }
 
-  type ExpHeader {
-    poNumber : String(10); // EXPHEADER-PO_NUMBER (em TESTRUN tende a vir vazio)
-  }
-
   type SimulacaoPOResult {
-    expHeader      : ExpHeader;
-    returnMessages : many ReturnMessage;
+    testRun        : Boolean;
+    header         : SimulacaoPOHeader;
+    itens          : array of SimulacaoPOItem;
+    returnMessages : array of ReturnMessage;
   }
 
   action   simularPO(header: POHeader,
                      items: array of POItem,
                      schedules: array of POSchedule,
-                     testRun: Boolean default true // enviaremos 'X' no handler quando true
-  )                                 returns SimulacaoPOResult;
+                     testRun: Boolean default true)    returns SimulacaoPOResult;
 
+  // ==== Thiago ====
 
-// ==== Thiago ====
-
-   @readonly
-  action getTaxCode(
-    VENDOR            : String(10),
-    MATERIAL          : String(18),
-    PURCH_ORG         : String(4),
-    PURCHASINGINFOREC : String(10),
-  ) returns {
-    taxCode           : String(2);
-    infoRecord        : String(10);
-    vendor            : String(10);
-    purchOrg          : String(4);
-    matchedCount      : Integer;
-    rawItem           : LargeString; // opcional: JSON do item que bateu, p/ debug
-    returnMessages    : LargeString; // opcional: JSON de BAPIRETURN
+  @readonly
+  action   getTaxCode(VENDOR: String(10),
+                      MATERIAL: String(18),
+                      PURCH_ORG: String(4),
+                      PURCHASINGINFOREC: String(10), ) returns {
+    taxCode        : String(2);
+    infoRecord     : String(10);
+    vendor         : String(10);
+    purchOrg       : String(4);
+    matchedCount   : Integer;
+    rawItem        : LargeString; // opcional: JSON do item que bateu, p/ debug
+    returnMessages : LargeString; // opcional: JSON de BAPIRETURN
   };
 
-  action testInfoRecordOData() returns LargeString; // ou returns String(100000)
+  action   testInfoRecordOData()                       returns LargeString; // ou returns String(100000)
 
 
   action   getTaxCodeBulk(items: array of {
@@ -145,7 +174,7 @@ service service {
     Material               : String(40);
     PurchasingOrganization : String(4);
     Plant                  : String(4);
-  })                                returns array of {
+  })                                                   returns array of {
     Supplier               : String(10);
     Material               : String(40);
     PurchasingOrganization : String(4);
