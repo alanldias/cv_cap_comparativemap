@@ -400,7 +400,20 @@ sap.ui.define([
         return;
       }
 
-      // ✅ Agrupar por itemId (único). Evita juntar itens com o mesmo nome.
+      // 🧩 Conjunto de TODOS os itens do evento (obrigatórios para premiar)
+      const allRows = vm?.getProperty("/rows") || [];
+      const allItems = new Map(); // itemId -> { label, original }
+      allRows.forEach(r => {
+        const itemId = Number(r.itemId ?? r.ItemId);
+        if (!Number.isFinite(itemId)) return;
+        const label = r.itemKey || r.itemDescription || r.MaterialCode || r.materialCode || String(itemId);
+        const origCand = Number(r.originalQty ?? r.original ?? r.quantityOriginal ?? r.quantity ?? 0);
+        const prev = allItems.get(itemId) || { label, original: 0 };
+        const original = Number.isFinite(origCand) ? Math.max(prev.original, Math.floor(origCand)) : prev.original;
+        allItems.set(itemId, { label, original });
+      });
+
+      // ✅ Agrupar SELECIONADOS por itemId (único). Evita juntar itens com o mesmo nome.
       const supplierBids = [];
       const problemas = [];
       const faltaIds  = [];
@@ -415,10 +428,7 @@ sap.ui.define([
         const label =
           r.itemKey || r.itemDescription || r.MaterialCode || r.materialCode || String(itemId);
 
-        // tenta descobrir a quantidade original a partir de diferentes campos
-        const origCand = Number(
-          r.originalQty ?? r.original ?? r.quantityOriginal ?? r.quantity ?? 0
-        );
+        const origCand = Number(r.originalQty ?? r.original ?? r.quantityOriginal ?? r.quantity ?? 0);
 
         if (!byItem.has(itemId)) byItem.set(itemId, { label, original: 0, rows: [] });
         const g = byItem.get(itemId);
@@ -426,36 +436,67 @@ sap.ui.define([
         g.rows.push(r);
       });
 
-      // 🔎 Diagnóstico do agrupamento
-      console.log("[Award] Grupos por itemId:", Array.from(byItem.entries()).map(([id, g]) => ({
+      // 🔎 Diagnóstico dos grupos selecionados
+      console.log("[Award] Grupos (SELECIONADOS) por itemId:", Array.from(byItem.entries()).map(([id, g]) => ({
         itemId: id, label: g.label, original: g.original, rows: g.rows.length
       })));
+      console.log("[Award] Itens obrigatórios (TODOS) do evento:", Array.from(allItems.entries()).map(([id, g]) => ({
+        itemId: id, label: g.label, original: g.original
+      })));
 
-      for (const [itemId, g] of byItem.entries()) {
-        const original = Math.floor(Number(g.original || 0));
+      // 🚫 TRAVA #1 — Todos os itens devem estar representados na seleção
+      const faltandoItens = [];
+      for (const [id, meta] of allItems.entries()) {
+        if (!byItem.has(id)) faltandoItens.push(`#${id} (${meta.label})`);
+      }
+      if (faltandoItens.length) {
+        sap.m.MessageBox.error(
+          "Para concluir a premiação, TODOS os itens do evento devem estar selecionados.\n\n" +
+          "Itens não selecionados:\n" + faltandoItens.join("\n")
+        );
+        return;
+      }
+
+      // 🚫 TRAVA #2 — Para cada item, a soma dos selecionados deve FECHAR a quantidade original
+      for (const [itemId, gSel] of byItem.entries()) {
+        // Preferir original vindo do conjunto completo (mais confiável)
+        const metaAll = allItems.get(itemId);
+        const original = Math.floor(Number((metaAll?.original ?? 0) || gSel.original || 0));
         if (original <= 0) {
-          problemas.push(`Item #${itemId} (${g.label}): quantidade ORIGINAL inválida.`);
+          problemas.push(`Item #${itemId} (${metaAll?.label || gSel.label}): quantidade ORIGINAL inválida.`);
           continue;
         }
 
-        // soma baseada no que o usuário editou
         let sum = 0;
-        g.rows.forEach(r => {
+        gSel.rows.forEach(r => {
           let q = Math.floor(Number(r.qtyAward) || 0);
           if (q < 0) q = 0;
-          if (q > original) q = original; // clamp por segurança
+          if (q > original) q = original; // clamp defensivo
           r.qtyAward = q;
           sum += q;
         });
 
         if (sum !== original) {
-          problemas.push(`Item #${itemId} (${g.label}): restante ${original - sum} (a soma deve fechar ${original}).`);
+          problemas.push(`Item #${itemId} (${metaAll?.label || gSel.label}): restante ${original - sum} (a soma deve fechar ${original}).`);
           continue;
         }
+      }
 
-        // calcula % por fornecedor a partir da ORIGINAL, ajustando arredondamento para fechar 100%
+      if (problemas.length) {
+        sap.m.MessageBox.error(
+          "As quantidades por item precisam fechar com a quantidade ORIGINAL:\n\n" +
+          problemas.join("\n")
+        );
+        return;
+      }
+
+      // ✅ Cálculo de splits (%), ajuste de arredondamento e montagem do payload
+      for (const [itemId, gSel] of byItem.entries()) {
+        const metaAll = allItems.get(itemId);
+        const original = Math.floor(Number((metaAll?.original ?? 0) || gSel.original || 0));
+
         let sumPerc = 0;
-        const percList = g.rows.map((r, ix) => {
+        const percList = gSel.rows.map((r, ix) => {
           const p = Math.round(((r.qtyAward * 100) / original) * 1000) / 1000;
           sumPerc += p;
           return { ix, p };
@@ -466,14 +507,13 @@ sap.ui.define([
           if (lastIdx >= 0) percList[lastIdx].p = Math.max(0, Math.round((percList[lastIdx].p + diff) * 1000) / 1000);
         }
 
-        // monta supplierBids para este itemId
         percList.forEach(({ ix, p }) => {
-          const r = g.rows[ix];
+          const r = gSel.rows[ix];
           if (p <= 0) return;
 
           const fullInvitation = this._ensureInvitationResourceId(r.invitationId, r.invitationEmail);
           if (!fullInvitation) {
-            faltaIds.push(`${r.supplierName || 'Fornecedor'} / #${itemId} (${g.label})`);
+            faltaIds.push(`${r.supplierName || 'Fornecedor'} / #${itemId} (${metaAll?.label || gSel.label})`);
             return;
           }
 
@@ -486,21 +526,13 @@ sap.ui.define([
           });
         });
 
-        // 🔎 Log por item (quantidades e splits gerados)
+        // 🔎 Log por item
         console.log("[Award] itemId:", itemId,
-          "| label:", g.label,
-          "| original:", original,
-          "| somaQtd:", sum,
+          "| label:", metaAll?.label || gSel.label,
+          "| original:", metaAll?.original ?? gSel.original,
           "| splits:", supplierBids.filter(b => b.itemId === itemId));
       }
 
-      if (problemas.length) {
-        sap.m.MessageBox.error(
-          "As quantidades por item precisam fechar com a quantidade ORIGINAL:\n\n" +
-          problemas.join("\n")
-        );
-        return;
-      }
       if (!supplierBids.length || faltaIds.length) {
         sap.m.MessageBox.error(
           "Itens sem identificação suficiente (itemId/invitationId). Revise a seleção.\n\n" +
@@ -540,7 +572,7 @@ sap.ui.define([
         }
       } catch (e) {
         sap.ui.core.BusyIndicator.hide();
-        // Sem “ver mais detalhes”: mensagem compacta
+        // Mensagem compacta (sem "ver mais detalhes")
         let msg = "Falha ao criar cenário.";
         if (this._compactODataErrorText) {
           msg = this._compactODataErrorText(e);
@@ -551,6 +583,7 @@ sap.ui.define([
         sap.m.MessageBox.error(msg);
       }
     },
+
 
 
     _parseODataError(err) {
