@@ -400,42 +400,62 @@ sap.ui.define([
         return;
       }
 
-      // Agrupa por itemKey
-      const byKey = {};
-      selected.forEach(r => {
-        const key = String(r.itemKey || r.materialCode || r.MaterialCode || this._getItemKey(r));
-        (byKey[key] ||= []).push(r);
-      });
-
+      // ✅ Agrupar por itemId (único). Evita juntar itens com o mesmo nome.
       const supplierBids = [];
       const problemas = [];
       const faltaIds  = [];
+      const byItem = new Map();
 
-      Object.entries(byKey).forEach(([key, arr]) => {
-        const original = Math.floor(Number(arr[0]?.originalQty || 0));
-        if (original <= 0) {
-          problemas.push(`Item ${key}: quantidade ORIGINAL inválida.`);
+      selected.forEach(r => {
+        const itemId = Number(r.itemId ?? r.ItemId);
+        if (!Number.isFinite(itemId)) {
+          faltaIds.push(`${r.supplierName || 'Fornecedor'} / ${r.materialCode || r.MaterialCode || r.itemKey || r.itemDescription || '(sem chave)'}`);
           return;
         }
+        const label =
+          r.itemKey || r.itemDescription || r.MaterialCode || r.materialCode || String(itemId);
 
-        // soma com base nos valores editados pelo usuário
+        // tenta descobrir a quantidade original a partir de diferentes campos
+        const origCand = Number(
+          r.originalQty ?? r.original ?? r.quantityOriginal ?? r.quantity ?? 0
+        );
+
+        if (!byItem.has(itemId)) byItem.set(itemId, { label, original: 0, rows: [] });
+        const g = byItem.get(itemId);
+        if (Number.isFinite(origCand) && origCand > g.original) g.original = Math.floor(origCand);
+        g.rows.push(r);
+      });
+
+      // 🔎 Diagnóstico do agrupamento
+      console.log("[Award] Grupos por itemId:", Array.from(byItem.entries()).map(([id, g]) => ({
+        itemId: id, label: g.label, original: g.original, rows: g.rows.length
+      })));
+
+      for (const [itemId, g] of byItem.entries()) {
+        const original = Math.floor(Number(g.original || 0));
+        if (original <= 0) {
+          problemas.push(`Item #${itemId} (${g.label}): quantidade ORIGINAL inválida.`);
+          continue;
+        }
+
+        // soma baseada no que o usuário editou
         let sum = 0;
-        arr.forEach(r => {
+        g.rows.forEach(r => {
           let q = Math.floor(Number(r.qtyAward) || 0);
           if (q < 0) q = 0;
-          if (q > original) q = original; // clamp
+          if (q > original) q = original; // clamp por segurança
           r.qtyAward = q;
           sum += q;
         });
 
         if (sum !== original) {
-          problemas.push(`Item ${key}: restante ${original - sum} (a soma deve fechar ${original}).`);
-          return;
+          problemas.push(`Item #${itemId} (${g.label}): restante ${original - sum} (a soma deve fechar ${original}).`);
+          continue;
         }
 
-        // Converte para % com base na ORIGINAL e ajusta arredondamento
+        // calcula % por fornecedor a partir da ORIGINAL, ajustando arredondamento para fechar 100%
         let sumPerc = 0;
-        const percList = arr.map((r, ix) => {
+        const percList = g.rows.map((r, ix) => {
           const p = Math.round(((r.qtyAward * 100) / original) * 1000) / 1000;
           sumPerc += p;
           return { ix, p };
@@ -443,28 +463,36 @@ sap.ui.define([
         const diff = Math.round((100 - sumPerc) * 1000) / 1000;
         if (Math.abs(diff) >= 0.001) {
           const lastIdx = (percList.findLast?.(x => x.p > 0)?.ix) ?? (percList.length - 1);
-          percList[lastIdx].p = Math.max(0, Math.round((percList[lastIdx].p + diff) * 1000) / 1000);
+          if (lastIdx >= 0) percList[lastIdx].p = Math.max(0, Math.round((percList[lastIdx].p + diff) * 1000) / 1000);
         }
 
+        // monta supplierBids para este itemId
         percList.forEach(({ ix, p }) => {
-          const r = arr[ix];
+          const r = g.rows[ix];
           if (p <= 0) return;
 
           const fullInvitation = this._ensureInvitationResourceId(r.invitationId, r.invitationEmail);
-          if (!r.itemId || !fullInvitation) {
-            faltaIds.push(`${r.supplierName} / ${r.materialCode || key}`);
+          if (!fullInvitation) {
+            faltaIds.push(`${r.supplierName || 'Fornecedor'} / #${itemId} (${g.label})`);
             return;
           }
 
           supplierBids.push({
-            itemId: Number(r.itemId),
+            itemId,
             invitationId: String(fullInvitation),
             bidType: "Primary",
             winningSplitType: 1,
             winningSplitValue: Number(p.toFixed(3))
           });
         });
-      });
+
+        // 🔎 Log por item (quantidades e splits gerados)
+        console.log("[Award] itemId:", itemId,
+          "| label:", g.label,
+          "| original:", original,
+          "| somaQtd:", sum,
+          "| splits:", supplierBids.filter(b => b.itemId === itemId));
+      }
 
       if (problemas.length) {
         sap.m.MessageBox.error(
@@ -480,6 +508,9 @@ sap.ui.define([
         );
         return;
       }
+
+      // 🔎 Log do payload final
+      console.log("[Award] supplierBids payload:", supplierBids);
 
       const sEventId = vm.getProperty("/header/docId") || oView.getModel("res")?.getProperty("/header/docId");
       if (!sEventId) {
@@ -509,9 +540,76 @@ sap.ui.define([
         }
       } catch (e) {
         sap.ui.core.BusyIndicator.hide();
-        const corr = e?.cause?.error?.correlationId;
-        sap.m.MessageBox.error(`Falha ao criar cenário.${corr ? `\nCorrelation-ID: ${corr}` : ""}`);
+        // Sem “ver mais detalhes”: mensagem compacta
+        let msg = "Falha ao criar cenário.";
+        if (this._compactODataErrorText) {
+          msg = this._compactODataErrorText(e);
+        } else if (this._parseODataError) {
+          const parsed = this._parseODataError(e);
+          msg = parsed.correlationId ? `${parsed.text}\n\nCorrelation-ID: ${parsed.correlationId}` : parsed.text;
+        }
+        sap.m.MessageBox.error(msg);
       }
+    },
+
+
+    _parseODataError(err) {
+      const tryJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
+
+      // Tenta extrair o corpo em diferentes formatos (OData V4 / jQuery / fetch)
+      let body =
+        err?.cause?.error ||                               // UI5 OData V4 embala aqui
+        (typeof err?.cause?.response?.body === "string" && tryJson(err.cause.response.body)) ||
+        (typeof err?.message === "string" && tryJson(err.message)) ||
+        err?.error ||
+        null;
+
+      const oError = body?.error || body || {};
+      const topMessage =
+        (typeof oError?.message === "string" && oError.message) ||
+        (typeof oError?.message?.value === "string" && oError.message.value) ||
+        "Falha ao criar cenário.";
+
+      const detailsArr = Array.isArray(oError?.details) ? oError.details : [];
+      const lines = detailsArr.map(d => {
+        const msg  = d.message || d["@aribaDescription"] || d["@aribaMessage"] || "";
+        const code = d["@aribaCode"] ? ` [${d["@aribaCode"]}]` : "";
+        const tgt  = d.target ? ` (${d.target})` : "";
+        return `• ${msg}${code}${tgt}`;
+      });
+
+      // Correlation-ID em vários lugares possíveis
+      const correlationId =
+        oError?.correlationId ||
+        detailsArr.find(d => d["@correlationId"])?.["@correlationId"] ||
+        err?.cause?.response?.headers?.["x-correlation-id"] ||
+        err?.cause?.response?.headers?.["x-correlationid"] ||
+        null;
+
+      // Se não houver details estruturados, manda um JSON resumido
+      let detailsText = "";
+      if (lines.length) {
+        detailsText = lines.join("\n");
+      } else if (oError && Object.keys(oError).length) {
+        detailsText = JSON.stringify(oError, null, 2);
+      } else if (typeof err?.cause?.response?.body === "string") {
+        detailsText = err.cause.response.body;
+      } else {
+        detailsText = err?.message || "";
+      }
+
+      // Raw (se veio no details pelo backend com '@raw')
+      const raw = detailsArr.find(d => d["@raw"])?.["@raw"];
+      if (raw) {
+        const rawStr = typeof raw === "string" ? raw : JSON.stringify(raw);
+        detailsText += `\n\nRaw:\n${rawStr.substring(0, 2000)}${rawStr.length > 2000 ? "..." : ""}`;
+      }
+
+      return {
+        text: topMessage,
+        details: detailsText,
+        correlationId
+      };
     },
 
     /* =========================================================================

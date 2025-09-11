@@ -14,7 +14,7 @@
         <Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column>
 
         <!-- DEBUG: IDs que serão levados para o diálogo de premiação -->
-        <Column id="_IDGenColumn21" visible="false" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column>
+        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column>
         <Column id="_IDGenColumn22" visible="false" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
         
       </columns>
