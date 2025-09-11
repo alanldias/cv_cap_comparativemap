@@ -154,3 +154,13 @@ http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfo
 
 ###
 http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
+
+###
+GET /sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrderItem?$format=json&$top=50 HTTP/1.1
+Host: s4h-qas-cq5:50255
+Accept: application/json
+Connection: close
+
+
+###
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrder?$format=json&$select=PurchaseOrder&$filter=Supplier%20eq%20'100581343'&sap-client=300

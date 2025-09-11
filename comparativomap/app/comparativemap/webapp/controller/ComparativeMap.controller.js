@@ -874,7 +874,7 @@ sap.ui.define([
         this._dbg("Resultado da action", result);
         console.groupEnd();
 
-        this._showBapiMessages(result.returnMessages);
+        // this._showBapiMessages(result.returnMessages);
       } catch (err) {
         console.error("[SIMULAR] ERRO:", err);
         console.groupEnd();

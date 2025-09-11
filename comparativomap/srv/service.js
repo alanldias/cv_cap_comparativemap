@@ -1,3 +1,4 @@
+try { require('dotenv').config() } catch { }
 
 const cds = require('@sap/cds')
 const soap = require('soap');
@@ -134,29 +135,71 @@ function _maybePrefixPath(destName, relativePath) {
 
 // === Helpers de normalização de Destination ===
 function _op(dest) {
-  return dest?.originalProperties || {}
+  // retorna um objeto flat com tudo que acharmos
+  const op = dest?.originalProperties || {}
+  const out = { ...op }
+
+  // 1) Alguns ambientes colocam em op.Properties = { k: v }
+  if (op && typeof op.Properties === 'object' && op.Properties) {
+    Object.entries(op.Properties).forEach(([k, v]) => {
+      if (out[k] == null) out[k] = v
+    })
+  }
+
+  // (2) destinationConfiguration (object) — comum no BTP
+  if (op && typeof op.destinationConfiguration === 'object' && op.destinationConfiguration) {
+    Object.entries(op.destinationConfiguration).forEach(([k, v]) => {
+      if (out[k] == null) out[k] = v
+    })
+  }
+
+  // (3) additionalProperties/AdditionalProperties (array de {key/value} ou {name/value})
+  const arr = op.additionalProperties || op.AdditionalProperties
+  if (Array.isArray(arr)) {
+    for (const it of arr) {
+      const k = it?.key ?? it?.Key ?? it?.name ?? it?.Name
+      const v = it?.value ?? it?.Value
+      if (k != null && out[k] == null) out[k] = v
+    }
+  }
+
+  return out
+}
+function _findAdditionalProp(destination, name) {
+  const op = _op(destination)
+  const keys = Object.keys(op)
+  const hit = keys.find(k => String(k).toLowerCase() === String(name).toLowerCase())
+  if (hit) return op[hit]
+
+  // formatos "namespaced" comuns do cockpit
+  const low = String(name).toLowerCase()
+  if (low === 'realm') return op['URL.queries.realm'] ?? op['url.queries.realm'] ?? null
+  if (low === 'user') return op['URL.queries.user'] ?? op['url.queries.user'] ?? null
+  if (low === 'passwordadapter') return op['URL.queries.passwordAdapter'] ?? op['url.queries.passwordAdapter'] ?? null
+  if (low === 'sap-client') return op['URL.queries.sap-client'] ?? op['url.queries.sap-client'] ?? null
+  return null
 }
 
 function _mergeQueryParamsFromDestination(destination, params = {}) {
   const op = _op(destination)
   const out = { ...params }
 
-  // 1) Pega URL.queries.*
+  // 1) URL.queries.*
   for (const [k, v] of Object.entries(op)) {
     const m = /^URL\.queries\.(.+)$/i.exec(k)
     if (m && v != null && v !== '' && out[m[1]] == null) out[m[1]] = String(v)
   }
 
-  // 2) Tolerância: chaves soltas (realm/user/passwordAdapter/sap-client)
+  // 2) chaves soltas (case-insensitive) + variantes
   for (const k of ['realm', 'user', 'passwordAdapter', 'sap-client']) {
-    if (out[k] != null) continue
-    const candidates = [
-      op[k], op[k?.toLowerCase?.()], op[k?.toUpperCase?.()],
+    if (out[k] != null && out[k] !== '') continue
+    const val =
+      _findAdditionalProp(destination, k) ??
+      op[k] ?? op[k?.toLowerCase?.()] ?? op[k?.toUpperCase?.()] ??
       destination[k]
-    ]
-    const val = candidates.find(x => x != null && x !== '')
-    if (val != null) out[k] = String(val)
+    if (val != null && val !== '') out[k] = String(val)
   }
+
   return out
 }
 
@@ -187,7 +230,6 @@ function _mergeHeadersFromDestination(destination, headers = {}) {
 // ==================== HELPER: GET via Destination (robusto) ====================
 async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
   dbg('[destGet] START', { destName, relativePath })
-  // 0) SEM cache pra pegar mudanças do cockpit imediatamente
   const destination = await getDestination({ destinationName: destName, useCache: false })
   if (!destination) throw new Error(`Destination ${destName} não encontrada`)
   dbg('[destGet] destination.url =', destination.url)
@@ -195,7 +237,6 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   const urlPath = _maybePrefixPath(destName, relativePath)
   dbg('[destGet] computed path =', urlPath)
 
-  // base
   const baseCfg = {
     method: 'get',
     url: urlPath,
@@ -204,17 +245,32 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     timeout: Number(timeoutMs) || 30000
   }
 
-  // 1) Pega Additional Properties do Destination Service
-  const op = destination.originalProperties || {}
-  // URL.headers.<nome>
+  // Use sempre o flatten dos Additional Properties
+  const op = _op(destination)
+  dbg('[destGet] op keys snapshot ->', Object.keys(op).slice(0, 25))
+  dbg('[destGet] op realm candidates ->', {
+    'realm': op.realm,
+    'URL.queries.realm': op['URL.queries.realm'],
+    'destinationConfiguration.realm': op?.destinationConfiguration?.realm
+  })
+
+  // 1) Pega QUALQUER URL.queries.* + chaves “soltas”
   baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params)
+  // 2) Garante realm/user/passwordAdapter para as duas destinations do Ariba
+  baseCfg.params = _ensureAribaQueryParams(destName, destination, baseCfg.params)
+
+  // logs úteis
+  dbg('[destGet] merged params keys =', Object.keys(baseCfg.params))
+  dbg('[destGet] merged params (realm/user/passwordAdapter) =', {
+    realm: baseCfg.params.realm,
+    user: baseCfg.params.user,
+    passwordAdapter: baseCfg.params.passwordAdapter
+  })
 
   baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers)
-
   dbg('[destGet] merged params keys =', Object.keys(baseCfg.params))
   dbg('[destGet] merged headers keys =', Object.keys(baseCfg.headers))
 
-  // 2) helper oficial se disponível
   let reqCfg
   if (addDestinationToRequestConfig) {
     try {
@@ -226,7 +282,6 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     }
   }
 
-  // 3) fallback manual
   if (!reqCfg) {
     reqCfg = {
       baseURL: destination.url,
@@ -234,7 +289,6 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
       headers: { ...(destination.headers || {}), ...(baseCfg.headers || {}) }
     }
 
-    // Bearer
     if (destination.authTokens?.[0]?.value) {
       reqCfg.headers.authorization ||= `Bearer ${destination.authTokens[0].value}`
       dbg('[destGet] usando auth token já presente na destination')
@@ -250,37 +304,74 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
     }
   }
 
-  // 4) API Key resiliente (pega de vários lugares)
+  // ---------- API KEY (Destination -> ENV fallback) ----------
   const dh = destination.headers || {}
+  // 'op' agora já é flatten (_op(destination)), então pega 'URL.headers.apiKey' mesmo se estiver em additionalProperties
   const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
-  const apiKey =
-    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey
-    || dh.apiKey || dh.APIKey || dh.apikey
-    || keyFromOP
 
-  if (apiKey) {
-    // seta em várias variantes para garantir
-    reqCfg.headers.apiKey = apiKey
-    reqCfg.headers.APIKey = apiKey
-    reqCfg.headers.apikey = apiKey
-    dbg('[destGet] apiKey presente (valor oculto)')
+  let apiKey =
+    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey || reqCfg.headers['api-key'] ||
+    dh.apiKey || dh.APIKey || dh.apikey || dh['api-key'] ||
+    keyFromOP
+
+  if (!apiKey) {
+    // fallback por destination
+    const envApiKey =
+      destName === EVENTS_DEST
+        ? process.env.ARIBA_API_KEY_EVENTS
+        : destName === PROJECTS_DEST
+          ? process.env.ARIBA_API_KEY_PROJECTS
+          : null
+
+    if (envApiKey) {
+      apiKey = envApiKey
+      dbg('[destGet] apiKey via ENV para', destName, '→ presente')
+    } else {
+      dbg('[destGet] apiKey AUSENTE (ok se endpoint não exigir)')
+    }
   } else {
-    dbg('[destGet] apiKey AUSENTE (ok se endpoint não exigir)')
+    dbg('[destGet] apiKey obtida da Destination (valor oculto)')
   }
 
-  // defaults
+  if (apiKey) {
+    reqCfg.headers.apiKey = apiKey;
+    dbg('[destGet] Header apiKey final adicionado.');
+  }
+  // -----------------------------------------------------------
+
   reqCfg.headers.Accept ??= 'application/json'
   reqCfg.headers['Content-Type'] ??= 'application/json'
   dbg('[destGet] final headers keys =', Object.keys(reqCfg.headers))
   dbg('[destGet] REQUEST =>', { method: reqCfg.method || 'GET', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
 
-  // 5) dispara
   const resp = await axios.request(reqCfg)
   const len = Array.isArray(resp.data) ? resp.data.length : (resp.data?.payload?.length ?? 'n/a')
   dbg('[destGet] RESPONSE OK status =', resp.status, '| data.len =', len)
   return resp.data
 }
 
+function _ensureAribaQueryParams(destName, destination, params) {
+  // só força para as duas destinations do Ariba
+  if (destName !== EVENTS_DEST && destName !== PROJECTS_DEST) return params
+
+  const out = { ...params }
+
+  // 1) tenta destination (additional properties, chaves soltas e URL.queries.*)
+  let realm = out.realm ?? _findAdditionalProp(destination, 'realm')
+  let user = out.user ?? _findAdditionalProp(destination, 'user')
+  let pad = out.passwordAdapter ?? _findAdditionalProp(destination, 'passwordAdapter')
+
+  // 2) fallback via ENV (mesmo user/passwordAdapter para ambas)
+  realm ||= process.env.ARIBA_REALM            // opcional, se quiser permitir override por ENV
+  user ||= process.env.ARIBA_USER             // << defina no CF
+  pad ||= process.env.ARIBA_PASSWORD_ADAPTER // << defina no CF
+
+  if (realm) out.realm = String(realm).trim()
+  if (user) out.user = String(user).trim()
+  if (pad) out.passwordAdapter = String(pad).trim()
+
+  return out
+}
 
 // ==================== CÓDIGO PM (PROJECTS) ====================
 
