@@ -1,5 +1,6 @@
 try { require('dotenv').config() } catch { }
 
+const { XMLParser } = require('fast-xml-parser');
 const cds = require('@sap/cds')
 const soap = require('soap');
 const axios = require('axios')

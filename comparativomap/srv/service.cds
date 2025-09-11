@@ -48,12 +48,12 @@ service service {
     moeda                  : String(3);
   };
 
-  type QuotesResponse       : {
+  type QuotesResponse : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
-  
-  function GetQuotes(docId: String)           returns QuotesResponse;
+
+  function GetQuotes(docId: String)                    returns QuotesResponse;
 
   // ==== Axel ====
   type POHeader {

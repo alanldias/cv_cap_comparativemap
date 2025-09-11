@@ -868,19 +868,82 @@ sap.ui.define([
 
         console.log("→ Executando oCtx.execute() /simularPO(...)");
         await oCtx.execute();
-
-        // 9) Resultado (mensagens da BAPI)
-        const result = oCtx.getBoundContext().getObject(); // { expHeader, returnMessages }
+        const result = oCtx.getBoundContext().getObject();
         this._dbg("Resultado da action", result);
         console.groupEnd();
 
-        // this._showBapiMessages(result.returnMessages);
+        await this._openResultadoPO(result);
+        this._showBapiMessages(result.returnMessages);
+
       } catch (err) {
         console.error("[SIMULAR] ERRO:", err);
         console.groupEnd();
         sap.m.MessageBox.error(err.message || String(err));
       }
     },
+
+    // Abre o Dialog com o resultado da simulação (usa o fragment acima)
+    _openResultadoPO: async function (result) {
+      const oView = this.getView();
+
+      if (!this._dlgResultadoPO) {
+        this._dlgResultadoPO = await sap.ui.core.Fragment.load({
+          id: oView.getId(),
+          name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacaoPO",
+          controller: this
+        });
+        oView.addDependent(this._dlgResultadoPO);
+      }
+
+      // Model "simpo" com o retorno { testRun, header, itens, returnMessages }
+      const m = new sap.ui.model.json.JSONModel(result || {});
+      this._dlgResultadoPO.setModel(m, "simpo");
+      this._dlgResultadoPO.open();
+    },
+
+    onCloseResultadoPO: function () {
+      this._dlgResultadoPO?.close();
+    },
+
+    // Formatter simples para números (duas casas)
+    fmt2: function (v) {
+      const n = Number(v);
+      return isNaN(n) ? "" : n.toFixed(2);
+    },
+
+
+
+    // Mostra mensagens da BAPI de forma simples
+    _showBapiMessages: function (msgs) {
+      const arr = Array.isArray(msgs) ? msgs : [];
+
+      // Sem mensagens → só um toast de sucesso
+      if (!arr.length) {
+        sap.m.MessageToast.show("Simulação concluída. Sem mensagens da BAPI.");
+        return;
+      }
+
+      // Monta um texto curtinho por linha
+      const line = (m) => {
+        const idnum = [m.id, m.number].filter(Boolean).join("/");
+        const tag = m.type ? `[${m.type}]` : "[?]";
+        return `${tag} ${m.message || ""}${idnum ? ` (${idnum})` : ""}`;
+      };
+      const text = arr.map(line).join("\n");
+
+      // Escala o ícone/caixa pela severidade
+      const hasError = arr.some(m => m.type === "E" || m.type === "A");
+      const hasWarning = arr.some(m => m.type === "W");
+
+      if (hasError) {
+        sap.m.MessageBox.error(text, { title: "Mensagens da BAPI" });
+      } else if (hasWarning) {
+        sap.m.MessageBox.warning(text, { title: "Mensagens da BAPI" });
+      } else {
+        sap.m.MessageBox.success(text, { title: "Mensagens da BAPI" });
+      }
+    },
+
 
     /** ************************************************************
      * HEADER: pega do VM e mapeia Ariba → BAPI
