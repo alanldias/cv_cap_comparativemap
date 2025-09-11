@@ -1,6 +1,18 @@
 {
+  "xsappname": "comparativomap-cvale-qas",
+  "tenant-mode": "dedicated",
   "scopes": [],
   "attributes": [],
   "role-templates": [],
+  "oauth2-configuration": {
+    "token-validity": 900,
+    "redirect-uris": [
+      "*.cf.br10.hana.ondemand.com",
+      "c-vale---ea-cvale00002-qas---hana-cloud-comparativomap-srv.cfapps.br10.hana.ondemand.com",
+      "https://*.cfapps.br10.hana.ondemand.com/*",
+      "https://*.hana.ondemand.com/**",
+      "https://*.applicationstudio.cloud.sap/**"
+    ]
+  },
   "authorities-inheritance": false
 }
