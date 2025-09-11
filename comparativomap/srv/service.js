@@ -839,11 +839,10 @@ module.exports = function () {
   })
 
   this.on('simularPO', async req => {
-    dbg('[simularPO] START data =', req.data)
     const t0 = Date.now();
     console.log('========== [simularPO] START ==========');
     console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
-
+ 
     try {
       // 1) Coleta a entrada e monta payload de fumaça se nada vier
       const { header = {}, items = [], schedules = [], testRun = true } = req.data || {};
@@ -851,7 +850,7 @@ module.exports = function () {
         hasHeader: !!header, itemsCount: Array.isArray(items) ? items.length : 0,
         schedulesCount: Array.isArray(schedules) ? schedules.length : 0, testRun
       });
-
+ 
       const payload = buildSmokePayload(header, items, schedules, testRun);
       console.log('[simularPO] Payload pronto (resumo):', {
         TESTRUN: payload.TESTRUN,
@@ -860,15 +859,14 @@ module.exports = function () {
         POSCHEDULE_len: payload.POSCHEDULE?.item?.length
       });
       console.dir(payload, { depth: null, colors: true });
-
+ 
       // 2) Cria o cliente SOAP
       console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
       const endpoint = { url: null };
       console.log('[simularPO] Endpoint inicial:', endpoint)
       const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
       console.log('[simularPO] Endpoint efetivo:', endpoint.url);
-      dbg('[simularPO] endpoint.url =', endpoint.url)
-
+ 
       // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
       try {
         const services = client?.wsdl?.definitions?.services || {};
@@ -882,7 +880,7 @@ module.exports = function () {
       } catch (wErr) {
         console.warn('[simularPO] Aviso ao inspecionar WSDL:', wErr?.message || wErr);
       }
-
+ 
       // 3) Listeners de debug do node-soap
       client.on('request', (xml, eid) => {
         console.log('--- [SOAP REQUEST] eid=', eid, '---\n', xml, '\n--- [/SOAP REQUEST] ---');
@@ -893,33 +891,83 @@ module.exports = function () {
       client.on('soapError', (err) => {
         console.error('--- [SOAP FAULT] ---\n', safeErr(err), '\n--- [/SOAP FAULT] ---');
       });
-
+ 
       // 4) Chama a BAPI
       console.log('[simularPO] Chamando BAPI_PO_CREATE1Async...');
       const resp = await client.BAPI_PO_CREATE1Async(payload);
       const r0 = Array.isArray(resp) ? resp[0] : resp;
-
-      // 5) Normaliza resposta para o contrato OData
-      const expHeader = { poNumber: r0?.EXPHEADER?.PO_NUMBER || '' };
-      const messages = (r0?.RETURN?.item || []).map((m) => ({
+ 
+      // 5) ⬇️ Normaliza para um JSON simples (sem parser de XML)
+      const toArray = v => (Array.isArray(v) ? v : (v ? [v] : [])); // ajuda com nó único
+ 
+      const headerRaw = r0?.EXPHEADER || {};
+      const itensRaw = toArray(r0?.POITEM?.item);
+      const schedRaw = toArray(r0?.POSCHEDULE?.item);
+ 
+      // Agrupa schedules por item
+      const schedByItem = schedRaw.reduce((acc, s) => {
+        const key = String(s.PO_ITEM || '').padStart(5, '0');
+        (acc[key] ||= []).push({
+          schedLine: s.SCHED_LINE,
+          deliveryDate: s.DELIVERY_DATE,
+          qty: Number(s.QUANTITY || 0)
+        });
+        return acc;
+      }, {});
+ 
+      // Mapeia itens da BAPI no formato direto pro front
+      const itens = itensRaw.map(i => {
+        const key = String(i.PO_ITEM || '').padStart(5, '0');
+        return {
+          poItem: key,
+          material: i.MATERIAL_LONG || i.MATERIAL,
+          descricao: i.SHORT_TEXT,
+          quantidade: Number(i.QUANTITY || 0),
+          unidade: i.PO_UNIT,
+          netPrice: Number(i.NET_PRICE || 0),
+          priceUnit: Number(i.PRICE_UNIT || 1),
+          taxCode: i.TAX_CODE,
+          taxJurCode: i.TAXJURCODE,
+          ncm: i.BRAS_NBM,
+          priceDate: i.PRICE_DATE,
+          schedules: schedByItem[key] || []
+        };
+      });
+ 
+      const messages = toArray(r0?.RETURN?.item).map(m => ({
         type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
         logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
       }));
-
-      console.log('[simularPO] Resultado:', { expHeader, msgCount: messages.length });
+ 
+      const result = {
+        testRun: !!payload.TESTRUN,
+        header: {
+          empresa: headerRaw.COMP_CODE,
+          orgCompras: headerRaw.PURCH_ORG,
+          grupoCompras: headerRaw.PUR_GROUP,
+          fornecedor: headerRaw.VENDOR,
+          moeda: headerRaw.CURRENCY,
+          incoterms1: headerRaw.INCOTERMS1,
+          incoterms2: headerRaw.INCOTERMS2,
+          criadoEm: headerRaw.CREAT_DATE,
+          criadoPor: headerRaw.CREATED_BY,
+          poNumber: headerRaw.PO_NUMBER || '' // vazio em TESTRUN
+        },
+        itens,
+        mensagens: messages,
+        returnMessages: messages
+      };
+ 
+      console.log('[simularPO] Resultado simples:', { itens: itens.length, msgs: messages.length });
       console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
-      dbg('[simularPO] END OK. poNumber =', expHeader.poNumber, '| msgs =', messages.length)
-      return { expHeader, returnMessages: messages };
-
+      return result;
+ 
     } catch (e) {
       // 6) Erro: log detalhado para diagnosticar 502, timeouts, TLS, etc.
       const info = safeErr(e);
       console.error('========== [simularPO] ERROR ==========');
       console.error('[simularPO] Detalhes do erro:', info);
       console.error('=======================================');
-      dbg('[simularPO] ERROR:', info)
-
-      // Propaga erro mais legível no OData (evita [object Object])
       return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
     }
   });
