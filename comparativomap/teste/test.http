@@ -22,7 +22,6 @@ Content-Type: application/json
 ### Testar OData via Destination
 GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData
   ?$format=json
-  &$top=40
   &sap-client=300
 Accept: application/json
 

@@ -911,8 +911,6 @@ sap.ui.define([
       return isNaN(n) ? "" : n.toFixed(2);
     },
 
-
-
     // Mostra mensagens da BAPI de forma simples
     _showBapiMessages: function (msgs) {
       const arr = Array.isArray(msgs) ? msgs : [];

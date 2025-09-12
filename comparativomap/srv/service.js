@@ -1,6 +1,5 @@
 try { require('dotenv').config() } catch { }
 
-const { XMLParser } = require('fast-xml-parser');
 const cds = require('@sap/cds')
 const soap = require('soap');
 const axios = require('axios')
@@ -57,13 +56,7 @@ const mask = (s) => {
   return `${t.slice(0, 4)}***${t.slice(-2)}`;
 };
 
-const safeHeaders = Object.fromEntries(Object.entries(reqCfg.headers || {}).map(([k,v])=>{
-  const lk = String(k).toLowerCase();
-  if (lk.includes('apikey') || lk.includes('api-key') || lk === 'authorization') return [k, mask(v)];
-  return [k, v];
-}));
 
-console.log('[destGet] final headers (masked) =', safeHeaders);
 function _escapeOData(v = '') {
   return String(v).replace(/'/g, "''").trim()
 }
@@ -350,7 +343,7 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   reqCfg.headers['Content-Type'] ??= 'application/json'
   dbg('[destGet] final headers keys =', Object.keys(reqCfg.headers))
   dbg('[destGet] REQUEST =>', { method: reqCfg.method || 'GET', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
-  console.log('[destGet] final headers (masked) 2 =', safeHeaders);
+
   const resp = await axios.request(reqCfg)
   const len = Array.isArray(resp.data) ? resp.data.length : (resp.data?.payload?.length ?? 'n/a')
   dbg('[destGet] RESPONSE OK status =', resp.status, '| data.len =', len)
@@ -972,7 +965,6 @@ module.exports = function () {
       return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
     }
   });
-
   /* =================== Helpers =================== */
 
   // Payload "fumaça": se nada vier do front, monta o mínimo p/ a BAPI responder algo.
@@ -1092,4 +1084,3 @@ module.exports = function () {
 
 
 }
-
