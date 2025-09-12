@@ -34,6 +34,7 @@ sap.ui.define([
     /* =========================================================================
      * 1) LIFECYCLE / MODELOS
      * ========================================================================= */
+   // ################################ BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
     onInit() {
       const vm = new JSONModel({
         header: {
@@ -251,7 +252,6 @@ sap.ui.define([
       // dispara a simulação direto
       await this.onConfirmSimulate();
     },
-
     onConfirmSimulate: async function () {
       const oView = this.getView();
       const oModel = oView.getModel();
@@ -370,7 +370,8 @@ sap.ui.define([
       }
       this._dlgRes.open();
     },
-
+ // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
+   // ################################ BEATRIZ - QUANTIDADE  #####################################
     onAwardQtyChangeRes: function (oEvent) {
       const input = oEvent.getSource();
       const ctx   = input.getBindingContext("res");
@@ -387,7 +388,9 @@ sap.ui.define([
       ctx.getModel().checkUpdate(true);
       input.setValue(String(v));
     },
+   // ################################ FIM - BEATRIZ - QUANTIDADE  #####################################
 
+ // ################################ BEATRIZ - AWARD #####################################
     onAwardDirect: async function () {
       const oView  = this.getView();
       const oModel = oView.getModel();
@@ -583,9 +586,9 @@ sap.ui.define([
         sap.m.MessageBox.error(msg);
       }
     },
+ // ################################ FIM - BEATRIZ - AWARD #####################################
 
-
-
+// ################################ BEATRIZ - TRATATIVA DE ERRO #####################################
     _parseODataError(err) {
       const tryJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
@@ -644,6 +647,7 @@ sap.ui.define([
         correlationId
       };
     },
+     // ################################ FIM BEATRIZ - TRATATIVA DE ERRO #####################################
 
     /* =========================================================================
      * 5) VIEW SETTINGS (Filter / Sort / Group)

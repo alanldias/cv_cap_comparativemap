@@ -53,6 +53,7 @@ async function destGet(destName, url, { params = {}, headers = {}, timeoutMs = T
   return data;
 }
 
+// ################################ BEATRIZ - POST #####################################
 async function destPost(destName, url, body, { params = {}, headers = {}, timeoutMs = TIMEOUT } = {}) {
   const destination = await getDestination({ destinationName: destName });
   const reqCfg = await addDestinationToRequestConfig(
@@ -62,6 +63,7 @@ async function destPost(destName, url, body, { params = {}, headers = {}, timeou
   const resp = await axios.request(reqCfg);
   return { data: resp.data, headers: resp.headers };
 }
+// ################################ FIM - BEATRIZ - POST #####################################
 
 const toArr = (d) =>
   Array.isArray(d?.payload) ? d.payload : Array.isArray(d) ? d : d ? [d] : [];
@@ -110,6 +112,7 @@ function pickSupplierNameByInvitation(rows, invId) {
   );
 }
 
+// ################################ BEATRIZ - FORMATA MENSAGEM DE ERRO #####################################
 function formatAribaScenarioError(e) {
   const status = e?.response?.status || 502;
   const headers = e?.response?.headers || {};
@@ -166,7 +169,7 @@ function formatAribaScenarioError(e) {
     technical: { status, code, message, description, raw }
   };
 }
-
+// ################################ FIM - BEATRIZ - FORMATA MENSAGEM DE ERRO #####################################
 /** ======================== PROJECTS (PM) ======================== */
 // Cache simples de token (usado só sem Destination)
 let _pmOauthCache = { token: null, exp: 0 };
@@ -596,7 +599,8 @@ module.exports = function () {
     }
   });
 
-    this.on('CreateScenario', async (req) => {
+ // ################################ BEATRIZ - CRIA SCENARIO #####################################
+  this.on('CreateScenario', async (req) => {
     const { eventId, title, scenarioType, supplierBids } = req.data || {};
     if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
     if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
@@ -668,5 +672,6 @@ module.exports = function () {
       return req.error(status, userMessage, { correlationId, technical });
     }
   });
+   // ################################ FIM - BEATRIZ - CRIA SCENARIO #####################################
 
 };
