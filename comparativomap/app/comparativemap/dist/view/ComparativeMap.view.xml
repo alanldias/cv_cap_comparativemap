@@ -133,7 +133,7 @@
                                 <cells>
                                     <Text id="cellFornecedor"     text="{= ${vm>supplierName}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>supplierName}"/>
                                     <Text id="cellNomeItem"       text="{= ${vm>itemDescription}                 || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/>
-                                    <Text id="cellQuantidade"     text="{= ${vm>quantity}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/>
+                                    <StepInput id="cellQuantidade" value="{ path: 'vm>quantity', type: 'sap.ui.model.type.Float', constraints: { minimum: 0 } }" step="1" width="7rem" change=".onQtyInlineChange" />
                                     <Text id="cellPreco"          text="{= ${vm>price}                           || '0.00'}" wrapping="true" maxLines="2" />
                                     <Text id="cellMoeda"          text="{= ${vm>currency}                        || '-'}"    wrapping="true" maxLines="2" />
                                     <Text id="cellNCM"            text="{= ${vm>ncm}                             || '-'}"    wrapping="true" maxLines="2" />

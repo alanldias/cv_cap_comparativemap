@@ -133,7 +133,7 @@ type SupplierBidInput : {
     aribaResponse  : LargeString;  // eco do que o Ariba devolver
     correlationId  : String;
   };
-}
+
   // ==== Axel ====
 
   // --------------------------------------
@@ -240,3 +240,4 @@ type SupplierBidInput : {
   action   simularPO(requests: array of SimulacaoPORequest,
                      concurrency: Integer default 4) returns array of SimulacaoPOResult;
 
+}

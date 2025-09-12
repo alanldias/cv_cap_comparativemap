@@ -132,64 +132,6 @@ function _maybePrefixPath(destName, relativePath) {
   return relativePath
 }
 
-// ################################ BEATRIZ - FORMATA MENSAGEM DE ERRO #####################################
-function formatAribaScenarioError(e) {
-  const status = e?.response?.status || 502;
-  const headers = e?.response?.headers || {};
-  const body = e?.response?.data || {};
-  const correlationId = headers['x-correlation-id'] || headers['x-correlationid'] || null;
-
-  // Extrai campos comuns
-  const errObj = body?.error || body;
-  const code = errObj?.errorCode || errObj?.code || null;
-  const message = errObj?.message || body?.message || e.message || 'Erro desconhecido.';
-  const description = (errObj?.description || body?.description || '').toString().trim() || null;
-
-  // Padrão conhecido: título duplicado
-  if (/duplicate scenario title/i.test(message)) {
-    return {
-      status,
-      correlationId,
-      userMessage: 'Cenário já exite.',
-      technical: { status, code, message, description }
-    };
-  }
-
-  // Coleta validações detalhadas, quando existirem
-  const validations = []
-    .concat(body?.violations || [])
-    .concat(body?.details || [])
-    .concat(body?.errors || []);
-
-  const validationText = Array.isArray(validations) && validations.length
-    ? validations.slice(0, 10).map(v => {
-        const field = v.field || v.path || v.name || 'campo';
-        const msg = v.message || v.description || JSON.stringify(v.value);
-        return `${field}: ${msg}`;
-      }).join(' ; ')
-    : null;
-
-  // Monta mensagem amigável
-  const parts = [];
-  if (description && description !== message) parts.push(`Descrição: ${description}`);
-  if (code) parts.push(`Código: ${code}`);
-  if (validationText) parts.push(`Validações: ${validationText}`);
-
-  const userMessage = `Falha ao criar cenário no Ariba. ${[message, ...parts].filter(Boolean).join(' ')}`;
-
-  // Inclui um raw truncado para diagnóstico (sem vazar gigante)
-  let raw = '';
-  try { raw = JSON.stringify(body); } catch (_) {}
-  if (raw && raw.length > 2000) raw = raw.slice(0, 2000) + '...';
-
-  return {
-    status,
-    correlationId,
-    userMessage,
-    technical: { status, code, message, description, raw }
-  };
-}
-
 // === Helpers de normalização de Destination ===
 function _op(dest) {
   // retorna um objeto flat com tudo que acharmos
@@ -260,6 +202,58 @@ function _mergeQueryParamsFromDestination(destination, params = {}) {
   return out
 }
 
+// ################################ BEATRIZ - FORMATA MENSAGEM DE ERRO #####################################
+function formatAribaScenarioError(e) {
+  const status = e?.response?.status || 502;
+  const headers = e?.response?.headers || {};
+  const body = e?.response?.data || {};
+  const correlationId = headers['x-correlation-id'] || headers['x-correlationid'] || null;
+  // Extrai campos comuns
+  const errObj = body?.error || body;
+  const code = errObj?.errorCode || errObj?.code || null;
+  const message = errObj?.message || body?.message || e.message || 'Erro desconhecido.';
+  const description = (errObj?.description || body?.description || '').toString().trim() || null;
+  // Padrão conhecido: título duplicado
+  if (/duplicate scenario title/i.test(message)) {
+    return {
+      status,
+      correlationId,
+      userMessage: 'Cenário já exite.',
+      technical: { status, code, message, description }
+    };
+  }
+  // Coleta validações detalhadas, quando existirem
+  const validations = []
+    .concat(body?.violations || [])
+    .concat(body?.details || [])
+    .concat(body?.errors || []);
+  const validationText = Array.isArray(validations) && validations.length
+    ? validations.slice(0, 10).map(v => {
+      const field = v.field || v.path || v.name || 'campo';
+      const msg = v.message || v.description || JSON.stringify(v.value);
+      return `${field}: ${msg}`;
+    }).join(' ; ')
+    : null;
+  // Monta mensagem amigável
+  const parts = [];
+  if (description && description !== message) parts.push(`Descrição: ${description}`);
+  if (code) parts.push(`Código: ${code}`);
+  if (validationText) parts.push(`Validações: ${validationText}`);
+  const userMessage = `Falha ao criar cenário no Ariba. ${[message, ...parts].filter(Boolean).join(' ')}`;
+
+  // Inclui um raw truncado para diagnóstico (sem vazar gigante)
+  let raw = '';
+  try { raw = JSON.stringify(body); } catch (_) { }
+  if (raw && raw.length > 2000) raw = raw.slice(0, 2000) + '...';
+
+  return {
+    status,
+    correlationId,
+    userMessage,
+    technical: { status, code, message, description, raw }
+  };
+}
+
 function _mergeHeadersFromDestination(destination, headers = {}) {
   const op = _op(destination)
   const out = { ...headers }
@@ -283,7 +277,104 @@ function _mergeHeadersFromDestination(destination, headers = {}) {
 
   return out
 }
+async function destPost(destName, relativePath, body, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
+  dbg('[destPost] START', { destName, relativePath })
+  const destination = await getDestination({ destinationName: destName, useCache: false })
+  if (!destination) throw new Error(`Destination ${destName} não encontrada`)
+  dbg('[destPost] destination.url =', destination.url)
 
+  const urlPath = _maybePrefixPath(destName, relativePath)
+  dbg('[destPost] computed path =', urlPath)
+
+  const baseCfg = {
+    method: 'post',
+    url: urlPath,
+    data: body,
+    params: { ...params },
+    headers: { ...headers },
+    timeout: Number(timeoutMs) || 30000
+  }
+
+  // Flatten das Additional Properties
+  const op = _op(destination)
+
+  // 1) Query params da Destination + “soltos”
+  baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params)
+  // 2) Força realm/user/passwordAdapter p/ Ariba
+  baseCfg.params = _ensureAribaQueryParams(destName, destination, baseCfg.params)
+
+  // 3) Headers da Destination (URL.headers.* + apiKey etc.)
+  baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers)
+
+  let reqCfg
+  if (addDestinationToRequestConfig) {
+    try {
+      reqCfg = await addDestinationToRequestConfig(baseCfg, destination)
+      dbg('[destPost] usando addDestinationToRequestConfig (SDK)')
+    } catch (e) {
+      LOG.warn?.('[destPost] addDestinationToRequestConfig falhou; usando fallback:', e.message)
+    }
+  }
+
+  if (!reqCfg) {
+    reqCfg = {
+      baseURL: destination.url,
+      ...baseCfg,
+      headers: { ...(destination.headers || {}), ...(baseCfg.headers || {}) }
+    }
+
+    if (destination.authTokens?.[0]?.value) {
+      reqCfg.headers.authorization ||= `Bearer ${destination.authTokens[0].value}`
+      dbg('[destPost] usando auth token já presente na destination')
+    } else if ((destination.authentication || '').toLowerCase() === 'oauth2clientcredentials') {
+      try {
+        const token = await _fetchTokenFromDestination(destination)
+        if (token) reqCfg.headers.authorization = `Bearer ${token}`
+        dbg('[destPost] token OAuth adicionado ao header Authorization')
+      } catch (e) {
+        LOG.error?.('[destPost] erro ao obter token:', e.message)
+        dbg('[destPost] erro ao obter token:', e.message)
+      }
+    }
+  }
+
+  // ---------- API KEY (Destination -> ENV fallback) ----------
+  const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
+  let apiKey =
+    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey || reqCfg.headers['api-key'] ||
+    (destination.headers || {}).apiKey || (destination.headers || {})['api-key'] || keyFromOP
+
+  if (!apiKey) {
+    const envApiKey =
+      destName === EVENTS_DEST
+        ? process.env.ARIBA_API_KEY_EVENTS
+        : destName === PROJECTS_DEST
+          ? process.env.ARIBA_API_KEY_PROJECTS
+          : null
+    if (envApiKey) {
+      apiKey = envApiKey
+      dbg('[destPost] apiKey via ENV para', destName, '→ presente')
+    } else {
+      dbg('[destPost] apiKey AUSENTE (ok se endpoint não exigir)')
+    }
+  } else {
+    dbg('[destPost] apiKey obtida da Destination (valor oculto)')
+  }
+
+  if (apiKey) {
+    reqCfg.headers.apiKey = apiKey
+    dbg('[destPost] Header apiKey final adicionado.')
+  }
+  // -----------------------------------------------------------
+
+  reqCfg.headers.Accept ??= 'application/json'
+  reqCfg.headers['Content-Type'] ??= 'application/json'
+  dbg('[destPost] REQUEST =>', { method: reqCfg.method || 'POST', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
+
+  const resp = await axios.request(reqCfg)
+  dbg('[destPost] RESPONSE OK status =', resp.status)
+  return { data: resp.data, headers: resp.headers, status: resp.status }
+}
 // ==================== HELPER: GET via Destination (robusto) ====================
 async function destGet(destName, relativePath, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
   dbg('[destGet] START', { destName, relativePath })
@@ -400,110 +491,10 @@ async function destGet(destName, relativePath, { params = {}, headers = {}, time
   reqCfg.headers['Content-Type'] ??= 'application/json'
   dbg('[destGet] final headers keys =', Object.keys(reqCfg.headers))
   dbg('[destGet] REQUEST =>', { method: reqCfg.method || 'GET', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
-
   const resp = await axios.request(reqCfg)
   const len = Array.isArray(resp.data) ? resp.data.length : (resp.data?.payload?.length ?? 'n/a')
   dbg('[destGet] RESPONSE OK status =', resp.status, '| data.len =', len)
   return resp.data
-}
-//dest post igual ao get mas para POST
-async function destPost(destName, relativePath, body, { params = {}, headers = {}, timeoutMs = 30000 } = {}) {
-  dbg('[destPost] START', { destName, relativePath })
-  const destination = await getDestination({ destinationName: destName, useCache: false })
-  if (!destination) throw new Error(`Destination ${destName} não encontrada`)
-  dbg('[destPost] destination.url =', destination.url)
-
-  const urlPath = _maybePrefixPath(destName, relativePath)
-  dbg('[destPost] computed path =', urlPath)
-
-  const baseCfg = {
-    method: 'post',
-    url: urlPath,
-    data: body,
-    params: { ...params },
-    headers: { ...headers },
-    timeout: Number(timeoutMs) || 30000
-  }
-
-  // Flatten das Additional Properties
-  const op = _op(destination)
-
-  // 1) Query params da Destination + “soltos”
-  baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params)
-  // 2) Força realm/user/passwordAdapter p/ Ariba
-  baseCfg.params = _ensureAribaQueryParams(destName, destination, baseCfg.params)
-
-  // 3) Headers da Destination (URL.headers.* + apiKey etc.)
-  baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers)
-
-  let reqCfg
-  if (addDestinationToRequestConfig) {
-    try {
-      reqCfg = await addDestinationToRequestConfig(baseCfg, destination)
-      dbg('[destPost] usando addDestinationToRequestConfig (SDK)')
-    } catch (e) {
-      LOG.warn?.('[destPost] addDestinationToRequestConfig falhou; usando fallback:', e.message)
-    }
-  }
-
-  if (!reqCfg) {
-    reqCfg = {
-      baseURL: destination.url,
-      ...baseCfg,
-      headers: { ...(destination.headers || {}), ...(baseCfg.headers || {}) }
-    }
-
-    if (destination.authTokens?.[0]?.value) {
-      reqCfg.headers.authorization ||= `Bearer ${destination.authTokens[0].value}`
-      dbg('[destPost] usando auth token já presente na destination')
-    } else if ((destination.authentication || '').toLowerCase() === 'oauth2clientcredentials') {
-      try {
-        const token = await _fetchTokenFromDestination(destination)
-        if (token) reqCfg.headers.authorization = `Bearer ${token}`
-        dbg('[destPost] token OAuth adicionado ao header Authorization')
-      } catch (e) {
-        LOG.error?.('[destPost] erro ao obter token:', e.message)
-        dbg('[destPost] erro ao obter token:', e.message)
-      }
-    }
-  }
-
-  // ---------- API KEY (Destination -> ENV fallback) ----------
-  const keyFromOP = Object.entries(op).find(([k]) => /^URL\.headers\.(api[-_]?key)$/i.test(k))?.[1]
-  let apiKey =
-    reqCfg.headers.apiKey || reqCfg.headers.APIKey || reqCfg.headers.apikey || reqCfg.headers['api-key'] ||
-    (destination.headers || {}).apiKey || (destination.headers || {})['api-key'] || keyFromOP
-
-  if (!apiKey) {
-    const envApiKey =
-      destName === EVENTS_DEST
-        ? process.env.ARIBA_API_KEY_EVENTS
-        : destName === PROJECTS_DEST
-          ? process.env.ARIBA_API_KEY_PROJECTS
-          : null
-    if (envApiKey) {
-      apiKey = envApiKey
-      dbg('[destPost] apiKey via ENV para', destName, '→ presente')
-    } else {
-      dbg('[destPost] apiKey AUSENTE (ok se endpoint não exigir)')
-    }
-  } else {
-    dbg('[destPost] apiKey obtida da Destination (valor oculto)')
-  }
-
-  if (apiKey) {
-    reqCfg.headers.apiKey = apiKey
-    dbg('[destPost] Header apiKey final adicionado.')
-  }
-  // -----------------------------------------------------------
-
-  reqCfg.headers.Accept ??= 'application/json'
-  reqCfg.headers['Content-Type'] ??= 'application/json'
-  dbg('[destPost] REQUEST =>', { method: reqCfg.method || 'POST', baseURL: reqCfg.baseURL, url: reqCfg.url, timeout: reqCfg.timeout })
-
-  const resp = await axios.request(reqCfg)
-  dbg('[destPost] RESPONSE OK status =', resp.status)
-  return { data: resp.data, headers: resp.headers, status: resp.status }
 }
 
 function _ensureAribaQueryParams(destName, destination, params) {
@@ -650,55 +641,6 @@ function extractSapOrgEntry(obj) {
   return entry ? { domain: entry.domain, value: entry.value } : null
 }
 
-// ################################ BEATRIZ - CRIA SCENARIO #####################################
-this.on('CreateScenario', async (req) => {
-  const { eventId, title, scenarioType, supplierBids } = req.data || {}
-  if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.")
-  if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
-    return req.error(400, "'supplierBids' deve ser um array com pelo menos 1 item.")
-  }
-
-  const payload = {
-    eventId,
-    title: title || 'Cenário via API',
-    scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
-    supplierBids: supplierBids.map((it) => ({
-      eventId,
-      itemId: Number(it.itemId),
-      invitationId: String(it.invitationId || ''),
-      bidType: it.bidType || 'Primary',
-      winningSplitType: Number(it.winningSplitType ?? 1),
-      winningSplitValue: Number(it.winningSplitValue ?? 100)
-    }))
-  }
-
-  LOG.info('[CreateScenario] Payload ⇒', JSON.stringify({
-    eventId: payload.eventId,
-    title: payload.title,
-    scenarioType: payload.scenarioType,
-    supplierBidsCount: payload.supplierBids.length
-  }))
-
-  const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`
-  LOG.info('[CreateScenario] Alvo (Destination) ⇒', `Destination "${EVENTS_DEST}" path "${relPath}"`)
-
-  try {
-    const { data, headers } = await destPost(EVENTS_DEST, relPath, payload, { timeoutMs: HTTP_TIMEOUT_MS })
-    const correlationId = headers?.['x-correlation-id'] || headers?.['x-correlationid'] || null
-    const scenarioId = data?.scenarioId || data?.id || data?.scenarioID || null
-
-    LOG.info('[CreateScenario] OK ⇒', { scenarioId, correlationId })
-    return { success: true, scenarioId, aribaResponse: JSON.stringify(data), correlationId }
-  } catch (e) {
-    const { status, correlationId, userMessage, technical } = formatAribaScenarioError(e)
-    LOG.error('[CreateScenario] Falha POST /scenarios:', technical)
-    return req.error(status, userMessage, { correlationId, technical })
-  }
-})
-// ################################ FIM - BEATRIZ - CRIA SCENARIO #####################################
-
-
-
 //CHAMADA DE API /api/sourcing-project-management/v2/prod/projects/WS
 async function fetchAribaHeader(projectId) {
   dbg('[fetchAribaHeader] projectId =', projectId)
@@ -774,7 +716,7 @@ async function fetchSupplierBids(docId) {
       const plant = byId['Plant']?.value?.simpleValue ?? null
       const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-      // const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
       const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
       // pega o valor bruto, independente se vem em .value ou direto
@@ -803,7 +745,7 @@ async function fetchSupplierBids(docId) {
         CodigoRequisicao: codigoRequisicao,
         PLANT: plant,
         ItemCategory: itemCategory,
-        // TAX_CODE: taxCode,
+        TAX_CODE: taxCode,
         MaterialCode: materialCode,
         grupo_de_materias: grupoMaterias,
         DELIVERY_DATE_RAW: deliveryRaw ?? null
@@ -1082,14 +1024,59 @@ module.exports = function () {
     }
   })
 
+  // ################################ BEATRIZ - CRIA SCENARIO #####################################
+  this.on('CreateScenario', async (req) => {
+    const { eventId, title, scenarioType, supplierBids } = req.data || {}
+    if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.")
+    if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
+      return req.error(400, "'supplierBids' deve ser um array com pelo menos 1 item.")
+    }
+
+    const payload = {
+      eventId,
+      title: title || 'Cenário via API',
+      scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
+      supplierBids: supplierBids.map((it) => ({
+        eventId,
+        itemId: Number(it.itemId),
+        invitationId: String(it.invitationId || ''),
+        bidType: it.bidType || 'Primary',
+        winningSplitType: Number(it.winningSplitType ?? 1),
+        winningSplitValue: Number(it.winningSplitValue ?? 100)
+      }))
+    }
+
+    LOG.info('[CreateScenario] Payload ⇒', JSON.stringify({
+      eventId: payload.eventId,
+      title: payload.title,
+      scenarioType: payload.scenarioType,
+      supplierBidsCount: payload.supplierBids.length
+    }))
+
+    const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`
+    LOG.info('[CreateScenario] Alvo (Destination) ⇒', `Destination "${EVENTS_DEST}" path "${relPath}"`)
+
+    try {
+      const { data, headers } = await destPost(EVENTS_DEST, relPath, payload, { timeoutMs: HTTP_TIMEOUT_MS })
+      const correlationId = headers?.['x-correlation-id'] || headers?.['x-correlationid'] || null
+      const scenarioId = data?.scenarioId || data?.id || data?.scenarioID || null
+
+      LOG.info('[CreateScenario] OK ⇒', { scenarioId, correlationId })
+      return { success: true, scenarioId, aribaResponse: JSON.stringify(data), correlationId }
+    } catch (e) {
+      const { status, correlationId, userMessage, technical } = formatAribaScenarioError(e)
+      LOG.error('[CreateScenario] Falha POST /scenarios:', technical)
+      return req.error(status, userMessage, { correlationId, technical })
+    }
+  })
+  // ################################ FIM - BEATRIZ - CRIA SCENARIO #####################################
+
+
 
   // ================== ACTION ÚNICA (lote) ==================
   this.on('simularPO', async req => {
     console.time('[simularPO] total');
     const t0 = Date.now();
-    console.log('========== [simularPO] START ==========');
-    console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
-
     console.log('========== [simularPO] START (lote) ==========');
 
     try {
@@ -1119,59 +1106,6 @@ module.exports = function () {
       });
 
       // 1) Cria o cliente SOAP uma única vez
-      // 1) Coleta a entrada e monta payload de fumaça se nada vier
-      const { header = {}, items: rawItems = [], schedules = [], testRun = true } = req.data || {}
-      console.log('[simularPO] Input resume:', {
-        hasHeader: !!header,
-        itemsCount: Array.isArray(rawItems) ? rawItems.length : 0,
-        schedulesCount: Array.isArray(schedules) ? schedules.length : 0,
-        testRun
-      });
-
-      const items = rawItems.map(({ taxCode, ...rest }) => rest)
-
-      // 1.2) Enriquecer TaxCode via OData (A_PurgInfoRecdOrgPlantData)
-      const enrichInput = items.map((it, idx) => ({
-        __idx: idx, // para mapear de volta
-        Supplier: padLeft(String(header.vendor || ''), 10, '0'),
-        Material: it.material || '',
-        PurchasingOrganization: header.purchOrg,
-        Plant: it.plant
-      }))
-
-      const enriched = await enrichWithTaxCode(enrichInput) // usa S4H_DEST/S4H_SAP_CLIENT/S4H_ODATA_PATH/timeout padrão
-      for (const row of enriched) {
-        if (row?.__idx != null) {
-          items[row.__idx].taxCode = row.TaxCode ?? undefined
-          items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined
-          console.log('[simularPO] TaxCode resolvido', {
-            idx: row.__idx,
-            material: items[row.__idx].material,
-            plant: items[row.__idx].plant,
-            taxCode: items[row.__idx].taxCode,
-            pir: items[row.__idx].purchasingInfoRecord
-          })
-        }
-      }
-
-      const missing = items
-        .map((it, i) => ({ i, poItem: it.poItem ?? (i + 1) * 10, material: it.material, plant: it.plant, taxCode: it.taxCode }))
-        .filter(x => !x.taxCode)
-      if (missing.length) {
-        const detalhes = missing.map(m => `Item ${String(m.poItem).toString().padStart(5, '0')} (mat=${m.material || '-'}, plant=${m.plant || '-'})`).join(', ')
-        return req.error(400, `Não foi possível obter TaxCode para ${missing.length} item(ns): ${detalhes}`)
-      }
-
-      const payload = buildSmokePayload(header, items, schedules, testRun)
-      console.log('[simularPO] Payload pronto (resumo):', {
-        TESTRUN: payload.TESTRUN,
-        POHEADER: payload.POHEADER,
-        POITEM_len: payload.POITEM?.item?.length,
-        POSCHEDULE_len: payload.POSCHEDULE?.item?.length
-      })
-      console.dir(payload, { depth: null, colors: true })
-
-      // 2) Cria o cliente SOAP
       console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
       const endpoint = { url: null };
       console.time('[simularPO] getSoapService');
