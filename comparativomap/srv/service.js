@@ -569,7 +569,7 @@ async function fetchSupplierBids(docId) {
       const plant = byId['Plant']?.value?.simpleValue ?? null
       const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-      const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      // const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
       const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
       // pega o valor bruto, independente se vem em .value ou direto
@@ -598,7 +598,7 @@ async function fetchSupplierBids(docId) {
         CodigoRequisicao: codigoRequisicao,
         PLANT: plant,
         ItemCategory: itemCategory,
-        TAX_CODE: taxCode,
+        // TAX_CODE: taxCode,
         MaterialCode: materialCode,
         grupo_de_materias: grupoMaterias,
         DELIVERY_DATE_RAW: deliveryRaw ?? null
@@ -661,36 +661,49 @@ async function fetchSupplierInvitationsList(docId, round) {
 
 // buscar o iva por pedido enviado
 async function enrichWithTaxCode(items, options = {}) {
-  dbg('[enrichWithTaxCode] items =', Array.isArray(items) ? items.length : 0)
   const arr = Array.isArray(items) ? items : []
-  if (!arr.length) return []
+  dbg('[enrichWithTaxCode] start | items =', arr.length)
 
-  // ❗ use nomes diferentes para não sombrear as constantes globais
-  const s4hDest = options.destinationName ?? S4H_DEST
+  if (!arr.length) {
+    dbg('[enrichWithTaxCode] vazio: nada a consultar')
+    return []
+  }
+
+  // Resolve dest com fallback (p/ usar a mesma da BAPI se quiser)
+  const s4hDest =
+    options.destinationName
+    ?? (typeof S4H_DEST !== 'undefined' && S4H_DEST)
+    ?? cds?.env?.requires?.BAPI_PO_CREATE?.credentials?.destination // fallback: mesma dest da BAPI
+    ?? 'S4H_QAS_CQ5_MAPA'
+
   const sapClient = options.sapClient ?? S4H_SAP_CLIENT
   const odataPath = options.path ?? S4H_ODATA_PATH
   const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
 
+  console.log('[enrichWithTaxCode] opts =>', { s4hDest, sapClient, odataPath, timeoutMs })
+
   // monta $filter com OR por item
-  const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }) => {
+  const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }, i) => {
     const parts = []
     if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
     if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
     if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
     if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
-    return `(${parts.join(' and ')})`
+    const c = `(${parts.join(' and ')})`
+    console.log(`[enrichWithTaxCode] filtro[${i}] =`, c)
+    return c
   }).filter(c => c !== '()')
 
-  const $filter = clauses.length ? clauses.join(' or ') : '1 eq 2'
-  const $select = [
-    'Supplier', 'Material', 'PurchasingOrganization', 'Plant',
-    'PurchasingInfoRecord', 'TaxCode'
-  ].join(',')
+  const rawFilter = clauses.length ? clauses.join(' or ') : '1 eq 2'
+  const $select = 'Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode'
+
+  console.log('[enrichWithTaxCode] $select =', $select)
+  console.log('[enrichWithTaxCode] $filter (raw) =', rawFilter)
 
   const query = [
     '$format=json',
     `$select=${$select}`,
-    `$filter=${encodeURIComponent($filter)}`,
+    `$filter=${encodeURIComponent(rawFilter)}`,
     `sap-client=${encodeURIComponent(sapClient)}`
   ].join('&')
 
@@ -702,7 +715,10 @@ async function enrichWithTaxCode(items, options = {}) {
 
   const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
   const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
-  console.log('[enrichWithTaxCode] OData URL =>', fullUrl)
+
+  console.log('[enrichWithTaxCode] dest.url =', dest.url)
+  console.log('[enrichWithTaxCode] OData relative =', relativeUrl)
+  console.log('[enrichWithTaxCode] OData FULL URL =>', fullUrl)
 
   // chamada GET no OData
   let data
@@ -713,31 +729,60 @@ async function enrichWithTaxCode(items, options = {}) {
       { fetchCsrfToken: false }
     )
     data = resp.data
-    dbg('[enrichWithTaxCode] OData status =', resp.status, '| payload ok')
+    console.log('[enrichWithTaxCode] OData status =', resp.status)
   } catch (e) {
     const status = e?.response?.status || 502
     const msg = e?.response?.data?.error?.message || e?.message
-    LOG?.error?.('[enrichWithTaxCode] Erro OData S/4:', status, msg)
+    LOG?.error?.('[enrichWithTaxCode] ERRO OData →', status, msg)
     dbg('[enrichWithTaxCode] ERRO OData →', status, msg)
     throw e
   }
 
+
+  const _canon = v => String(v ?? '').trim().toUpperCase()
+  const _ltrim0 = s => s.replace(/^0+/, '')
+  const _keyOf = (supplier, material, porg, plant) =>
+    [_ltrim0(_canon(supplier)), _ltrim0(_canon(material)), _canon(porg), _canon(plant)].join('|')
+
   const rows = data?.d?.results ?? data?.value ?? []
+  console.log('[enrichWithTaxCode] rows recebidas =', rows.length)
+
+  // loga uma amostra pra ver o IVA (TaxCode) retornando
+  rows.slice(0, 10).forEach((r, i) => {
+    console.log(`[enrichWithTaxCode] row[${i}] ->`,
+      {
+        Supplier: r.Supplier,
+        Material: r.Material,
+        POrg: r.PurchasingOrganization,
+        Plant: r.Plant,
+        PIR: r.PurchasingInfoRecord,
+        TaxCode: r.TaxCode
+      }
+    )
+  })
+
   const byKey = new Map()
   for (const r of rows) {
-    const key = _makeKey(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
-    if (!byKey.has(key)) byKey.set(key, r)
+    const k = _keyOf(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
+    if (!byKey.has(k)) byKey.set(k, r)
+    else console.warn('[enrichWithTaxCode] duplicado ignorado =>', k)
   }
 
-  return arr.map(it => {
-    const key = _makeKey(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
-    const r = byKey.get(key)
-    return {
+  // mapeia de volta pro array de entrada (com __idx opcional)
+  const out = arr.map(it => {
+    const k = _keyOf(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
+    const r = byKey.get(k)
+    const ret = {
       ...it,
       TaxCode: r?.TaxCode ?? null,
       PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
     }
+    console.log('[enrichWithTaxCode] match', { key: k, TaxCode: ret.TaxCode, PIR: ret.PurchasingInfoRecord })
+    return ret
   })
+
+  console.log('[enrichWithTaxCode] done | resolved =', out.filter(x => !!x.TaxCode).length)
+  return out
 }
 
 // ==================== HANDLER ODATA ====================
@@ -832,35 +877,72 @@ module.exports = function () {
     }
   })
 
+
   this.on('simularPO', async req => {
     const t0 = Date.now();
     console.log('========== [simularPO] START ==========');
     console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
- 
+
     try {
       // 1) Coleta a entrada e monta payload de fumaça se nada vier
-      const { header = {}, items = [], schedules = [], testRun = true } = req.data || {};
+      const { header = {}, items: rawItems = [], schedules = [], testRun = true } = req.data || {}
       console.log('[simularPO] Input resume:', {
-        hasHeader: !!header, itemsCount: Array.isArray(items) ? items.length : 0,
-        schedulesCount: Array.isArray(schedules) ? schedules.length : 0, testRun
+        hasHeader: !!header,
+        itemsCount: Array.isArray(rawItems) ? rawItems.length : 0,
+        schedulesCount: Array.isArray(schedules) ? schedules.length : 0,
+        testRun
       });
- 
-      const payload = buildSmokePayload(header, items, schedules, testRun);
+
+      const items = rawItems.map(({ taxCode, ...rest }) => rest)
+
+      // 1.2) Enriquecer TaxCode via OData (A_PurgInfoRecdOrgPlantData)
+      const enrichInput = items.map((it, idx) => ({
+        __idx: idx, // para mapear de volta
+        Supplier: padLeft(String(header.vendor || ''), 10, '0'),
+        Material: it.material || '',
+        PurchasingOrganization: header.purchOrg,
+        Plant: it.plant
+      }))
+
+      const enriched = await enrichWithTaxCode(enrichInput) // usa S4H_DEST/S4H_SAP_CLIENT/S4H_ODATA_PATH/timeout padrão
+      for (const row of enriched) {
+        if (row?.__idx != null) {
+          items[row.__idx].taxCode = row.TaxCode ?? undefined
+          items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined
+          console.log('[simularPO] TaxCode resolvido', {
+            idx: row.__idx,
+            material: items[row.__idx].material,
+            plant: items[row.__idx].plant,
+            taxCode: items[row.__idx].taxCode,
+            pir: items[row.__idx].purchasingInfoRecord
+          })
+        }
+      }
+
+      const missing = items
+        .map((it, i) => ({ i, poItem: it.poItem ?? (i + 1) * 10, material: it.material, plant: it.plant, taxCode: it.taxCode }))
+        .filter(x => !x.taxCode)
+      if (missing.length) {
+        const detalhes = missing.map(m => `Item ${String(m.poItem).toString().padStart(5, '0')} (mat=${m.material || '-'}, plant=${m.plant || '-'})`).join(', ')
+        return req.error(400, `Não foi possível obter TaxCode para ${missing.length} item(ns): ${detalhes}`)
+      }
+
+      const payload = buildSmokePayload(header, items, schedules, testRun)
       console.log('[simularPO] Payload pronto (resumo):', {
         TESTRUN: payload.TESTRUN,
         POHEADER: payload.POHEADER,
         POITEM_len: payload.POITEM?.item?.length,
         POSCHEDULE_len: payload.POSCHEDULE?.item?.length
-      });
-      console.dir(payload, { depth: null, colors: true });
- 
+      })
+      console.dir(payload, { depth: null, colors: true })
+
       // 2) Cria o cliente SOAP
       console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
       const endpoint = { url: null };
       console.log('[simularPO] Endpoint inicial:', endpoint)
       const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
       console.log('[simularPO] Endpoint efetivo:', endpoint.url);
- 
+
       // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
       try {
         const services = client?.wsdl?.definitions?.services || {};
@@ -874,7 +956,7 @@ module.exports = function () {
       } catch (wErr) {
         console.warn('[simularPO] Aviso ao inspecionar WSDL:', wErr?.message || wErr);
       }
- 
+
       // 3) Listeners de debug do node-soap
       client.on('request', (xml, eid) => {
         console.log('--- [SOAP REQUEST] eid=', eid, '---\n', xml, '\n--- [/SOAP REQUEST] ---');
@@ -885,19 +967,19 @@ module.exports = function () {
       client.on('soapError', (err) => {
         console.error('--- [SOAP FAULT] ---\n', safeErr(err), '\n--- [/SOAP FAULT] ---');
       });
- 
+
       // 4) Chama a BAPI
       console.log('[simularPO] Chamando BAPI_PO_CREATE1Async...');
       const resp = await client.BAPI_PO_CREATE1Async(payload);
       const r0 = Array.isArray(resp) ? resp[0] : resp;
- 
+
       // 5) ⬇️ Normaliza para um JSON simples (sem parser de XML)
       const toArray = v => (Array.isArray(v) ? v : (v ? [v] : [])); // ajuda com nó único
- 
+
       const headerRaw = r0?.EXPHEADER || {};
       const itensRaw = toArray(r0?.POITEM?.item);
       const schedRaw = toArray(r0?.POSCHEDULE?.item);
- 
+
       // Agrupa schedules por item
       const schedByItem = schedRaw.reduce((acc, s) => {
         const key = String(s.PO_ITEM || '').padStart(5, '0');
@@ -908,7 +990,7 @@ module.exports = function () {
         });
         return acc;
       }, {});
- 
+
       // Mapeia itens da BAPI no formato direto pro front
       const itens = itensRaw.map(i => {
         const key = String(i.PO_ITEM || '').padStart(5, '0');
@@ -927,12 +1009,12 @@ module.exports = function () {
           schedules: schedByItem[key] || []
         };
       });
- 
+
       const messages = toArray(r0?.RETURN?.item).map(m => ({
         type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
         logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
       }));
- 
+
       const result = {
         testRun: !!payload.TESTRUN,
         header: {
@@ -951,11 +1033,11 @@ module.exports = function () {
         mensagens: messages,
         returnMessages: messages
       };
- 
+
       console.log('[simularPO] Resultado simples:', { itens: itens.length, msgs: messages.length });
       console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
       return result;
- 
+
     } catch (e) {
       // 6) Erro: log detalhado para diagnosticar 502, timeouts, TLS, etc.
       const info = safeErr(e);

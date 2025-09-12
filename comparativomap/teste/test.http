@@ -163,3 +163,7 @@ Connection: close
 
 ###
 GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/A_PurchaseOrder?$format=json&$select=PurchaseOrder&$filter=Supplier%20eq%20'100581343'&sap-client=300
+
+###
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/$metadata
+

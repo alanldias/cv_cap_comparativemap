@@ -28,7 +28,7 @@ service service {
     EXTENDEDPRICE                   : Decimal(15, 2);
     PLANT                           : String(100);
     ItemCategory                    : String(40);
-    TAX_CODE                        : String(10);
+    // TAX_CODE                        : String(10);
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
     supplierName                    : String(255);

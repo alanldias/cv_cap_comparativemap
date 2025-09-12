@@ -162,7 +162,7 @@ sap.ui.define([
           // >>> CAMPOS QUE ESTÃO FALTANDO NA SIMULAÇÃO <<<
           unitOfMeasure: r.unitOfMeasure || r.PO_UNIT || r.unidade || null,
           PLANT: r.PLANT || r.centro || null,
-          TAX_CODE: r.TAX_CODE || r.iva || null,
+          // TAX_CODE: r.TAX_CODE || r.iva || null,
           ItemCategory: r.ItemCategory || r.itemCategory || null,
           grupo_de_materias: r.grupo_de_materias || r.grupoMateriais || r.MaterialGroup || null,
           PREQ_NO: r.PREQ_NO || null,
@@ -366,7 +366,7 @@ sap.ui.define([
           price: Number(it.price) || 0,
           currency: it.currency ?? null,
           PLANT: it.PLANT ?? it.plant ?? it.centro ?? null,
-          TAX_CODE: it.TAX_CODE ?? it.iva ?? null,
+          // TAX_CODE: it.TAX_CODE ?? it.iva ?? null,
           ItemCategory: it.ItemCategory ?? it.itemCategory ?? null,
           grupo_de_materias: it.grupo_de_materias ?? it.grupoMateriais ?? it.MaterialGroup ?? null,
           lifnr: '100573116',// it.lifnr ?? it.supplierId ?? it.VENDOR ?? 3,
@@ -911,8 +911,6 @@ sap.ui.define([
       return isNaN(n) ? "" : n.toFixed(2);
     },
 
-
-
     // Mostra mensagens da BAPI de forma simples
     _showBapiMessages: function (msgs) {
       const arr = Array.isArray(msgs) ? msgs : [];
@@ -1019,7 +1017,7 @@ sap.ui.define([
       const itemCat = this._mapItemCategory((r.ItemCategory || "").toString());
 
       // TAX_CODE: 2 primeiros caracteres
-      const taxCode = (r.TAX_CODE || r.iva || "").toString().trim().toUpperCase().slice(0, 2);
+      // const taxCode = (r.TAX_CODE || r.iva || "").toString().trim().toUpperCase().slice(0, 2);
 
       // Grupo de materiais: até 9
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
@@ -1030,7 +1028,7 @@ sap.ui.define([
       // PREQ_NO: se ItemId for numérico
       const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || "")) ? String(r.CodigoRequisicao).slice(0, 10) : undefined;
 
-      const it = { poItem, plant, material, shortText, quantity: Number(r.quantity || 0), unit, taxCode, netPrice, itemCat, matlGroup, preqNo };
+      const it = { poItem, plant, material, shortText, quantity: Number(r.quantity || 0), unit, netPrice, itemCat, matlGroup, preqNo };
 
       // Logs simples de sanidade por item
       if (!it.material && !it.shortText) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Sem MATERIAL e SHORT_TEXT`);

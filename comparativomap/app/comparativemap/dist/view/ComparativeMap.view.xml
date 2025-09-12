@@ -123,7 +123,7 @@
                             <Column id="colReq"             width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column>
                             <Column id="colGrpMateriais"    width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column>
                             <Column id="colCodMaterial"     width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column>
-                            <Column id="colIva"             width="8rem"     hAlign="Center"><header><Text id="txtHdrIva"            text="Campo Iva"/></header></Column>
+                            <!-- <Column id="colIva"             width="8rem"     hAlign="Center"><header><Text id="txtHdrIva"            text="Campo Iva"/></header></Column> -->
                             <Column id="coluna"             visible="false"><Text id = "textotax" text="deliverydate"/></Column>
                             <Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
                         </columns>
@@ -154,7 +154,7 @@
                                     <Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || '-'}"    wrapping="true" maxLines="2" />
                                     <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/>
                                     <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/>
-                                    <Text id="cellIva"            text="{= ${vm>TAX_CODE}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/>
+                                    <!-- <Text id="cellIva"            text="{= ${vm>TAX_CODE}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/> -->
                                     <Text id="deliverydate"       text="{= ${vm>DELIVERY_DATE_RAW}               || '-'}"    visible="false"/>
                                     <Text id="suppliercodeText"   text="{= ${vm>suppliercode}                    || '-'}"    visible="false"/>
                                 </cells>
