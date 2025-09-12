@@ -210,7 +210,7 @@ sap.ui.define([
         // campos p/ simulação
         unitOfMeasure: r.unitOfMeasure || r.PO_UNIT || r.unidade || null,
         PLANT: r.PLANT || r.centro || null,
-        TAX_CODE: r.TAX_CODE || r.iva || null,
+        // TAX_CODE: r.TAX_CODE || r.iva || null,
         ItemCategory: r.ItemCategory || r.itemCategory || null,
         grupo_de_materias: r.grupo_de_materias || r.grupoMateriais || r.MaterialGroup || null,
         PREQ_NO: r.PREQ_NO || null,
