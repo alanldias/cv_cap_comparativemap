@@ -1,7 +1,6 @@
 try { require('dotenv').config() } catch { }
 
 const cds = require('@sap/cds')
-const soap = require('soap');
 const axios = require('axios')
 const { getDestination } = require('@sap-cloud-sdk/connectivity')
 const { executeHttpRequest } = require('@sap-cloud-sdk/http-client')
@@ -1084,12 +1083,42 @@ module.exports = function () {
   })
 
 
+  // ================== ACTION ÚNICA (lote) ==================
   this.on('simularPO', async req => {
+    console.time('[simularPO] total');
     const t0 = Date.now();
     console.log('========== [simularPO] START ==========');
     console.log('[diag] cds.requires.BAPI_PO_CREATE =', cds.env.requires?.BAPI_PO_CREATE)
 
+    console.log('========== [simularPO] START (lote) ==========');
+
     try {
+      // 0) Entrada no novo formato
+      const { requests = [], concurrency } = req.data || {};
+      const LIMIT = Number(
+        (Number.isFinite(concurrency) ? concurrency : (process.env.CONCURRENCY || 4))
+      );
+
+      console.log('[simularPO] Raw req.data keys:', Object.keys(req.data || {}));
+      if (!Array.isArray(requests) || requests.length === 0) {
+        console.log('[simularPO] Nenhuma request recebida -> []');
+        console.timeEnd('[simularPO] total');
+        return [];
+      }
+
+      console.log('[simularPO] Input resume (lote):', {
+        requests: requests.length,
+        concurrency: LIMIT
+      });
+      console.log('[simularPO] Exemplo header[0] (resumo):', {
+        vendor: requests[0]?.header?.vendor,
+        purchOrg: requests[0]?.header?.purchOrg,
+        compCode: requests[0]?.header?.compCode,
+        docType: requests[0]?.header?.docType,
+        items: Array.isArray(requests[0]?.items) ? requests[0].items.length : 0
+      });
+
+      // 1) Cria o cliente SOAP uma única vez
       // 1) Coleta a entrada e monta payload de fumaça se nada vier
       const { header = {}, items: rawItems = [], schedules = [], testRun = true } = req.data || {}
       console.log('[simularPO] Input resume:', {
@@ -1145,11 +1174,12 @@ module.exports = function () {
       // 2) Cria o cliente SOAP
       console.log('[simularPO] Criando client SOAP via Destination com WSDL:', WSDL_PATH);
       const endpoint = { url: null };
-      console.log('[simularPO] Endpoint inicial:', endpoint)
+      console.time('[simularPO] getSoapService');
       const client = await getSoapService('BAPI_PO_CREATE', WSDL_PATH, endpoint, 'POST');
+      console.timeEnd('[simularPO] getSoapService');
       console.log('[simularPO] Endpoint efetivo:', endpoint.url);
 
-      // Loga serviços/ports/addresses do WSDL para conferir qual endpoint está publicado
+      // 1.1) (Opcional) Inspeção do WSDL
       try {
         const services = client?.wsdl?.definitions?.services || {};
         for (const sName in services) {
@@ -1163,97 +1193,239 @@ module.exports = function () {
         console.warn('[simularPO] Aviso ao inspecionar WSDL:', wErr?.message || wErr);
       }
 
-      // 3) Listeners de debug do node-soap
-      client.on('request', (xml, eid) => {
-        console.log('--- [SOAP REQUEST] eid=', eid, '---\n', xml, '\n--- [/SOAP REQUEST] ---');
-      });
-      client.on('response', (body, response, eid) => {
-        console.log('--- [SOAP RESPONSE] eid=', eid, 'status=', response?.statusCode, '---\n', body, '\n--- [/SOAP RESPONSE] ---');
-      });
-      client.on('soapError', (err) => {
-        console.error('--- [SOAP FAULT] ---\n', safeErr(err), '\n--- [/SOAP FAULT] ---');
-      });
+      // 1.1b) Sanidade: checar operação no client
+      if (typeof client.BAPI_PO_CREATE1Async !== 'function') {
+        console.error('[simularPO] Método SOAP "BAPI_PO_CREATE1Async" não encontrado no client.');
+        try {
+          console.log('[simularPO] Métodos disponíveis (top 20):',
+            Object.keys(client || {}).filter(k => typeof client[k] === 'function').slice(0, 20));
+          console.log('[simularPO] client.describe():');
+          console.dir(client.describe?.(), { depth: null });
+        } catch { }
+        throw new Error('Método SOAP BAPI_PO_CREATE1Async indisponível no port/endereço atual.');
+      }
 
-      // 4) Chama a BAPI
-      console.log('[simularPO] Chamando BAPI_PO_CREATE1Async...');
-      const resp = await client.BAPI_PO_CREATE1Async(payload);
-      const r0 = Array.isArray(resp) ? resp[0] : resp;
-
-      // 5) ⬇️ Normaliza para um JSON simples (sem parser de XML)
-      const toArray = v => (Array.isArray(v) ? v : (v ? [v] : [])); // ajuda com nó único
-
-      const headerRaw = r0?.EXPHEADER || {};
-      const itensRaw = toArray(r0?.POITEM?.item);
-      const schedRaw = toArray(r0?.POSCHEDULE?.item);
-
-      // Agrupa schedules por item
-      const schedByItem = schedRaw.reduce((acc, s) => {
-        const key = String(s.PO_ITEM || '').padStart(5, '0');
-        (acc[key] ||= []).push({
-          schedLine: s.SCHED_LINE,
-          deliveryDate: s.DELIVERY_DATE,
-          qty: Number(s.QUANTITY || 0)
+      // 1.2) Listeners de debug do node-soap (ative com SOAP_DEBUG=1)
+      if (String(process.env.SOAP_DEBUG) === '1') {
+        client.on('request', (xml, eid) => {
+          console.log('--- [SOAP REQUEST] eid=', eid, '---\n', xml, '\n--- [/SOAP REQUEST] ---');
         });
-        return acc;
-      }, {});
+        client.on('response', (body, response, eid) => {
+          console.log('--- [SOAP RESPONSE] eid=', eid, 'status=', response?.statusCode, '---\n', body, '\n--- [/SOAP RESPONSE] ---');
+        });
+        client.on('soapError', (err) => {
+          console.error('--- [SOAP FAULT] ---\n', safeErr(err), '\n--- [/SOAP FAULT] ---');
+        });
+      }
 
-      // Mapeia itens da BAPI no formato direto pro front
-      const itens = itensRaw.map(i => {
-        const key = String(i.PO_ITEM || '').padStart(5, '0');
-        return {
-          poItem: key,
-          material: i.MATERIAL_LONG || i.MATERIAL,
-          descricao: i.SHORT_TEXT,
-          quantidade: Number(i.QUANTITY || 0),
-          unidade: i.PO_UNIT,
-          netPrice: Number(i.NET_PRICE || 0),
-          priceUnit: Number(i.PRICE_UNIT || 1),
-          taxCode: i.TAX_CODE,
-          taxJurCode: i.TAXJURCODE,
-          ncm: i.BRAS_NBM,
-          priceDate: i.PRICE_DATE,
-          schedules: schedByItem[key] || []
-        };
-      });
+      // 2) Mapper: ENRIQUECE TaxCode via OData e chama a BAPI
+      const mapper = async (r, idx) => {
+        console.time(`[mapper:${idx}] total`);
+        const {
+          header = {},
+          items: rawItems = [],
+          schedules = [],
+          testRun = true
+        } = r || {};
 
-      const messages = toArray(r0?.RETURN?.item).map(m => ({
-        type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
-        logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
-      }));
+        console.log(`[mapper:${idx}] START`, {
+          vendor: header.vendor, purchOrg: header.purchOrg,
+          compCode: header.compCode, items: rawItems.length, testRun
+        });
 
-      const result = {
-        testRun: !!payload.TESTRUN,
-        header: {
-          empresa: headerRaw.COMP_CODE,
-          orgCompras: headerRaw.PURCH_ORG,
-          grupoCompras: headerRaw.PUR_GROUP,
-          fornecedor: headerRaw.VENDOR,
-          moeda: headerRaw.CURRENCY,
-          incoterms1: headerRaw.INCOTERMS1,
-          incoterms2: headerRaw.INCOTERMS2,
-          criadoEm: headerRaw.CREAT_DATE,
-          criadoPor: headerRaw.CREATED_BY,
-          poNumber: headerRaw.PO_NUMBER || '' // vazio em TESTRUN
-        },
-        itens,
-        mensagens: messages,
-        returnMessages: messages
+        // zera taxCode que puder vir do front
+        const items = rawItems.map(({ taxCode, ...rest }) => rest);
+
+        // Enriquecimento de TaxCode via S/4 (PIR por centro)
+        const enrichInput = items.map((it, i) => ({
+          __idx: i,
+          Supplier: padLeft(String(header.vendor || ''), 10, '0'),
+          Material: it.material || '',
+          PurchasingOrganization: header.purchOrg,
+          Plant: it.plant
+        }));
+        console.log(`[mapper:${idx}] enrichInput sample (até 2):`, enrichInput.slice(0, 2));
+
+        console.time(`[mapper:${idx}] enrichWithTaxCode`);
+        const enriched = await enrichWithTaxCode(enrichInput);
+        console.timeEnd(`[mapper:${idx}] enrichWithTaxCode`);
+        console.log(`[mapper:${idx}] enriched count=`, enriched.length);
+
+        for (const row of enriched) {
+          if (row?.__idx != null) {
+            items[row.__idx].taxCode = row.TaxCode ?? undefined;
+            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
+            console.log(`[mapper:${idx}] TaxCode OK idx=${row.__idx}`, {
+              material: items[row.__idx].material,
+              plant: items[row.__idx].plant,
+              taxCode: items[row.__idx].taxCode
+            });
+          }
+        }
+
+        const missing = items
+          .map((it, i) => ({ i, poItem: it.poItem ?? (i + 1) * 10, material: it.material, plant: it.plant, taxCode: it.taxCode }))
+          .filter(x => !x.taxCode);
+
+        if (missing.length) {
+          const detalhes = missing
+            .map(m => `Item ${String(m.poItem).toString().padStart(5, '0')} (mat=${m.material || '-'}, plant=${m.plant || '-'})`)
+            .join(', ');
+          console.error(`[mapper:${idx}] FALHA enriquecimento TaxCode ->`, detalhes);
+          throw new Error(`Não foi possível obter TaxCode para ${missing.length} item(ns): ${detalhes}`);
+        }
+
+        // Monta payload e chama BAPI
+        const payload = buildSmokePayload(header, items, schedules, testRun);
+        console.log(`[mapper:${idx}] Payload pronto`, {
+          TESTRUN: payload.TESTRUN,
+          POITEM_len: payload.POITEM?.item?.length,
+          POSCHEDULE_len: payload.POSCHEDULE?.item?.length
+        });
+
+        console.time(`[mapper:${idx}] SOAP`);
+        const resp = await client.BAPI_PO_CREATE1Async(payload);
+        console.timeEnd(`[mapper:${idx}] SOAP`);
+        const r0 = Array.isArray(resp) ? resp[0] : resp;
+
+        const normalized = normalizeBapiResult(r0, !!payload.TESTRUN);
+        console.log(
+          `[mapper:${idx}] OK -> itens=${normalized.itens?.length || 0} msgs=${normalized.returnMessages?.length || 0}`
+        );
+        console.timeEnd(`[mapper:${idx}] total`);
+        return normalized;
       };
 
-      console.log('[simularPO] Resultado simples:', { itens: itens.length, msgs: messages.length });
-      console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms ==========');
-      return result;
+      // 3) Executa em paralelo com limite de concorrência
+      console.log('[pool] start', { limit: LIMIT, size: requests.length });
+      const results = await mapWithConcurrency(requests, LIMIT, async (r, i) => {
+        try {
+          return await mapper(r, i);
+        } catch (err) {
+          console.error(`[pool] mapper erro idx=${i}:`, err?.message || err);
+          throw err;
+        }
+      });
+      console.log('[pool] end');
+
+      // Resumo das mensagens por request
+      console.log('[simularPO] Resumo mensagens por request:',
+        results.map((r, i) => ({
+          i,
+          header_vendor: r?.header?.fornecedor,
+          msgs: (r?.returnMessages || []).map(m => `${m.type}:${m.id}/${m.number}`).join(', ')
+        }))
+      );
+
+      console.log('========== [simularPO] END OK in', (Date.now() - t0), 'ms, results=', results.length, ' ==========');
+      console.timeEnd('[simularPO] total');
+      return results;
 
     } catch (e) {
-      // 6) Erro: log detalhado para diagnosticar 502, timeouts, TLS, etc.
       const info = safeErr(e);
       console.error('========== [simularPO] ERROR ==========');
       console.error('[simularPO] Detalhes do erro:', info);
       console.error('=======================================');
-      return req.error(502, `Falha na chamada BAPI_PO_CREATE1: ${info.message || info.code || 'Erro desconhecido'}`);
+      console.timeEnd('[simularPO] total');
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || 'Erro desconhecido'}`);
     }
   });
+
   /* =================== Helpers =================== */
+
+  // Pool de concorrência (preserva a ordem dos resultados)
+  async function mapWithConcurrency(arr, limit, mapper) {
+    const results = new Array(arr.length);
+    let i = 0;
+    const workers = Math.min(limit, arr.length);
+    console.log('[pool] workers=', workers);
+    async function worker(wid) {
+      while (i < arr.length) {
+        const idx = i++;
+        console.log(`[pool] worker#${wid} -> idx=${idx}`);
+        try {
+          results[idx] = await mapper(arr[idx], idx);
+        } catch (err) {
+          console.error(`[pool] worker#${wid} erro idx=${idx}:`, err?.message || err);
+          results[idx] = {
+            testRun: true,
+            header: {},
+            itens: [],
+            returnMessages: [{
+              type: 'E', id: 'SERVER', number: '000',
+              message: err?.message || String(err)
+            }],
+            mensagens: [{
+              type: 'E', id: 'SERVER', number: '000',
+              message: err?.message || String(err)
+            }]
+          };
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: workers }, (_, k) => worker(k + 1)));
+    return results;
+  }
+
+  // Normaliza resposta da BAPI no formato SimulacaoPOResult
+  function normalizeBapiResult(r0, testRunFlag) {
+    const toArray = v => (Array.isArray(v) ? v : (v ? [v] : []));
+    const headerRaw = r0?.EXPHEADER || {};
+    const itensRaw = toArray(r0?.POITEM?.item);
+    const schedRaw = toArray(r0?.POSCHEDULE?.item);
+
+    const schedByItem = schedRaw.reduce((acc, s) => {
+      const key = String(s.PO_ITEM || '').padStart(5, '0');
+      (acc[key] ||= []).push({
+        schedLine: s.SCHED_LINE,
+        deliveryDate: s.DELIVERY_DATE,
+        qty: Number(s.QUANTITY || 0)
+      });
+      return acc;
+    }, {});
+
+    const itens = itensRaw.map(i => {
+      const key = String(i.PO_ITEM || '').padStart(5, '0');
+      return {
+        poItem: key,
+        material: i.MATERIAL_LONG || i.MATERIAL,
+        descricao: i.SHORT_TEXT,
+        quantidade: Number(i.QUANTITY || 0),
+        unidade: i.PO_UNIT,
+        netPrice: Number(i.NET_PRICE || 0),
+        priceUnit: Number(i.PRICE_UNIT || 1),
+        taxCode: i.TAX_CODE,
+        taxJurCode: i.TAXJURCODE,
+        ncm: i.BRAS_NBM,
+        priceDate: i.PRICE_DATE,
+        schedules: schedByItem[key] || []
+      };
+    });
+
+    const messages = toArray(r0?.RETURN?.item).map(m => ({
+      type: m.TYPE, id: m.ID, number: m.NUMBER, message: m.MESSAGE,
+      logNo: m.LOG_NO, v1: m.MESSAGE_V1, v2: m.MESSAGE_V2, v3: m.MESSAGE_V3, v4: m.MESSAGE_V4
+    }));
+
+    return {
+      testRun: !!testRunFlag,
+      header: {
+        empresa: headerRaw.COMP_CODE,
+        orgCompras: headerRaw.PURCH_ORG,
+        grupoCompras: headerRaw.PUR_GROUP,
+        fornecedor: headerRaw.VENDOR,
+        moeda: headerRaw.CURRENCY,
+        incoterms1: headerRaw.INCOTERMS1,
+        incoterms2: headerRaw.INCOTERMS2,
+        criadoEm: headerRaw.CREAT_DATE,
+        criadoPor: headerRaw.CREATED_BY,
+        poNumber: headerRaw.PO_NUMBER || '' // vazio em TESTRUN
+      },
+      itens,
+      returnMessages: messages,
+      mensagens: messages
+    };
+  }
 
   // Payload "fumaça": se nada vier do front, monta o mínimo p/ a BAPI responder algo.
   function buildSmokePayload(header, items, schedules, testRun) {
@@ -1335,7 +1507,7 @@ module.exports = function () {
   }
   function isoDate(d) {
     const y = d.getFullYear(), m = String(d.getMonth() + 1).padStart(2, '0'), day = String(d.getDate()).padStart(2, '0');
-    return `${y}-${m}-${day}`; // troque para YYYYMMDD se seu backend exigir
+    return `${y}-${m}-${day}`;
   }
   function markX(obj, extra = {}) {
     const x = { ...extra };
@@ -1356,19 +1528,17 @@ module.exports = function () {
       address: e.address,
       port: e.port,
       statusCode: e.statusCode,
-      // Alguns campos específicos do node-soap / axios / request:
       responseStatus: e.response?.status || e.status,
-      responseBody: (e.body || e.response?.data || e.response?.body || e.root) ? clip(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root))) : undefined,
+      responseBody: (e.body || e.response?.data || e.response?.body || e.root)
+        ? clip(String(e.body || e.response?.data || e.response?.body || JSON.stringify(e.root)))
+        : undefined,
       fault: e.fault || e.root?.Envelope?.Body?.Fault,
       stack: e.stack ? clip(e.stack, 1200) : undefined
     };
     return info;
   }
-
   function clip(s, max = 800) {
     if (!s) return s;
     return s.length > max ? (s.slice(0, max) + ` ... (${s.length - max} chars more)`) : s;
   }
-
-
 }

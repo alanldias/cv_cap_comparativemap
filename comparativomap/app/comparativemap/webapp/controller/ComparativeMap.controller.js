@@ -1022,15 +1022,15 @@ sap.ui.define([
 
 
     /** ************************************************************
- * SIMULAR: coleta dados do VM, normaliza (Ariba → BAPI) e chama a action
- * - Header vem do vm>/headerRows[0] (sem seleção)
- * - Itens: linhas selecionadas em vm>/rows (tabela inferior)
- * - Vendor (LIFNR): mock "100573116" (zero-padded para 10)
- ************************************************************* */
+  * SIMULAR (lote): Agrupa por fornecedor, monta requests[] e chama a action única
+  * - Header-base vem do vm>/headerRows[0] (sem seleção)
+  * - Itens: linhas selecionadas em vm>/rows
+  * - Agora SEM chamada unitária: sempre envia array "requests" (um por fornecedor)
+  ************************************************************* */
     onSimularPress: async function () {
       const oView = this.getView();
-      const oOData = oView.getModel();      // OData V4 (/odata/v4/service)
-      const vm = oView.getModel("vm");  // JSONModel com dados do Ariba
+      const oOData = oView.getModel();   // OData V4 (/odata/v4/service)
+      const vm = oView.getModel("vm");   // JSONModel com dados do Ariba
 
       console.groupCollapsed("[SIMULAR] clique");
       try {
@@ -1046,68 +1046,76 @@ sap.ui.define([
         const rows = aCtx.map(c => c.getObject());
         this._dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
-        // 3) MAP: Header Ariba → Header BAPI (com fallback de moeda e LIFNR mock)
-        const header = this._mapHeaderFromAriba(hCand, rows[0]);
-        this._dbg("Header normalizado (→ simularPO.header)", header);
+        // 3) MAP: Header Ariba → Header BAPI (base comum a todos os fornecedores)
+        const headerBase = this._mapHeaderFromAriba(hCand, rows[0]);
+        this._dbg("Header-base normalizado", headerBase);
 
-        // 4) MAP: cada linha selecionada → item BAPI
-        const items = rows.map((r, idx) => this._mapRowToPOItem(r, idx));
-        console.table(items);
+        // 4) AGRUPAR por fornecedor (LIFNR)
+        const grupos = this._groupByVendor(rows, headerBase.vendor);
+        if (!grupos.size) throw new Error("Não foi possível resolver fornecedor (LIFNR) para nenhum item.");
 
-        // 5) Schedules (1 por item) com data de hoje (Edm.Date 'YYYY-MM-DD')
-        const schedules = rows.map((r, i) => ({
-          poItem: items[i].poItem,
-          schedLine: 1,
-          deliveryDate: this._getDeliveryDateFromRow(r), // ← usa a data do Ariba
-          quantity: items[i].quantity
-        }));
-        console.table(schedules);
-
-        // 6) VALIDAÇÃO mínima antes do backend (evita roundtrip bobo)
-        const missing = [];
-        if (!header.docType) missing.push("Tipo de Pedido (docType)");
-        if (!header.compCode) missing.push("Empresa (compCode)");
-        if (!header.purchOrg) missing.push("Org. de Compras (purchOrg)");
-        if (!header.purchGroup) missing.push("Grupo de Compras (purchGroup)");
-        if (!header.vendor) missing.push("Fornecedor (vendor/LIFNR)");
-        if (!header.currency) missing.push("Moeda (currency)");
-
-        const missingItems = [];
-        items.forEach((it, i) => {
-          const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
-          if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
-          if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
-          if (!it.quantity || Number(it.quantity) <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
-          if (!it.material && !it.shortText) missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
+        // 5) MONTAR requests: um payload por fornecedor (renumera poItem por grupo)
+        const requests = Array.from(grupos.entries()).map(([vendor, rowsDoVendor]) => {
+          return this._buildPayloadForVendor(vendor, rowsDoVendor, headerBase);
         });
 
-        if (missing.length || missingItems.length) {
-          const msg = [
-            missing.length ? "Cabeçalho faltando:\n- " + missing.join("\n- ") : "",
-            missingItems.length ? "Itens faltando:\n- " + missingItems.join("\n- ") : ""
-          ].filter(Boolean).join("\n\n");
-          throw new Error(msg);
-        }
+        // 6) VALIDAÇÃO por request (cabeçalho e itens) — evita roundtrip bobo
+        requests.forEach((p, gi) => {
+          const missing = [];
+          if (!p.header.docType) missing.push("docType");
+          if (!p.header.compCode) missing.push("compCode");
+          if (!p.header.purchOrg) missing.push("purchOrg");
+          if (!p.header.purchGroup) missing.push("purchGroup");
+          if (!p.header.vendor) missing.push("vendor");
+          if (!p.header.currency) missing.push("currency");
+          if (missing.length) throw new Error(`Cabeçalho faltando (grupo ${gi + 1} / fornecedor ${p.header.vendor}): ${missing.join(", ")}`);
 
-        // 7) PAYLOAD final que vai para a action
-        const payload = { header, items, schedules, testRun: true };
-        this._dbg("Payload final (simularPO)", payload);
+          p.items.forEach((it, i) => {
+            const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
+            if (!it.plant) throw new Error(`[${p.header.vendor}] ${tag}: Centro (plant) obrigatório`);
+            if (!it.unit) throw new Error(`[${p.header.vendor}] ${tag}: Unidade (unit) obrigatória`);
+            if (!it.quantity || Number(it.quantity) <= 0)
+              throw new Error(`[${p.header.vendor}] ${tag}: Quantidade > 0 obrigatória`);
+            if (!it.material && !it.shortText)
+              throw new Error(`[${p.header.vendor}] ${tag}: MATERIAL ou SHORT_TEXT obrigatório`);
+          });
+        });
 
-        // 8) EXECUTA a action OData V4
+        this._dbg("Requests (um por fornecedor)", requests);
+
+        // 7) EXECUTA a action OData V4 (única chamada com requests[])
+        const CONCURRENCY = Number(window?.ENV?.SIMULACAO_CONCURRENCY || 4); // ajuste se quiser
         const oCtx = oOData.bindContext("/simularPO(...)");
-        oCtx.setParameter("header", header);
-        oCtx.setParameter("items", items);
-        oCtx.setParameter("schedules", schedules);
-        oCtx.setParameter("testRun", true);
+        oCtx.setParameter("requests", requests);
+        oCtx.setParameter("concurrency", CONCURRENCY);
 
-        console.log("→ Executando oCtx.execute() /simularPO(...)");
+        console.log("→ Executando /simularPO(...) em lote");
         await oCtx.execute();
-        const result = oCtx.getBoundContext().getObject();
-        this._dbg("Resultado da action", result);
+
+        // ✅ Desembrulhar corretamente o retorno
+        let opResult = oCtx.getBoundContext().getObject();  // pode ser { value: [...] } no V4
+        let results = Array.isArray(opResult) ? opResult : (opResult?.value || []);
+
+        // (Opcional, mais robusto em UI5 recentes)
+        if (typeof oCtx.getReturnValueContext === "function") {
+          const rvc = oCtx.getReturnValueContext();
+          if (rvc) {
+            const rvObj = rvc.getObject();
+            results = Array.isArray(rvObj) ? rvObj : (rvObj?.value || results);
+          }
+        }
+        this._dbg("Resultados da action (array)", results);
+
         console.groupEnd();
 
-        await this._openResultadoPO(result);
-        this._showBapiMessages(result.returnMessages);
+        // 8) Exibir: abre o 1º resultado no seu Dialog atual e mostra mensagens agregadas
+        if (Array.isArray(results) && results.length) {
+          await this._openResultadoPO(results[0]); // mantém seu dialog atual (um resultado por vez)
+          const allMsgs = results.flatMap(r => r?.returnMessages || r?.mensagens || []);
+          this._showBapiMessages(allMsgs);
+        } else {
+          sap.m.MessageToast.show("Simulação concluída, sem retorno.");
+        }
 
       } catch (err) {
         console.error("[SIMULAR] ERRO:", err);
@@ -1116,27 +1124,68 @@ sap.ui.define([
       }
     },
 
+    // --- Extrai LIFNR de uma linha (normaliza e zera à esquerda)
+    _getVendorFromRow: function (r) {
+      const raw = (r.SupplierCode || r.suppliercode || r.supplierId || r.lifnr || r.VENDOR || r.vendor || "").toString();
+      const onlyDigits = raw.replace(/\D/g, "");
+      return this._zpad(onlyDigits, 10);
+    },
+
+    // --- Agrupa as linhas por fornecedor; se faltar em alguma, usa fallbackVendor do headerBase
+    _groupByVendor: function (rows, fallbackVendor) {
+      const map = new Map();
+      rows.forEach(r => {
+        const v = this._getVendorFromRow(r) || fallbackVendor;
+        if (!v) throw new Error("Não foi possível resolver o fornecedor (LIFNR) de uma das linhas.");
+        if (!map.has(v)) map.set(v, []);
+        map.get(v).push(r);
+      });
+      return map; // Map<LIFNR, Row[]>
+    },
+
+    // --- Monta o payload de uma request por fornecedor (header/items/schedules)
+    _buildPayloadForVendor: function (vendor, rowsDoVendor, headerBase) {
+      const header = { ...headerBase, vendor };
+
+      // itens renumerados 10,20,30… por grupo
+      const items = rowsDoVendor.map((r, idx) => this._mapRowToPOItem(r, idx));
+
+      // schedules 1-para-1 com os itens (data vinda do Ariba quando houver)
+      const schedules = rowsDoVendor.map((r, i) => ({
+        poItem: items[i].poItem,
+        schedLine: 1,
+        deliveryDate: this._getDeliveryDateFromRow(r),
+        quantity: items[i].quantity
+      }));
+
+      return { header, items, schedules, testRun: true };
+    },
+
+
     // Abre o Dialog com o resultado da simulação (usa o fragment acima)
     _openResultadoPO: async function (result) {
       const oView = this.getView();
 
       if (!this._dlgResultadoPO) {
+        // Use um prefixo estável da própria view para o fragment:
+        const fragPrefix = oView.createId("resPO"); // gera "viewId--resPO"
         this._dlgResultadoPO = await sap.ui.core.Fragment.load({
-          id: oView.getId(),
+          id: fragPrefix, // ⬅️ agora os controles ficam "viewId--resPO--<id>"
           name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacaoPO",
           controller: this
         });
         oView.addDependent(this._dlgResultadoPO);
       }
 
-      // Model "simpo" com o retorno { testRun, header, itens, returnMessages }
-      const m = new sap.ui.model.json.JSONModel(result || {});
-      this._dlgResultadoPO.setModel(m, "simpo");
+      // Atualiza o modelo e abre
+      this._dlgResultadoPO.setModel(new sap.ui.model.json.JSONModel(result || {}), "simpo");
       this._dlgResultadoPO.open();
     },
-
-    onCloseResultadoPO: function () {
-      this._dlgResultadoPO?.close();
+    onExit: function () {
+      if (this._dlgResultadoPO) {
+        this._dlgResultadoPO.destroy(true);
+        this._dlgResultadoPO = null;
+      }
     },
 
     // Formatter simples para números (duas casas)
@@ -1249,9 +1298,6 @@ sap.ui.define([
 
       // Categoria do item (Ariba → código interno BAPI)
       const itemCat = this._mapItemCategory((r.ItemCategory || "").toString());
-
-      // TAX_CODE: 2 primeiros caracteres
-      // const taxCode = (r.TAX_CODE || r.iva || "").toString().trim().toUpperCase().slice(0, 2);
 
       // Grupo de materiais: até 9
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
