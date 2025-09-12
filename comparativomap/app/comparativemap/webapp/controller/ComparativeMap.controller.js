@@ -181,6 +181,7 @@ sap.ui.define([
         MessageBox.warning("Selecione ao menos uma linha.");
         return;
       }
+      console.log(selecionados)
 
       // Mapeia itens para o QM e constrói índices (NAME/LIFNR)
       const items = selecionados.map((r, i) => ({
@@ -961,7 +962,415 @@ sap.ui.define([
       if (s.includes("_")) return s;
       if (email) return `${s}_${String(email)}`;
       return s;
-    }
+    },
+    /* ========= Utilidades específicas ========= */
+    _filterItemsByDoc(docId) {
+      const oTbl = this.byId("tblDocs");
+      const oBinding = oTbl?.getBinding("items");
+      if (!oBinding) return;
 
+      const aFilters = docId ? [new Filter("docId", FilterOperator.EQ, String(docId))] : [];
+      oBinding.filter(aFilters);
+    },
+
+    _buildHeaderRows(list, docId) {
+      if (!Array.isArray(list) || !list.length) return [];
+      // se veio docId, pega só aquele; senão, 1 por docId
+      const byDoc = new Map();
+      for (const r of list) {
+        const id = r.docId ?? "";
+        if (docId && String(id) !== String(docId)) continue;
+        if (!byDoc.has(id)) {
+          byDoc.set(id, {
+            docId: id,
+            arb_Document_Type: r.arb_Document_Type ?? "",
+            arb_PurchasingOrganization: r.arb_PurchasingOrganization ?? "",
+            arb_PurchasingGroup: r.arb_PurchasingGroup ?? "",
+            arb_CompanyCode: r.arb_CompanyCode ?? "",
+            INCOTERMS1: r.INCOTERMS1 ?? "",
+            INCOTERMS2: r.INCOTERMS2 ?? "",
+            arb_PaymentTerms: r.arb_PaymentTerms ?? ""
+          });
+        }
+      }
+      return Array.from(byDoc.values());
+    },
+
+    async _openSimFragment(aRows, docIds) {
+      const oView = this.getView();
+
+      const oSimModel = new JSONModel({
+        docIds,                 // agora é array (IDs envolvidos)
+        total: aRows.length,
+        rows: aRows,            // coleção p/ tabela
+        first: aRows?.[0] || {} // primeiro item (p/ cabeçalho/resumo)
+      });
+
+      if (!this._oSimDialog) {
+        this._oSimDialog = await Fragment.load({
+          id: oView.getId(), // importante p/ IDs estáveis
+          name: "comparativemap.comparativemap.view.fragments.Simulacao", // ajuste ao seu namespace
+          type: "XML",
+          controller: this
+        });
+        oView.addDependent(this._oSimDialog);
+      }
+
+      this._oSimDialog.setModel(oSimModel, "sim");
+      this._oSimDialog.open();
+    },
+
+
+    /** ************************************************************
+ * SIMULAR: coleta dados do VM, normaliza (Ariba → BAPI) e chama a action
+ * - Header vem do vm>/headerRows[0] (sem seleção)
+ * - Itens: linhas selecionadas em vm>/rows (tabela inferior)
+ * - Vendor (LIFNR): mock "100573116" (zero-padded para 10)
+ ************************************************************* */
+    onSimularPress: async function () {
+      const oView = this.getView();
+      const oOData = oView.getModel();      // OData V4 (/odata/v4/service)
+      const vm = oView.getModel("vm");  // JSONModel com dados do Ariba
+
+      console.groupCollapsed("[SIMULAR] clique");
+      try {
+        // 1) HEADER do VM (pega o primeiro registro da tabela de cabeçalho)
+        const hCand = this._getHeaderFromVM(vm);
+        this._dbg("Header bruto (vm>/headerRows[0] ou vm>/header)", hCand);
+
+        // 2) ITENS selecionados na tabela inferior (vm>/rows)
+        const oTbl = this.byId("tblDocs");
+        if (!oTbl) throw new Error("Tabela 'tblDocs' não encontrada.");
+        const aCtx = oTbl.getSelectedContexts("vm");
+        if (!aCtx.length) throw new Error("Selecione pelo menos 1 item para simular.");
+        const rows = aCtx.map(c => c.getObject());
+        this._dbg(`Linhas selecionadas (count=${rows.length})`, rows);
+
+        // 3) MAP: Header Ariba → Header BAPI (com fallback de moeda e LIFNR mock)
+        const header = this._mapHeaderFromAriba(hCand, rows[0]);
+        this._dbg("Header normalizado (→ simularPO.header)", header);
+
+        // 4) MAP: cada linha selecionada → item BAPI
+        const items = rows.map((r, idx) => this._mapRowToPOItem(r, idx));
+        console.table(items);
+
+        // 5) Schedules (1 por item) com data de hoje (Edm.Date 'YYYY-MM-DD')
+        const schedules = rows.map((r, i) => ({
+          poItem: items[i].poItem,
+          schedLine: 1,
+          deliveryDate: this._getDeliveryDateFromRow(r), // ← usa a data do Ariba
+          quantity: items[i].quantity
+        }));
+        console.table(schedules);
+
+        // 6) VALIDAÇÃO mínima antes do backend (evita roundtrip bobo)
+        const missing = [];
+        if (!header.docType) missing.push("Tipo de Pedido (docType)");
+        if (!header.compCode) missing.push("Empresa (compCode)");
+        if (!header.purchOrg) missing.push("Org. de Compras (purchOrg)");
+        if (!header.purchGroup) missing.push("Grupo de Compras (purchGroup)");
+        if (!header.vendor) missing.push("Fornecedor (vendor/LIFNR)");
+        if (!header.currency) missing.push("Moeda (currency)");
+
+        const missingItems = [];
+        items.forEach((it, i) => {
+          const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
+          if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
+          if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
+          if (!it.quantity || Number(it.quantity) <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
+          if (!it.material && !it.shortText) missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
+        });
+
+        if (missing.length || missingItems.length) {
+          const msg = [
+            missing.length ? "Cabeçalho faltando:\n- " + missing.join("\n- ") : "",
+            missingItems.length ? "Itens faltando:\n- " + missingItems.join("\n- ") : ""
+          ].filter(Boolean).join("\n\n");
+          throw new Error(msg);
+        }
+
+        // 7) PAYLOAD final que vai para a action
+        const payload = { header, items, schedules, testRun: true };
+        this._dbg("Payload final (simularPO)", payload);
+
+        // 8) EXECUTA a action OData V4
+        const oCtx = oOData.bindContext("/simularPO(...)");
+        oCtx.setParameter("header", header);
+        oCtx.setParameter("items", items);
+        oCtx.setParameter("schedules", schedules);
+        oCtx.setParameter("testRun", true);
+
+        console.log("→ Executando oCtx.execute() /simularPO(...)");
+        await oCtx.execute();
+        const result = oCtx.getBoundContext().getObject();
+        this._dbg("Resultado da action", result);
+        console.groupEnd();
+
+        await this._openResultadoPO(result);
+        this._showBapiMessages(result.returnMessages);
+
+      } catch (err) {
+        console.error("[SIMULAR] ERRO:", err);
+        console.groupEnd();
+        sap.m.MessageBox.error(err.message || String(err));
+      }
+    },
+
+    // Abre o Dialog com o resultado da simulação (usa o fragment acima)
+    _openResultadoPO: async function (result) {
+      const oView = this.getView();
+
+      if (!this._dlgResultadoPO) {
+        this._dlgResultadoPO = await sap.ui.core.Fragment.load({
+          id: oView.getId(),
+          name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacaoPO",
+          controller: this
+        });
+        oView.addDependent(this._dlgResultadoPO);
+      }
+
+      // Model "simpo" com o retorno { testRun, header, itens, returnMessages }
+      const m = new sap.ui.model.json.JSONModel(result || {});
+      this._dlgResultadoPO.setModel(m, "simpo");
+      this._dlgResultadoPO.open();
+    },
+
+    onCloseResultadoPO: function () {
+      this._dlgResultadoPO?.close();
+    },
+
+    // Formatter simples para números (duas casas)
+    fmt2: function (v) {
+      const n = Number(v);
+      return isNaN(n) ? "" : n.toFixed(2);
+    },
+
+
+
+    // Mostra mensagens da BAPI de forma simples
+    _showBapiMessages: function (msgs) {
+      const arr = Array.isArray(msgs) ? msgs : [];
+
+      // Sem mensagens → só um toast de sucesso
+      if (!arr.length) {
+        sap.m.MessageToast.show("Simulação concluída. Sem mensagens da BAPI.");
+        return;
+      }
+
+      // Monta um texto curtinho por linha
+      const line = (m) => {
+        const idnum = [m.id, m.number].filter(Boolean).join("/");
+        const tag = m.type ? `[${m.type}]` : "[?]";
+        return `${tag} ${m.message || ""}${idnum ? ` (${idnum})` : ""}`;
+      };
+      const text = arr.map(line).join("\n");
+
+      // Escala o ícone/caixa pela severidade
+      const hasError = arr.some(m => m.type === "E" || m.type === "A");
+      const hasWarning = arr.some(m => m.type === "W");
+
+      if (hasError) {
+        sap.m.MessageBox.error(text, { title: "Mensagens da BAPI" });
+      } else if (hasWarning) {
+        sap.m.MessageBox.warning(text, { title: "Mensagens da BAPI" });
+      } else {
+        sap.m.MessageBox.success(text, { title: "Mensagens da BAPI" });
+      }
+    },
+
+
+    /** ************************************************************
+     * HEADER: pega do VM e mapeia Ariba → BAPI
+     * - Usa vm>/headerRows[0] (sua tabela de cabeçalho)
+     * - Fallback de moeda: usa a do primeiro item se header não tiver
+     ************************************************************* */
+    _getHeaderFromVM: function (vm) {
+      let h = vm.getProperty("/headerRows");
+      if (Array.isArray(h)) h = h[0] || {};
+      if (!h || !Object.keys(h).length) h = vm.getProperty("/header") || {};
+      return h;
+    },
+
+    _mapHeaderFromAriba: function (h, firstRow) {
+      // Campos que você tem na sua tabela de header:
+      // tipoPedido, purchasingOrganization, purchasingGroup, companyCode, incoterms1, incoterms2, paymentTerms
+      // (fornecedor e moeda podem não estar no header; por isso tratamos abaixo)
+
+      // Fallback de moeda: se header.moeda não vier, usa do primeiro item selecionado
+      const currency = (h.moeda || firstRow?.currency || "BRL").toString().toUpperCase().slice(0, 3);
+
+      // Vendor (LIFNR): tenta header.fornecedor; se vazio, usa SupplierCode da 1ª linha selecionada
+      const vendorRaw =
+        (h.fornecedor && String(h.fornecedor).trim()) ||
+        firstRow?.SupplierCode ||
+        firstRow?.suppliercode ||
+        firstRow?.supplierId ||
+        firstRow?.lifnr;
+      const vendor = this._zpad(String(vendorRaw).replace(/\D/g, ""), 10);
+      const rawTipo = (h.tipoPedido || "NB").toString().trim();
+      const m = rawTipo.match(/([A-Z0-9]{2,4})\s*$/i); // último bloco 2–4 chars
+      const docType = (m ? m[1] : rawTipo).toUpperCase().slice(0, 4);
+
+      return {
+        docType: docType,
+        compCode: (h.companyCode || "").toString().slice(0, 4),
+        purchOrg: (h.purchasingOrganization || "").toString().slice(0, 4),
+        purchGroup: (h.purchasingGroup || "").toString().slice(0, 3),
+        vendor,           // ← já mockado se não veio
+        currency,         // ← com fallback do primeiro item
+        incoterms1: (h.incoterms1 || "").toString().toUpperCase().slice(0, 3),
+        incoterms2: (h.incoterms2 || "").toString().slice(0, 28)
+        // paymentTerms: a BAPI_PO_CREATE1 não recebe direto no HEADER; ignoramos aqui
+      };
+    },
+
+    /** ************************************************************
+     * ITEM: mapeia uma linha Ariba (vm>/rows[*]) → POITEM da BAPI
+     * - MATERIAL (numérico) vira MATNR com 18 dígitos
+     * - Se não houver MATERIAL, usa SHORT_TEXT (40)
+     ************************************************************* */
+    _mapRowToPOItem: function (r, idx) {
+      const poItem = (idx + 1) * 10; // 10,20,30...
+
+      // MATERIAL vs SHORT_TEXT  ✅ pega prefixo numérico no início do MaterialCode
+      const matRaw = (r.MaterialCode || "").toString().trim();
+
+      // se começar com dígitos (ex.: "558510 ..."), usa esse prefixo como MATNR
+      const m = matRaw.match(/^(\d{4,})\b/);
+      const material = m ? this._zpad(m[1], 18) : "";
+
+      // descrição (fallbacks) — mantém como antes
+      const desc = (r.itemDEscription || r.itemDescription || r.description || r.ItemDescription || "").toString();
+      const shortText = desc.slice(0, 40);
+
+      // Unidade (map simples; ajuste se precisar)
+      const unit = this._mapUoM((r.unitOfMeasure || "").toString().toUpperCase());
+
+      // Centro (se vier "C010 - Algo", pega o código à esquerda)
+      const plant = this._mapPlant((r.PLANT || "").toString());
+
+      // Categoria do item (Ariba → código interno BAPI)
+      const itemCat = this._mapItemCategory((r.ItemCategory || "").toString());
+
+      // TAX_CODE: 2 primeiros caracteres
+      const taxCode = (r.TAX_CODE || r.iva || "").toString().trim().toUpperCase().slice(0, 2);
+
+      // Grupo de materiais: até 9
+      const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
+
+      // Preço unitário (opcional, mas ajuda na simulação)
+      const netPrice = (r.price != null) ? Number(r.price) : null;
+
+      // PREQ_NO: se ItemId for numérico
+      const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || "")) ? String(r.CodigoRequisicao).slice(0, 10) : undefined;
+
+      const it = { poItem, plant, material, shortText, quantity: Number(r.quantity || 0), unit, taxCode, netPrice, itemCat, matlGroup, preqNo };
+
+      // Logs simples de sanidade por item
+      if (!it.material && !it.shortText) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Sem MATERIAL e SHORT_TEXT`);
+      if (!it.unit) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Unidade vazia`);
+      if (!it.plant) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Centro vazio`);
+      if (!it.quantity) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Quantidade vazia/zero`);
+
+      return it;
+    },
+
+    /** ********** Helpers utilitários ********** */
+
+    // Converte vários formatos → 'YYYY-MM-DD' (Edm.Date)
+    _normalizeDate: function (val) {
+      if (!val) return this._toEdmDate(new Date());
+      let s = typeof val === "object" && val.dateValue ? val.dateValue : String(val).trim();
+
+      // 'YYYY-MM-DD'
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+      // 'YYYYMMDD'
+      if (/^\d{8}$/.test(s)) return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
+
+      // ISO '2025-09-29T10:55:00.000+0000' etc.
+      const d = new Date(s);
+      if (!isNaN(d)) return this._toEdmDate(d);
+
+      throw new Error(`Data inválida: ${val}`);
+    },
+
+    // Pega a data do Ariba na linha e normaliza
+    _getDeliveryDateFromRow: function (r) {
+      const raw = r?.DELIVERY_DATE_RAW?.dateValue || r?.DELIVERY_DATE_RAW || r?.deliveryDate;
+      return this._normalizeDate(raw || new Date());
+    },
+
+
+    // Converte Date JS → 'YYYY-MM-DD' (Edm.Date)
+    _toEdmDate: function (d) {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${day}`;
+    },
+
+    // Pad left (zeros à esquerda)
+    _zpad: function (val, len) {
+      const s = String(val || "");
+      return s.length >= len ? s : "0".repeat(len - s.length) + s;
+    },
+
+    // UoM: mapeio básico (ajuste conforme sua realidade)
+    _mapUoM: function (u) {
+      const map = { "UN": "PC", "PC": "PC", "PÇ": "PC", "KG": "KG", "G": "G", "L": "L", "M": "M", "CX": "CX" };
+      return map[u] || u.slice(0, 3);
+    },
+
+    // PLANT: se vier "C010 - ..." pega "C010"
+    _mapPlant: function (p) {
+      const code = p.split(/[ -]/)[0].trim();
+      return code.slice(0, 4);
+    },
+
+    // ItemCategory (externo → interno BAPI)
+    _mapItemCategory: function (ext) {
+      const x = (ext || "").trim().toUpperCase();
+
+      // Mapas comuns Ariba → SAP (PSTYP interno da BAPI)
+      const dict = {
+        // Padrão
+        "": "0", "STD": "0", "STANDARD": "0", "MATERIAL": "0",
+
+        // Consignado
+        "K": "2", "CONSIGNMENT": "2", "CONSIGNADO": "2",
+
+        // Subcontratação
+        "L": "3", "SUBCONTRACTING": "3", "SUBCONTRATACAO": "3", "SUBCONTRATAÇÃO": "3",
+
+        // Third-party
+        "S": "5", "THIRD-PARTY": "5", "THIRD PARTY": "5", "TERCEIROS": "5",
+
+        // Transferência entre centros
+        "U": "7", "STOCK TRANSFER": "7", "TRANSFERENCIA": "7", "TRANSFERÊNCIA": "7",
+
+        // Limites/Serviços aprimorados (se aplicável no seu cenário)
+        "E": "A", "ENHANCED LIMITS": "A", "LIMITS": "A"
+      };
+
+      return dict[x] || "0"; // default: padrão
+    },
+
+    // Logs “bonitinhos”
+    _dbg: function (title, obj) {
+      console.groupCollapsed("🔎 " + title);
+      try { console.log(this._safe(obj)); } catch (e) { console.log(obj); }
+      console.groupEnd();
+    },
+    _safe: function (obj) {
+      const cache = new Set();
+      const out = JSON.parse(JSON.stringify(obj, (k, v) => {
+        if (typeof v === "function") return undefined;
+        if (typeof v === "object" && v !== null) { if (cache.has(v)) return; cache.add(v); }
+        return v;
+      }));
+      cache.clear();
+      return out;
+    }
   });
 });
