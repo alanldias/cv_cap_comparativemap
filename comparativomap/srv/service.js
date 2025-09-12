@@ -716,7 +716,7 @@ async function fetchSupplierBids(docId) {
       const plant = byId['Plant']?.value?.simpleValue ?? null
       const itemCategory = byId['ItemCategory']?.value?.simpleValue ?? null
       const grupoMaterias = byId['MaterialGroup']?.value?.simpleValue ?? null
-      const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
+      // const taxCode = byId['GITASHORTSTRINGIFZ000152']?.value?.simpleValue ?? null
       const materialCode = byId['MaterialCode']?.value?.simpleValue ?? null
 
       // pega o valor bruto, independente se vem em .value ou direto
@@ -745,7 +745,7 @@ async function fetchSupplierBids(docId) {
         CodigoRequisicao: codigoRequisicao,
         PLANT: plant,
         ItemCategory: itemCategory,
-        TAX_CODE: taxCode,
+        // TAX_CODE: taxCode,
         MaterialCode: materialCode,
         grupo_de_materias: grupoMaterias,
         DELIVERY_DATE_RAW: deliveryRaw ?? null
@@ -808,128 +808,159 @@ async function fetchSupplierInvitationsList(docId, round) {
 
 // buscar o iva por pedido enviado
 async function enrichWithTaxCode(items, options = {}) {
-  const arr = Array.isArray(items) ? items : []
-  dbg('[enrichWithTaxCode] start | items =', arr.length)
+  const input = Array.isArray(items) ? items : [];
+  dbg('[enrichWithTaxCode:v3] start | items =', input.length);
+  if (!input.length) return [];
 
-  if (!arr.length) {
-    dbg('[enrichWithTaxCode] vazio: nada a consultar')
-    return []
-  }
-
-  // Resolve dest com fallback (p/ usar a mesma da BAPI se quiser)
+  // ===== opções/destinos =====
   const s4hDest =
     options.destinationName
     ?? (typeof S4H_DEST !== 'undefined' && S4H_DEST)
-    ?? cds?.env?.requires?.BAPI_PO_CREATE?.credentials?.destination // fallback: mesma dest da BAPI
-    ?? 'S4H_QAS_CQ5_MAPA'
+    ?? cds?.env?.requires?.BAPI_PO_CREATE?.credentials?.destination
+    ?? 'S4H_QAS_CQ5_MAPA';
 
-  const sapClient = options.sapClient ?? S4H_SAP_CLIENT
-  const odataPath = options.path ?? S4H_ODATA_PATH
-  const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS
+  const sapClient = options.sapClient ?? S4H_SAP_CLIENT;
+  const odataPath = options.path ?? S4H_ODATA_PATH;
+  const timeoutMs = options.timeoutMs != null ? Number(options.timeoutMs) : S4H_TIMEOUT_MS;
 
-  console.log('[enrichWithTaxCode] opts =>', { s4hDest, sapClient, odataPath, timeoutMs })
+  // fornecedor “preferido” do header deste request (se existir)
+  const headerVendor = String(options.headerVendor || '')
+    .replace(/\D/g, '')
+    .replace(/^0+/, '') || null;
 
-  // monta $filter com OR por item
-  const clauses = arr.map(({ Supplier, Material, PurchasingOrganization, Plant }, i) => {
-    const parts = []
-    if (Supplier) parts.push(`Supplier eq '${_escapeOData(Supplier)}'`)
-    if (Material) parts.push(`Material eq '${_escapeOData(Material)}'`)
-    if (PurchasingOrganization) parts.push(`PurchasingOrganization eq '${_escapeOData(PurchasingOrganization)}'`)
-    if (Plant) parts.push(`Plant eq '${_escapeOData(Plant)}'`)
-    const c = `(${parts.join(' and ')})`
-    console.log(`[enrichWithTaxCode] filtro[${i}] =`, c)
-    return c
-  }).filter(c => c !== '()')
+  // ===== helpers =====
+  const _esc = (v = '') => String(v).replace(/'/g, "''").trim();
+  const _canon = v => String(v ?? '').trim().toUpperCase();
+  const _no0 = s => String(s || '').replace(/^0+/, '');
+  const _supKey = s => _no0(String(s || '').replace(/\D/g, ''));
+  const _matKey = m => _canon(_no0(m));
+  const _tripKey = (M, PO, P) => [_matKey(M), _canon(PO), _canon(P)].join('|');
 
-  const rawFilter = clauses.length ? clauses.join(' or ') : '1 eq 2'
-  const $select = 'Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode'
+  // cada item pode ter um fornecedor preferido específico (se vier no próprio item)
+  const preferredByItem = input.map(it => {
+    const fromItem = _supKey(it.Supplier);
+    return fromItem || headerVendor || null;
+  });
 
-  console.log('[enrichWithTaxCode] $select =', $select)
-  console.log('[enrichWithTaxCode] $filter (raw) =', rawFilter)
+  // ===== coleto triplas únicas (Material, POrg, Plant) =====
+  const triples = [];
+  const seen = new Set();
+  for (const it of input) {
+    const k = _tripKey(it.Material, it.PurchasingOrganization, it.Plant);
+    if (!k.includes('||') && !seen.has(k)) {
+      seen.add(k);
+      triples.push({
+        Material: it.Material,
+        PurchasingOrganization: it.PurchasingOrganization,
+        Plant: it.Plant
+      });
+    }
+  }
+  if (!triples.length) {
+    dbg('[enrichWithTaxCode:v3] sem chaves únicas');
+    return input.map(it => ({ ...it, TaxCode: null, PurchasingInfoRecord: null }));
+  }
 
-  const query = [
-    '$format=json',
-    `$select=${$select}`,
-    `$filter=${encodeURIComponent(rawFilter)}`,
-    `sap-client=${encodeURIComponent(sapClient)}`
-  ].join('&')
+  // ===== chama OData em lotes (sem Supplier no filtro) =====
+  const dest = await getDestination({ destinationName: s4hDest });
+  if (!dest) throw new Error(`Destination '${s4hDest}' não encontrada.`);
 
-  const relativeUrl = `${odataPath}?${query}`
+  const CHUNK = 25; // ajuste se o gateway limitar URL
+  const allRows = [];
+  for (let i = 0; i < triples.length; i += CHUNK) {
+    const part = triples.slice(i, i + CHUNK);
+    const filter = part.map(t =>
+      `(Material eq '${_esc(t.Material)}' and PurchasingOrganization eq '${_esc(t.PurchasingOrganization)}' and Plant eq '${_esc(t.Plant)}')`
+    ).join(' or ');
 
-  // Destination + log da URL completa (pra testar via HTTP)
-  const dest = await getDestination({ destinationName: s4hDest })
-  if (!dest) throw new Error(`Destination '${s4hDest}' não encontrada.`)
+    const query = [
+      '$format=json',
+      '$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode',
+      `$filter=${encodeURIComponent(filter)}`,
+      `sap-client=${encodeURIComponent(sapClient)}`
+    ].join('&');
 
-  const base = (dest.url || '').endsWith('/') ? dest.url.slice(0, -1) : (dest.url || '')
-  const fullUrl = `${base}${relativeUrl.startsWith('/') ? '' : '/'}${relativeUrl}`
-
-  console.log('[enrichWithTaxCode] dest.url =', dest.url)
-  console.log('[enrichWithTaxCode] OData relative =', relativeUrl)
-  console.log('[enrichWithTaxCode] OData FULL URL =>', fullUrl)
-
-  // chamada GET no OData
-  let data
-  try {
+    const url = `${odataPath}?${query}`;
     const resp = await executeHttpRequest(
       dest,
-      { method: 'GET', url: relativeUrl, headers: { Accept: 'application/json' }, timeout: timeoutMs },
+      { method: 'GET', url, headers: { Accept: 'application/json' }, timeout: timeoutMs },
       { fetchCsrfToken: false }
-    )
-    data = resp.data
-    console.log('[enrichWithTaxCode] OData status =', resp.status)
-  } catch (e) {
-    const status = e?.response?.status || 502
-    const msg = e?.response?.data?.error?.message || e?.message
-    LOG?.error?.('[enrichWithTaxCode] ERRO OData →', status, msg)
-    dbg('[enrichWithTaxCode] ERRO OData →', status, msg)
-    throw e
+    );
+    const rows = resp.data?.d?.results ?? resp.data?.value ?? [];
+    dbg('[enrichWithTaxCode:v3] lote OK, rows =', rows.length);
+    allRows.push(...rows);
   }
 
+  // ===== indexa por tripla e define seleção determinística =====
+  const byTrip = new Map(); // keyTrip -> rows[]
+  for (const r of allRows) {
+    const k = _tripKey(r.Material, r.PurchasingOrganization, r.Plant);
+    (byTrip.get(k) || byTrip.set(k, []).get(k)).push(r);
+  }
 
-  const _canon = v => String(v ?? '').trim().toUpperCase()
-  const _ltrim0 = s => s.replace(/^0+/, '')
-  const _keyOf = (supplier, material, porg, plant) =>
-    [_ltrim0(_canon(supplier)), _ltrim0(_canon(material)), _canon(porg), _canon(plant)].join('|')
+  // escolha “melhor linha” com prioridade por item
+  const chooseBest = (list, preferSup) => {
+    if (!Array.isArray(list) || !list.length) return null;
 
-  const rows = data?.d?.results ?? data?.value ?? []
-  console.log('[enrichWithTaxCode] rows recebidas =', rows.length)
+    // ordenação estável e determinística:
+    // 1) bateu fornecedor preferido? (desc)
+    // 2) tem TaxCode? (desc)
+    // 3) PIR maior? (desc)
+    // 4) Supplier numérico crescente (asc) para desempatar
+    const rank = x => (x && String(x.TaxCode || '').trim() ? 1 : 0);
+    const pir = x => String(x.PurchasingInfoRecord || '');
+    const sup = x => _supKey(x.Supplier);
 
-  // loga uma amostra pra ver o IVA (TaxCode) retornando
-  rows.slice(0, 10).forEach((r, i) => {
-    console.log(`[enrichWithTaxCode] row[${i}] ->`,
-      {
-        Supplier: r.Supplier,
-        Material: r.Material,
-        POrg: r.PurchasingOrganization,
-        Plant: r.Plant,
-        PIR: r.PurchasingInfoRecord,
-        TaxCode: r.TaxCode
+    const prefer = _supKey(preferSup);
+
+    const sorted = list.slice().sort((a, b) => {
+      const aPref = (sup(a) === prefer) ? 1 : 0;
+      const bPref = (sup(b) === prefer) ? 1 : 0;
+      if (aPref !== bPref) return bPref - aPref;
+
+      const aHas = rank(a), bHas = rank(b);
+      if (aHas !== bHas) return bHas - aHas;
+
+      const pirCmp = pir(b).localeCompare(pir(a)); // desc
+      if (pirCmp !== 0) return pirCmp;
+
+      // desempate final estável
+      return sup(a).localeCompare(sup(b));
+    });
+
+    return sorted[0] || null;
+  };
+
+  // ===== mapeia de volta um-a-um (cada item com sua preferência) =====
+  const out = input.map((it, idx) => {
+    const k = _tripKey(it.Material, it.PurchasingOrganization, it.Plant);
+    const list = byTrip.get(k) || [];
+    const pick = chooseBest(list, preferredByItem[idx]);
+
+    if (!pick) {
+      console.warn('[enrichWithTaxCode:v3] sem match para', {
+        Material: it.Material, PurchasingOrganization: it.PurchasingOrganization, Plant: it.Plant
+      });
+    } else {
+      const used = _supKey(pick.Supplier);
+      const want = _supKey(preferredByItem[idx]);
+      if (want && used !== want) {
+        console.warn('[enrichWithTaxCode:v3] usando TaxCode de fornecedor diferente da preferência', {
+          prefer: want, used, Material: it.Material, Plant: it.Plant
+        });
       }
-    )
-  })
-
-  const byKey = new Map()
-  for (const r of rows) {
-    const k = _keyOf(r.Supplier, r.Material, r.PurchasingOrganization, r.Plant)
-    if (!byKey.has(k)) byKey.set(k, r)
-    else console.warn('[enrichWithTaxCode] duplicado ignorado =>', k)
-  }
-
-  // mapeia de volta pro array de entrada (com __idx opcional)
-  const out = arr.map(it => {
-    const k = _keyOf(it.Supplier, it.Material, it.PurchasingOrganization, it.Plant)
-    const r = byKey.get(k)
-    const ret = {
-      ...it,
-      TaxCode: r?.TaxCode ?? null,
-      PurchasingInfoRecord: r?.PurchasingInfoRecord ?? null
     }
-    console.log('[enrichWithTaxCode] match', { key: k, TaxCode: ret.TaxCode, PIR: ret.PurchasingInfoRecord })
-    return ret
-  })
 
-  console.log('[enrichWithTaxCode] done | resolved =', out.filter(x => !!x.TaxCode).length)
-  return out
+    return {
+      ...it,
+      TaxCode: pick?.TaxCode ?? null,
+      PurchasingInfoRecord: pick?.PurchasingInfoRecord ?? null,
+      __taxSupplierUsed: pick?.Supplier ?? null // debug opcional
+    };
+  });
+
+  dbg('[enrichWithTaxCode:v3] done | resolved =', out.filter(x => !!x.TaxCode).length, '/', out.length);
+  return out;
 }
 
 // ==================== HANDLER ODATA ====================
@@ -1005,11 +1036,18 @@ module.exports = function () {
         const supplierIdSap = invId ? (vendorByInvId.get(invId) || null) : null
 
         // remove campos internos antes de expor
-        const { _invitationId, _itemId, ...pub } = r
+        const { _invitationId, _itemId, ...pub } = r;
+        const email = _invitationId ? (emailByInvId.get(_invitationId) || null) : null;
         // acrescenta:
         // - Supplier: string (ID SAP)
         // - SupplierOrgId: objeto original do Ariba { domain: 'sap', value: '...' }
-        return { ...pub, supplierName, SupplierCode: supplierIdSap }
+        return {
+          ...pub,
+          supplierName,
+          SupplierCode: supplierIdSap,
+          invitationId: _invitationId || null,
+          invitationEmail: email
+        };
       })
 
       dbg('[GetQuotes] END → itemsOut =', itemsOut.length)
@@ -1181,7 +1219,9 @@ module.exports = function () {
         console.log(`[mapper:${idx}] enrichInput sample (até 2):`, enrichInput.slice(0, 2));
 
         console.time(`[mapper:${idx}] enrichWithTaxCode`);
-        const enriched = await enrichWithTaxCode(enrichInput);
+        const enriched = await enrichWithTaxCode(enrichInput, {
+          headerVendor: padLeft(String(header.vendor || ''), 10, '0')
+        });
         console.timeEnd(`[mapper:${idx}] enrichWithTaxCode`);
         console.log(`[mapper:${idx}] enriched count=`, enriched.length);
 

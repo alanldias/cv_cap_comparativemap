@@ -34,7 +34,7 @@ sap.ui.define([
     /* =========================================================================
      * 1) LIFECYCLE / MODELOS
      * ========================================================================= */
-   // ################################ BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
+    // ################################ BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
     onInit() {
       const vm = new JSONModel({
         header: {
@@ -160,99 +160,16 @@ sap.ui.define([
       }
 
       // 2) fallback: fecha pelos refs conhecidos
-      this._dlgRes      && this._dlgRes.close && this._dlgRes.close();
-      this._dlgAward    && this._dlgAward.close && this._dlgAward.close();
-      this._dlgSim      && this._dlgSim.close && this._dlgSim.close();
-      this._oSimDialog  && this._oSimDialog.close && this._oSimDialog.close();
+      this._dlgRes && this._dlgRes.close && this._dlgRes.close();
+      this._dlgAward && this._dlgAward.close && this._dlgAward.close();
+      this._dlgSim && this._dlgSim.close && this._dlgSim.close();
+      this._oSimDialog && this._oSimDialog.close && this._oSimDialog.close();
     },
 
 
     /* =========================================================================
      * 3) SIMULAÇÃO (sem popup intermediário)
      * ========================================================================= */
-    async onSimularCompra() {
-      const oView = this.getView();
-      const oTbl = this.byId("tblDocs");
-
-      const selCtx = oTbl.getSelectedContexts("vm") || [];
-      const selecionados = selCtx.map(c => c.getObject());
-
-      if (!selecionados.length) {
-        MessageBox.warning("Selecione ao menos uma linha.");
-        return;
-      }
-      console.log(selecionados)
-
-      // Mapeia itens para o QM e constrói índices (NAME/LIFNR)
-      const items = selecionados.map((r, i) => ({
-        id: i + 1,
-        itemKey: this._getItemKey(r),
-
-        // identificação fornecedor/item vindos do GetQuotes
-        supplierName: r.supplierName,
-        lifnr: r.lifnr || r.supplierId || null,
-        itemId: r.itemId || r.ItemId || null,
-        invitationId: r.invitationId || r._invitationId || null,
-        invitationEmail: r.invitationEmail || null,
-
-        // material/descrição
-        MaterialCode: r.MaterialCode || r.materialCode,
-        materialCode: r.MaterialCode || r.materialCode,
-        description: r.itemDescription || r.materialDesc || r.itemDEscription,
-
-        // quantidades/preço/moeda
-        masterQty: Number(r._originalQty || r.quantity) || 0, // ORIGINAL
-        supplierQty: Number(r.quantity) || 0,                  // valor editável atual
-        qtySim: Number(r.quantity) || 0,                       // usar o que está na linha
-        price: Number(r.price) || 0,
-        currency: r.currency,
-
-        // campos p/ simulação
-        unitOfMeasure: r.unitOfMeasure || r.PO_UNIT || r.unidade || null,
-        PLANT: r.PLANT || r.centro || null,
-        // TAX_CODE: r.TAX_CODE || r.iva || null,
-        ItemCategory: r.ItemCategory || r.itemCategory || null,
-        grupo_de_materias: r.grupo_de_materias || r.grupoMateriais || r.MaterialGroup || null,
-        PREQ_NO: r.PREQ_NO || null,
-        PREQ_ITEM: r.PREQ_ITEM || null
-      }));
-
-      const idx = {};
-      const idByKey = {};
-      items.forEach(it => {
-        const matKey  = this._normKey(this._getItemKey(it));
-        const nameKey = this._normKey(it.supplierName);
-        const lifnr   = this._pad10(it.lifnr || it.supplierId || (/^\d+$/.test(it.supplierName) ? it.supplierName : ""));
-
-        const meta = {
-          itemId: it.itemId ?? null,
-          invitationId: it.invitationId ?? null,
-          invitationEmail: it.invitationEmail ?? null,
-          masterQty: Number(it.masterQty) || 0, // ORIGINAL
-          supplierName: it.supplierName || "",
-          lifnr: lifnr,
-          description: it.description || it.itemDescription || it.materialDesc || "",
-          materialCode: it.materialCode || it.MaterialCode || ""
-        };
-
-        idx[`${matKey}|NAME:${nameKey}`] = meta;
-        if (lifnr) idx[`${matKey}|LIFNR:${lifnr}`] = meta;
-
-        idByKey[`${matKey}|NAME:${nameKey}`] = meta;
-        if (lifnr) idByKey[`${matKey}|LIFNR:${lifnr}`] = meta;
-      });
-
-      const qm = oView.getModel("qm");
-      qm.setProperty("/idx", idx);
-      qm.setProperty("/idByKey", idByKey);
-      qm.setProperty("/items", items);
-      qm.setProperty("/perKey", {});
-      qm.setProperty("/validAward", false);
-      qm.setProperty("/_summaryText", "");
-
-      // dispara a simulação direto
-      await this.onConfirmSimulate();
-    },
     onConfirmSimulate: async function () {
       const oView = this.getView();
       const oModel = oView.getModel();
@@ -334,9 +251,9 @@ sap.ui.define([
 
       const enrRows = (result?.rows || []).map(r => {
         const itemKeyRaw = String(r.materialCode || r.MaterialCode || this._getItemKey(r));
-        const matKey  = this._normKey(itemKeyRaw);
+        const matKey = this._normKey(itemKeyRaw);
         const nameKey = this._normKey(r.supplierName);
-        const lifnr   = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
+        const lifnr = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
 
         const trials = [
           lifnr ? `${matKey}|LIFNR:${lifnr}` : null,
@@ -371,12 +288,12 @@ sap.ui.define([
       }
       this._dlgRes.open();
     },
- // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
-   // ################################ BEATRIZ - QUANTIDADE  #####################################
+    // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
+    // ################################ BEATRIZ - QUANTIDADE  #####################################
     onAwardQtyChangeRes: function (oEvent) {
       const input = oEvent.getSource();
-      const ctx   = input.getBindingContext("res");
-      const obj   = ctx?.getObject() || {};
+      const ctx = input.getBindingContext("res");
+      const obj = ctx?.getObject() || {};
 
       let v = Number(input.getValue());
       if (isNaN(v) || v < 0) v = 0;
@@ -389,13 +306,13 @@ sap.ui.define([
       ctx.getModel().checkUpdate(true);
       input.setValue(String(v));
     },
-   // ################################ FIM - BEATRIZ - QUANTIDADE  #####################################
+    // ################################ FIM - BEATRIZ - QUANTIDADE  #####################################
 
- // ################################ BEATRIZ - AWARD #####################################
+    // ################################ BEATRIZ - AWARD #####################################
     onAwardDirect: async function () {
-      const oView  = this.getView();
+      const oView = this.getView();
       const oModel = oView.getModel();
-      const vm     = oView.getModel("vm");
+      const vm = oView.getModel("vm");
 
       const tbl = this._dlgRes?.getContent?.()[0];
       const selected = tbl?.getSelectedContexts("res").map(c => c.getObject()) || [];
@@ -420,7 +337,7 @@ sap.ui.define([
       // ✅ Agrupar SELECIONADOS por itemId (único). Evita juntar itens com o mesmo nome.
       const supplierBids = [];
       const problemas = [];
-      const faltaIds  = [];
+      const faltaIds = [];
       const byItem = new Map();
 
       selected.forEach(r => {
@@ -587,9 +504,9 @@ sap.ui.define([
         sap.m.MessageBox.error(msg);
       }
     },
- // ################################ FIM - BEATRIZ - AWARD #####################################
+    // ################################ FIM - BEATRIZ - AWARD #####################################
 
-// ################################ BEATRIZ - TRATATIVA DE ERRO #####################################
+    // ################################ BEATRIZ - TRATATIVA DE ERRO #####################################
     _parseODataError(err) {
       const tryJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
@@ -609,9 +526,9 @@ sap.ui.define([
 
       const detailsArr = Array.isArray(oError?.details) ? oError.details : [];
       const lines = detailsArr.map(d => {
-        const msg  = d.message || d["@aribaDescription"] || d["@aribaMessage"] || "";
+        const msg = d.message || d["@aribaDescription"] || d["@aribaMessage"] || "";
         const code = d["@aribaCode"] ? ` [${d["@aribaCode"]}]` : "";
-        const tgt  = d.target ? ` (${d.target})` : "";
+        const tgt = d.target ? ` (${d.target})` : "";
         return `• ${msg}${code}${tgt}`;
       });
 
@@ -648,7 +565,7 @@ sap.ui.define([
         correlationId
       };
     },
-     // ################################ FIM BEATRIZ - TRATATIVA DE ERRO #####################################
+    // ################################ FIM BEATRIZ - TRATATIVA DE ERRO #####################################
 
     /* =========================================================================
      * 5) VIEW SETTINGS (Filter / Sort / Group)
@@ -1029,16 +946,16 @@ sap.ui.define([
   ************************************************************* */
     onSimularPress: async function () {
       const oView = this.getView();
-      const oOData = oView.getModel();   // OData V4 (/odata/v4/service)
-      const vm = oView.getModel("vm");   // JSONModel com dados do Ariba
+      const oOData = oView.getModel();      // OData V4 (/odata/v4/service)
+      const vm = oView.getModel("vm");  // JSONModel com dados do Ariba
 
       console.groupCollapsed("[SIMULAR] clique");
       try {
-        // 1) HEADER do VM (pega o primeiro registro da tabela de cabeçalho)
+        // 1) HEADER do VM
         const hCand = this._getHeaderFromVM(vm);
         this._dbg("Header bruto (vm>/headerRows[0] ou vm>/header)", hCand);
 
-        // 2) ITENS selecionados na tabela inferior (vm>/rows)
+        // 2) ITENS selecionados
         const oTbl = this.byId("tblDocs");
         if (!oTbl) throw new Error("Tabela 'tblDocs' não encontrada.");
         const aCtx = oTbl.getSelectedContexts("vm");
@@ -1046,82 +963,202 @@ sap.ui.define([
         const rows = aCtx.map(c => c.getObject());
         this._dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
-        // 3) MAP: Header Ariba → Header BAPI (base comum a todos os fornecedores)
-        const headerBase = this._mapHeaderFromAriba(hCand, rows[0]);
-        this._dbg("Header-base normalizado", headerBase);
+        // Guardar a seleção e preparar índice para casar BAPI → Ariba
+        const qm = this.getView().getModel("qm");
+        qm.setProperty("/simSourceRows", rows);
+        this._prepareQMFromSelection(rows); // seta qm>/idByKey (MaterialCode/LIFNR/NOME → meta)
 
-        // 4) AGRUPAR por fornecedor (LIFNR)
-        const grupos = this._groupByVendor(rows, headerBase.vendor);
-        if (!grupos.size) throw new Error("Não foi possível resolver fornecedor (LIFNR) para nenhum item.");
+        // 3) MAP header/items/schedules
+        const header = this._mapHeaderFromAriba(hCand, rows[0]);
+        const items = rows.map((r, idx) => this._mapRowToPOItem(r, idx));
+        const schedules = rows.map((r, i) => ({
+          poItem: items[i].poItem,
+          schedLine: 1,
+          deliveryDate: this._getDeliveryDateFromRow(r),
+          quantity: items[i].quantity
+        }));
 
-        // 5) MONTAR requests: um payload por fornecedor (renumera poItem por grupo)
-        const requests = Array.from(grupos.entries()).map(([vendor, rowsDoVendor]) => {
-          return this._buildPayloadForVendor(vendor, rowsDoVendor, headerBase);
+        // 4) validações rápidas
+        const missing = [];
+        if (!header.docType) missing.push("Tipo de Pedido (docType)");
+        if (!header.compCode) missing.push("Empresa (compCode)");
+        if (!header.purchOrg) missing.push("Org. de Compras (purchOrg)");
+        if (!header.purchGroup) missing.push("Grupo de Compras (purchGroup)");
+        if (!header.vendor) missing.push("Fornecedor (vendor/LIFNR)");
+        if (!header.currency) missing.push("Moeda (currency)");
+
+        const missingItems = [];
+        items.forEach((it, i) => {
+          const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
+          if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
+          if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
+          if (!it.quantity || it.quantity <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
+          if (!it.material && !it.shortText) missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
         });
+        if (missing.length || missingItems.length) {
+          const msg = [
+            missing.length ? "Cabeçalho faltando:\n- " + missing.join("\n- ") : "",
+            missingItems.length ? "Itens faltando:\n- " + missingItems.join("\n- ") : ""
+          ].filter(Boolean).join("\n\n");
+          throw new Error(msg);
+        }
 
-        // 6) VALIDAÇÃO por request (cabeçalho e itens) — evita roundtrip bobo
-        requests.forEach((p, gi) => {
-          const missing = [];
-          if (!p.header.docType) missing.push("docType");
-          if (!p.header.compCode) missing.push("compCode");
-          if (!p.header.purchOrg) missing.push("purchOrg");
-          if (!p.header.purchGroup) missing.push("purchGroup");
-          if (!p.header.vendor) missing.push("vendor");
-          if (!p.header.currency) missing.push("currency");
-          if (missing.length) throw new Error(`Cabeçalho faltando (grupo ${gi + 1} / fornecedor ${p.header.vendor}): ${missing.join(", ")}`);
-
-          p.items.forEach((it, i) => {
-            const tag = `Item ${String((i + 1) * 10).padStart(5, '0')}`;
-            if (!it.plant) throw new Error(`[${p.header.vendor}] ${tag}: Centro (plant) obrigatório`);
-            if (!it.unit) throw new Error(`[${p.header.vendor}] ${tag}: Unidade (unit) obrigatória`);
-            if (!it.quantity || Number(it.quantity) <= 0)
-              throw new Error(`[${p.header.vendor}] ${tag}: Quantidade > 0 obrigatória`);
-            if (!it.material && !it.shortText)
-              throw new Error(`[${p.header.vendor}] ${tag}: MATERIAL ou SHORT_TEXT obrigatório`);
-          });
-        });
-
-        this._dbg("Requests (um por fornecedor)", requests);
-
-        // 7) EXECUTA a action OData V4 (única chamada com requests[])
-        const CONCURRENCY = Number(window?.ENV?.SIMULACAO_CONCURRENCY || 4); // ajuste se quiser
+        // 5) CHAMADA em lote (requests[] com 1 request)
+        const requests = [{ header, items, schedules, testRun: true }];
         const oCtx = oOData.bindContext("/simularPO(...)");
         oCtx.setParameter("requests", requests);
-        oCtx.setParameter("concurrency", CONCURRENCY);
+        oCtx.setParameter("concurrency", 4);
 
-        console.log("→ Executando /simularPO(...) em lote");
+        console.log("→ Executando /simularPO(...)");
+        sap.ui.core.BusyIndicator.show(0);
         await oCtx.execute();
 
-        // ✅ Desembrulhar corretamente o retorno
-        let opResult = oCtx.getBoundContext().getObject();  // pode ser { value: [...] } no V4
-        let results = Array.isArray(opResult) ? opResult : (opResult?.value || []);
-
-        // (Opcional, mais robusto em UI5 recentes)
+        // 6) desembrulhar retorno
+        let opResult = oCtx.getBoundContext().getObject();
         if (typeof oCtx.getReturnValueContext === "function") {
           const rvc = oCtx.getReturnValueContext();
-          if (rvc) {
-            const rvObj = rvc.getObject();
-            results = Array.isArray(rvObj) ? rvObj : (rvObj?.value || results);
-          }
+          if (rvc) opResult = rvc.getObject() || opResult;
         }
-        this._dbg("Resultados da action (array)", results);
+        const arr = Array.isArray(opResult) ? opResult : (opResult?.value || opResult?.results || []);
+        const result0 = Array.isArray(arr) ? (arr[0] || {}) : (opResult || {});
+        this._dbg("Resultado bruto da BAPI (result0)", result0);
+
+        // 7) MONTA res>/rows ───► casamento por material+LIFNR (NADA de índice!)
+        const resRows = this._buildResRowsFromBapiResult(result0);
+        this.getView().setModel(new sap.ui.model.json.JSONModel({ rows: resRows }), "res");
+
+        // sanity
+        console.log("[SIMULAR] resRows c/ IDs:", {
+          total: resRows.length,
+          comItemId: resRows.filter(r => r.itemId).length,
+          comInvitation: resRows.filter(r => r.invitationId).length,
+          itemIdsUnicos: Array.from(new Set(resRows.map(r => r.itemId))).length
+        });
+
+        // 8) abre o fragment
+        if (!this._dlgRes) {
+          this._dlgRes = sap.ui.xmlfragment(
+            oView.getId(),
+            "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
+            this
+          );
+          oView.addDependent(this._dlgRes);
+        }
+        this._dlgRes.open();
+
+        // 9) mensagens da BAPI (se vierem)
+        const allMsgs = result0?.returnMessages || result0?.mensagens || [];
+        this._showBapiMessages(allMsgs);
 
         console.groupEnd();
-
-        // 8) Exibir: abre o 1º resultado no seu Dialog atual e mostra mensagens agregadas
-        if (Array.isArray(results) && results.length) {
-          await this._openResultadoPO(results[0]); // mantém seu dialog atual (um resultado por vez)
-          const allMsgs = results.flatMap(r => r?.returnMessages || r?.mensagens || []);
-          this._showBapiMessages(allMsgs);
-        } else {
-          sap.m.MessageToast.show("Simulação concluída, sem retorno.");
-        }
-
       } catch (err) {
         console.error("[SIMULAR] ERRO:", err);
         console.groupEnd();
         sap.m.MessageBox.error(err.message || String(err));
+      } finally {
+        sap.ui.core.BusyIndicator.hide();
       }
+    },
+
+
+    /** Constrói idByKey para casar depois BAPI → Ariba (itemId/invitationId/originalQty) */
+    _prepareQMFromSelection(rows) {
+      const qm = this.getView().getModel("qm");
+      const idByKey = {};
+
+      rows.forEach((r) => {
+        const matKey = this._normKey(this._getItemKey(r)); // MaterialCode/ItemId como chave
+        const nameKey = this._normKey(r.supplierName || "");
+        const lifnr = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
+
+        const meta = {
+          itemId: r.itemId ?? r.ItemId ?? null,
+          invitationId: r.invitationId ?? r._invitationId ?? null,
+          invitationEmail: r.invitationEmail ?? null,
+          masterQty: Number(r._originalQty || r.quantity) || 0,
+          supplierName: r.supplierName || "",
+          lifnr: lifnr,
+          materialCode: r.MaterialCode || r.materialCode || ""
+        };
+
+        idByKey[`${matKey}|NAME:${nameKey}`] = meta;
+        if (lifnr) idByKey[`${matKey}|LIFNR:${lifnr}`] = meta;
+      });
+
+      qm.setProperty("/idByKey", idByKey);
+    },
+
+    /** Normaliza MATNR do BAPI → chave comparável ao MaterialCode do Ariba */
+    _matKeyFromBapiMaterial(mat) {
+      const s = String(mat || "");
+      const only = s.replace(/\D/g, "");    // só dígitos
+      const no0 = only.replace(/^0+/, ""); // tira zeros à esquerda
+      return this._normKey(no0 || only || s);
+    },
+
+    /** Mapeia BAPI result → res>/rows (já com itemId/invitationId/email); pronto para premiar */
+    _buildResRowsFromBapiResult(result) {
+      const qm = this.getView().getModel("qm");
+      const idByKey = qm.getProperty("/idByKey") || {};
+      const srcRows = qm.getProperty("/simSourceRows") || [];
+      const lifnrHeader = (result?.header?.fornecedor || "").toString().padStart(10, "0");
+      const currency = result?.header?.moeda || "BRL";
+
+      const itens = Array.isArray(result?.itens) ? result.itens : [];
+
+      return itens.map((it, idx) => {
+        // 1) tentativa por material + LIFNR (mais estável)
+        const matKey = this._matKeyFromBapiMaterial(it.material);
+        let meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
+
+        // 2) fallback por nome (se existir no índice)
+        if (!meta) meta = idByKey[`${matKey}|NAME:${this._normKey(srcRows[idx]?.supplierName || "")}`];
+
+        // 3) fallback por posição (poItem → índice 10,20,30…)
+        if (!meta) {
+          const po = String(it.poItem || "");
+          if (/^\d+$/.test(po)) {
+            const n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
+            const src = srcRows[n] || {};
+            const mk2 = this._normKey(this._getItemKey(src));
+            const lif2 = this._pad10(src.lifnr || src.supplierId || lifnrHeader);
+            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${this._normKey(src.supplierName || "")}`];
+          }
+        }
+
+        const src = srcRows[idx] || {};
+        const invitationId = (meta?.invitationId != null) ? meta.invitationId : (src.invitationId ?? null);
+        const invitationEmail = (meta?.invitationEmail != null) ? meta.invitationEmail : (src.invitationEmail ?? null);
+
+        // dados numéricos
+        const quantity = Number(it.quantidade || 0) || 0;
+        const price = Number(it.netPrice || 0) || 0;
+        const total = Number((price * quantity).toFixed(2));
+        const originalQty = Number(meta?.masterQty ?? 0) || 0;
+
+        return {
+          // exibição
+          supplierName: meta?.supplierName || lifnrHeader,
+          materialCode: meta?.materialCode || it.material,
+          originalQty: originalQty,
+          quantity: quantity, // “Qtd Simulada”
+          qtyAward: 0,        // usuário vai preencher
+          price: price,
+          currency: currency,
+          icms: null,
+          ipi: null,
+          total: total,
+
+          // NECESSÁRIOS para premiação
+          itemId: meta?.itemId ?? null,
+          invitationId,
+          invitationEmail,
+          lifnr: lifnrHeader,
+
+          // debug
+          poItem: it.poItem
+        };
+      });
     },
 
     // --- Extrai LIFNR de uma linha (normaliza e zera à esquerda)
