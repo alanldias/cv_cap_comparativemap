@@ -34,7 +34,7 @@ sap.ui.define([
     /* =========================================================================
      * 1) LIFECYCLE / MODELOS
      * ========================================================================= */
-   // ################################ BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
+    // ################################ BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
     onInit() {
       const vm = new JSONModel({
         header: {
@@ -160,183 +160,29 @@ sap.ui.define([
       }
 
       // 2) fallback: fecha pelos refs conhecidos
-      this._dlgRes      && this._dlgRes.close && this._dlgRes.close();
-      this._dlgAward    && this._dlgAward.close && this._dlgAward.close();
-      this._dlgSim      && this._dlgSim.close && this._dlgSim.close();
-      this._oSimDialog  && this._oSimDialog.close && this._oSimDialog.close();
-    },
-
-
-    /* =========================================================================
-     * 3) SIMULAÇÃO (sem popup intermediário)
-     * ========================================================================= */
-    async onSimularCompra() {
-      const oView = this.getView();
-      const oTbl = this.byId("tblDocs");
-
-      const selCtx = oTbl.getSelectedContexts("vm") || [];
-      const selecionados = selCtx.map(c => c.getObject());
-
-      if (!selecionados.length) {
-        MessageBox.warning("Selecione ao menos uma linha.");
-        return;
-      }
-      console.log(selecionados)
-
-      // Mapeia itens para o QM e constrói índices (NAME/LIFNR)
-      const items = selecionados.map((r, i) => ({
-        id: i + 1,
-        itemKey: this._getItemKey(r),
-
-        // identificação fornecedor/item vindos do GetQuotes
-        supplierName: r.supplierName,
-        lifnr: r.lifnr || r.supplierId || null,
-        itemId: r.itemId || r.ItemId || null,
-        invitationId: r.invitationId || r._invitationId || null,
-        invitationEmail: r.invitationEmail || null,
-
-        // material/descrição
-        MaterialCode: r.MaterialCode || r.materialCode,
-        materialCode: r.MaterialCode || r.materialCode,
-        description: r.itemDescription || r.materialDesc || r.itemDEscription,
-
-        // quantidades/preço/moeda
-        masterQty: Number(r._originalQty || r.quantity) || 0, // ORIGINAL
-        supplierQty: Number(r.quantity) || 0,                  // valor editável atual
-        qtySim: Number(r.quantity) || 0,                       // usar o que está na linha
-        price: Number(r.price) || 0,
-        currency: r.currency,
-
-        // campos p/ simulação
-        unitOfMeasure: r.unitOfMeasure || r.PO_UNIT || r.unidade || null,
-        PLANT: r.PLANT || r.centro || null,
-        // TAX_CODE: r.TAX_CODE || r.iva || null,
-        ItemCategory: r.ItemCategory || r.itemCategory || null,
-        grupo_de_materias: r.grupo_de_materias || r.grupoMateriais || r.MaterialGroup || null,
-        PREQ_NO: r.PREQ_NO || null,
-        PREQ_ITEM: r.PREQ_ITEM || null
-      }));
-
-      const idx = {};
-      const idByKey = {};
-      items.forEach(it => {
-        const matKey  = this._normKey(this._getItemKey(it));
-        const nameKey = this._normKey(it.supplierName);
-        const lifnr   = this._pad10(it.lifnr || it.supplierId || (/^\d+$/.test(it.supplierName) ? it.supplierName : ""));
-
-        const meta = {
-          itemId: it.itemId ?? null,
-          invitationId: it.invitationId ?? null,
-          invitationEmail: it.invitationEmail ?? null,
-          masterQty: Number(it.masterQty) || 0, // ORIGINAL
-          supplierName: it.supplierName || "",
-          lifnr: lifnr,
-          description: it.description || it.itemDescription || it.materialDesc || "",
-          materialCode: it.materialCode || it.MaterialCode || ""
-        };
-
-        idx[`${matKey}|NAME:${nameKey}`] = meta;
-        if (lifnr) idx[`${matKey}|LIFNR:${lifnr}`] = meta;
-
-        idByKey[`${matKey}|NAME:${nameKey}`] = meta;
-        if (lifnr) idByKey[`${matKey}|LIFNR:${lifnr}`] = meta;
-      });
-
-      const qm = oView.getModel("qm");
-      qm.setProperty("/idx", idx);
-      qm.setProperty("/idByKey", idByKey);
-      qm.setProperty("/items", items);
-      qm.setProperty("/perKey", {});
-      qm.setProperty("/validAward", false);
-      qm.setProperty("/_summaryText", "");
-
-      // dispara a simulação direto
-      await this.onConfirmSimulate();
-    },
-    onConfirmSimulate: async function () {
-      const oView = this.getView();
-      const oModel = oView.getModel();
-      const qm = oView.getModel("qm");
-      const vm = oView.getModel("vm");
-
-      const itemsQM = qm.getProperty("/items") || [];
-      const rawHeader = vm.getProperty("/header") || {};
-
-      const payload = itemsQM
-        .filter(it => Number(it.qtySim) > 0)
-        .map(it => ({
-          // IDs (se o backend ecoar ótimo; senão enriquecemos na volta)
-          itemId: it.itemId ?? null,
-          invitationId: it.invitationId ?? null,
-          invitationEmail: it.invitationEmail ?? null,
-          supplierName: it.supplierName ?? null,
-          lifnr: it.lifnr ?? null,
-
-          // dados de item
-          MaterialCode: it.MaterialCode ?? it.materialCode ?? null,
-          itemDescription: it.itemDescription ?? it.description ?? it.materialDesc ?? it.itemDEscription ?? null,
-          quantity: Number(it.qtySim), // usa a quantidade editada na tabela principal
-          unitOfMeasure: it.unitOfMeasure ?? it.PO_UNIT ?? it.unidade ?? null,
-          price: Number(it.price) || 0,
-          currency: it.currency ?? null,
-          PLANT: it.PLANT ?? it.plant ?? it.centro ?? null,
-          // TAX_CODE: it.TAX_CODE ?? it.iva ?? null,
-          ItemCategory: it.ItemCategory ?? it.itemCategory ?? null,
-          grupo_de_materias: it.grupo_de_materias ?? it.grupoMateriais ?? it.MaterialGroup ?? null,
-          PREQ_NO: it.PREQ_NO ?? null,
-          PREQ_ITEM: it.PREQ_ITEM ?? null
-        }));
-
-      const firstCurrency = payload.length ? payload[0].currency : null;
-
-      const header = {
-        docId: rawHeader.docId ?? null,
-        tipoPedido: rawHeader.tipoPedido ?? null,
-        purchasingOrganization: rawHeader.purchasingOrganization ?? null,
-        purchasingGroup: rawHeader.purchasingGroup ?? null,
-        companyCode: rawHeader.companyCode ?? null,
-        incoterms1: rawHeader.incoterms1 ?? null,
-        incoterms2: rawHeader.incoterms2 ?? null,
-        paymentTerms: rawHeader.paymentTerms ?? null,
-        fornecedor: rawHeader.fornecedor ?? null,
-        moeda: rawHeader.moeda ?? firstCurrency
-      };
-
-      if (!payload.length) {
-        MessageToast.show("Informe quantidades maiores que zero para simular.");
-        return;
-      }
-
-      sap.ui.core.BusyIndicator.show(0);
-      try {
-        const ctx = oModel.bindContext("/SimulateBapiPoCreate(...)");
-        ctx.setParameter("header", header);
-        ctx.setParameter("items", payload);
-
-        await ctx.execute();
-
-        const result = await ctx.getBoundContext().requestObject();
-        await this._openResultDialog(result);
-      } catch (e) {
-        console.error("[onConfirmSimulate] ERRO:", e);
-        MessageBox.error("Falha na simulação: " + (e.message || e));
-      } finally {
-        sap.ui.core.BusyIndicator.hide();
-      }
+      this._dlgRes && this._dlgRes.close && this._dlgRes.close();
+      this._dlgAward && this._dlgAward.close && this._dlgAward.close();
+      this._dlgSim && this._dlgSim.close && this._dlgSim.close();
+      this._oSimDialog && this._oSimDialog.close && this._oSimDialog.close();
     },
 
     /* =========================================================================
      * 4) RESULTADO DA SIMULAÇÃO (Original + Qtd p/ premiar + Premiar direto)
      * ========================================================================= */
-    _openResultDialog: function (result) {
+    _openResultDialog: function (resultOrArray) {
       const oView = this.getView();
       const idByKey = oView.getModel("qm").getProperty("/idByKey") || {};
 
-      const enrRows = (result?.rows || []).map(r => {
+      // ➜ aceita array de resultados ou um único objeto
+      const rowsIn = Array.isArray(resultOrArray)
+        ? resultOrArray.flatMap(x => x?.rows || [])
+        : (resultOrArray?.rows || []);
+
+      const enrRows = rowsIn.map(r => {
         const itemKeyRaw = String(r.materialCode || r.MaterialCode || this._getItemKey(r));
-        const matKey  = this._normKey(itemKeyRaw);
+        const matKey = this._normKey(itemKeyRaw);
         const nameKey = this._normKey(r.supplierName);
-        const lifnr   = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
+        const lifnr = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
 
         const trials = [
           lifnr ? `${matKey}|LIFNR:${lifnr}` : null,
@@ -353,15 +199,13 @@ sap.ui.define([
           itemId: meta?.itemId ?? r.itemId ?? r.ItemId ?? null,
           invitationId: meta?.invitationId ?? r.invitationId ?? null,
           invitationEmail: meta?.invitationEmail ?? r.invitationEmail ?? null,
-
           supplierName: r.supplierName || meta?.supplierName || (lifnr || ""),
-
-          originalQty, // NOVO: usado nas validações de premiação
-          qtyAward: 0  // usuário aloca
+          originalQty,
+          qtyAward: 0
         });
       });
 
-      const resModel = new JSONModel({ rows: enrRows });
+      const resModel = new sap.ui.model.json.JSONModel({ rows: enrRows });
       oView.setModel(resModel, "res");
 
       if (!this._dlgRes) {
@@ -371,12 +215,13 @@ sap.ui.define([
       }
       this._dlgRes.open();
     },
- // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
-   // ################################ BEATRIZ - QUANTIDADE  #####################################
+
+    // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
+    // ################################ BEATRIZ - QUANTIDADE  #####################################
     onAwardQtyChangeRes: function (oEvent) {
       const input = oEvent.getSource();
-      const ctx   = input.getBindingContext("res");
-      const obj   = ctx?.getObject() || {};
+      const ctx = input.getBindingContext("res");
+      const obj = ctx?.getObject() || {};
 
       let v = Number(input.getValue());
       if (isNaN(v) || v < 0) v = 0;
@@ -389,13 +234,13 @@ sap.ui.define([
       ctx.getModel().checkUpdate(true);
       input.setValue(String(v));
     },
-   // ################################ FIM - BEATRIZ - QUANTIDADE  #####################################
+    // ################################ FIM - BEATRIZ - QUANTIDADE  #####################################
 
- // ################################ BEATRIZ - AWARD #####################################
+    // ################################ BEATRIZ - AWARD #####################################
     onAwardDirect: async function () {
-      const oView  = this.getView();
+      const oView = this.getView();
       const oModel = oView.getModel();
-      const vm     = oView.getModel("vm");
+      const vm = oView.getModel("vm");
 
       const tbl = this._dlgRes?.getContent?.()[0];
       const selected = tbl?.getSelectedContexts("res").map(c => c.getObject()) || [];
@@ -420,7 +265,7 @@ sap.ui.define([
       // ✅ Agrupar SELECIONADOS por itemId (único). Evita juntar itens com o mesmo nome.
       const supplierBids = [];
       const problemas = [];
-      const faltaIds  = [];
+      const faltaIds = [];
       const byItem = new Map();
 
       selected.forEach(r => {
@@ -587,9 +432,9 @@ sap.ui.define([
         sap.m.MessageBox.error(msg);
       }
     },
- // ################################ FIM - BEATRIZ - AWARD #####################################
+    // ################################ FIM - BEATRIZ - AWARD #####################################
 
-// ################################ BEATRIZ - TRATATIVA DE ERRO #####################################
+    // ################################ BEATRIZ - TRATATIVA DE ERRO #####################################
     _parseODataError(err) {
       const tryJson = (s) => { try { return JSON.parse(s); } catch { return null; } };
 
@@ -609,9 +454,9 @@ sap.ui.define([
 
       const detailsArr = Array.isArray(oError?.details) ? oError.details : [];
       const lines = detailsArr.map(d => {
-        const msg  = d.message || d["@aribaDescription"] || d["@aribaMessage"] || "";
+        const msg = d.message || d["@aribaDescription"] || d["@aribaMessage"] || "";
         const code = d["@aribaCode"] ? ` [${d["@aribaCode"]}]` : "";
-        const tgt  = d.target ? ` (${d.target})` : "";
+        const tgt = d.target ? ` (${d.target})` : "";
         return `• ${msg}${code}${tgt}`;
       });
 
@@ -648,7 +493,7 @@ sap.ui.define([
         correlationId
       };
     },
-     // ################################ FIM BEATRIZ - TRATATIVA DE ERRO #####################################
+    // ################################ FIM BEATRIZ - TRATATIVA DE ERRO #####################################
 
     /* =========================================================================
      * 5) VIEW SETTINGS (Filter / Sort / Group)
@@ -854,6 +699,7 @@ sap.ui.define([
         group: { key: null, desc: false }
       };
     },
+
     _savePrefs() {
       this._storage.put(this._prefsKey, JSON.stringify(this._prefs));
     },
@@ -963,6 +809,7 @@ sap.ui.define([
       if (email) return `${s}_${String(email)}`;
       return s;
     },
+
     /* ========= Utilidades específicas ========= */
     _filterItemsByDoc(docId) {
       const oTbl = this.byId("tblDocs");
@@ -995,31 +842,6 @@ sap.ui.define([
       }
       return Array.from(byDoc.values());
     },
-
-    async _openSimFragment(aRows, docIds) {
-      const oView = this.getView();
-
-      const oSimModel = new JSONModel({
-        docIds,                 // agora é array (IDs envolvidos)
-        total: aRows.length,
-        rows: aRows,            // coleção p/ tabela
-        first: aRows?.[0] || {} // primeiro item (p/ cabeçalho/resumo)
-      });
-
-      if (!this._oSimDialog) {
-        this._oSimDialog = await Fragment.load({
-          id: oView.getId(), // importante p/ IDs estáveis
-          name: "comparativemap.comparativemap.view.fragments.Simulacao", // ajuste ao seu namespace
-          type: "XML",
-          controller: this
-        });
-        oView.addDependent(this._oSimDialog);
-      }
-
-      this._oSimDialog.setModel(oSimModel, "sim");
-      this._oSimDialog.open();
-    },
-
 
     /** ************************************************************
   * SIMULAR (lote): Agrupa por fornecedor, monta requests[] e chama a action única
@@ -1110,7 +932,7 @@ sap.ui.define([
 
         // 8) Exibir: abre o 1º resultado no seu Dialog atual e mostra mensagens agregadas
         if (Array.isArray(results) && results.length) {
-          await this._openResultadoPO(results[0]); // mantém seu dialog atual (um resultado por vez)
+          await this._openResultDialog(results);
           const allMsgs = results.flatMap(r => r?.returnMessages || r?.mensagens || []);
           this._showBapiMessages(allMsgs);
         } else {
@@ -1181,12 +1003,7 @@ sap.ui.define([
       this._dlgResultadoPO.setModel(new sap.ui.model.json.JSONModel(result || {}), "simpo");
       this._dlgResultadoPO.open();
     },
-    onExit: function () {
-      if (this._dlgResultadoPO) {
-        this._dlgResultadoPO.destroy(true);
-        this._dlgResultadoPO = null;
-      }
-    },
+
 
     // Formatter simples para números (duas casas)
     fmt2: function (v) {
