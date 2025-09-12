@@ -1,3 +1,29 @@
+# CAP + Ariba — GET Scenarios
+# Use com a extensão "REST Client" (humao.rest-client) no VS Code.
+
+### Variáveis comuns
+@cap = http://localhost:4004
+@service = /odata/v4/service
+@docId = Doc4328033187
+
+### ====== [1] VIA CAP (recomendado) ======
+# Requer que o backend tenha a action/function GetScenarios(eventId: String).
+GET {{cap}}{{service}}/GetScenarios(eventId='{{docId}}')
+Accept: application/json
+
+### ====== [2] DIRETO NA ARIBA (se precisar) ======
+# Preencha suas credenciais e token (obtido via OAuth).
+@ariba = https://openapi.ariba.com/api/sourcing-event/v2/prod
+@realm = 744701080-T
+@userUniqueName = acopino.consult
+@passwordAdapter = ThirdPartyUser
+@apiKey = SKUVVJwBe5Yrw8jpC6gTkPj1OS6ReVL2
+@bearer = PREENCHER_TOKEN
+
+GET {{ariba}}/events/{{docId}}/scenarios?realm={{realm}}&user={{userUniqueName}}&passwordAdapter={{passwordAdapter}}
+Accept: application/json
+apikey: {{apiKey}}
+Authorization: Bearer {{bearer}}
 ### Chamar a action (CAP v8 costuma expor /odata/v4/<nomeDoService>)
 ### Se seu service tem @path:'/service', use a linha de baixo:
 POST http://localhost:4004/odata/v4/service/getTaxCode
