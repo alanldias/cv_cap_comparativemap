@@ -1,5 +1,5 @@
 sap.ui.define([
-  "sap/ui/core/mvc/Controller","sap/ui/model/Sorter","sap/ui/model/Filter","sap/ui/model/FilterOperator",
+  "sap/ui/core/mvc/Controller", "sap/ui/model/Sorter", "sap/ui/model/Filter", "sap/ui/model/FilterOperator",
   "comparativemap/comparativemap/model/models",
   "comparativemap/comparativemap/controller/prefs/PrefsStore",
   "comparativemap/comparativemap/controller/components/ViewSettings",
@@ -10,7 +10,7 @@ sap.ui.define([
   "comparativemap/comparativemap/controller/helpers/KeyUtils",
   "comparativemap/comparativemap/controller/helpers/Debug",
   "comparativemap/comparativemap/controller/helpers/Formatters",
-  "sap/m/MessageToast","sap/m/MessageBox","sap/ui/Device"
+  "sap/m/MessageToast", "sap/m/MessageBox", "sap/ui/Device"
 ], function (
   Controller, Sorter, Filter, FilterOperator,
   Models, PrefsStore, ViewSettingsCmp, ODataSvc, Map, Dialogs, AwardSvc, Keys, Debug, Fmt,
@@ -27,9 +27,9 @@ sap.ui.define([
 
       this._prefs = PrefsStore.load();
       this.mGroupFunctions = {
-        supplierName: (ctx) => { const v = ctx.getProperty("supplierName") || ""; return { key:v, text:v }; },
-        arb_PurchasingOrganization: (ctx) => { const v = ctx.getProperty("arb_PurchasingOrganization") || ""; return { key:v, text:"Org. Compras " + v }; },
-        arb_CompanyCode: (ctx) => { const v = ctx.getProperty("arb_CompanyCode") || ""; return { key:v, text:"Empresa " + v }; }
+        supplierName: (ctx) => { const v = ctx.getProperty("supplierName") || ""; return { key: v, text: v }; },
+        arb_PurchasingOrganization: (ctx) => { const v = ctx.getProperty("arb_PurchasingOrganization") || ""; return { key: v, text: "Org. Compras " + v }; },
+        arb_CompanyCode: (ctx) => { const v = ctx.getProperty("arb_CompanyCode") || ""; return { key: v, text: "Empresa " + v }; }
       };
 
       this._vs = ViewSettingsCmp.create(this.getView(), this._prefs, this._getDistinct.bind(this), this.mGroupFunctions);
@@ -54,7 +54,7 @@ sap.ui.define([
         vm.setProperty("/headerRows", res?.header ? [res.header] : []);
         view.byId("tblDocs").getBinding("items")?.refresh(true);
         if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
-      } catch(e) {
+      } catch (e) {
         /* eslint-disable no-console */ console.error("[onBuscar] ERRO:", e);
         MessageBox.error("Falha ao buscar dados: " + (e.message || e));
       } finally { tbl.setBusy(false); }
@@ -72,7 +72,7 @@ sap.ui.define([
       ctx.getModel().checkUpdate(true);
     },
 
-    onCloseDialog(ev){ Dialogs.closeAny(this, ev); },
+    onCloseDialog(ev) { Dialogs.closeAny(this, ev); },
 
     /* ====== SIMULAR ====== */
     async onSimularPress() {
@@ -80,8 +80,14 @@ sap.ui.define([
       const vm = view.getModel("vm");
       const qm = view.getModel("qm");
 
-      // limpar res anterior
-      (view.getModel("res") || view.getModel("vm")).setData({ rows: [] });
+      // ✅ FIX: limpar apenas o modelo "res" (nunca tocar no "vm")
+      let resModel = view.getModel("res");
+      if (!resModel) {
+        resModel = new sap.ui.model.json.JSONModel({ rows: [] });
+        view.setModel(resModel, "res");
+      } else {
+        resModel.setData({ rows: [] });
+      }
 
       console.groupCollapsed("[SIMULAR] clique");
       try {
@@ -89,9 +95,16 @@ sap.ui.define([
 
         const tbl = this.byId("tblDocs");
         if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
-        const selectedCtx = tbl.getSelectedContexts("vm");
-        if (!selectedCtx.length) throw new Error("Selecione pelo menos 1 item para simular.");
-        const rows = selectedCtx.map(c => c.getObject());
+
+        // ✅ FIX: API correta do ListBase: boolean (true = todos)
+        const selectedCtx = tbl.getSelectedContexts(true);
+
+        // ✅ FIX: map para objetos e removendo nulos
+        const rows = selectedCtx.map(c => c.getObject()).filter(Boolean);
+
+        if (!rows.length) {
+          throw new Error("Selecione ao menos 1 item válido para simular.");
+        }
         Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
         qm.setProperty("/simSourceRows", rows);
@@ -99,7 +112,7 @@ sap.ui.define([
 
         const header = Map.mapHeaderFromAriba(headerRaw, rows[0]);
         const items = rows.map((r, idx) => Map.mapRowToPOItem(r, idx));
-        const schedules = rows.map((r, i) => ({ poItem: items[i].poItem, schedLine:1, deliveryDate: Map.getDeliveryDateFromRow(r), quantity: items[i].quantity }));
+        const schedules = rows.map((r, i) => ({ poItem: items[i].poItem, schedLine: 1, deliveryDate: Map.getDeliveryDateFromRow(r), quantity: items[i].quantity }));
 
         const missing = [];
         if (!header.docType) missing.push("Tipo de Pedido (docType)");
@@ -110,7 +123,7 @@ sap.ui.define([
         if (!header.currency) missing.push("Moeda (currency)");
         const missingItems = [];
         items.forEach((it, i) => {
-          const tag = `Item ${String((i+1)*10).padStart(5,"0")}`;
+          const tag = `Item ${String((i + 1) * 10).padStart(5, "0")}`;
           if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
           if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
           if (!it.quantity || it.quantity <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
@@ -124,7 +137,7 @@ sap.ui.define([
           throw new Error(msg);
         }
 
-        const requests = [{ header, items, schedules, testRun:true }];
+        const requests = [{ header, items, schedules, testRun: true }];
 
         sap.ui.core.BusyIndicator.show(0);
         const result0 = await ODataSvc.simularPO(view, requests, 4);
@@ -139,7 +152,7 @@ sap.ui.define([
         Dialogs.showBapiMessages(allMsgs);
 
         console.groupEnd();
-      } catch(err) {
+      } catch (err) {
         console.error("[SIMULAR] ERRO:", err); console.groupEnd();
         sap.m.MessageBox.error(err.message || String(err));
       } finally {
@@ -191,7 +204,7 @@ sap.ui.define([
         } else {
           sap.m.MessageBox.warning("CreateScenario executou, porém sem success=true.");
         }
-      } catch(e) {
+      } catch (e) {
         sap.ui.core.BusyIndicator.hide();
         const msg = e?.message || "Falha ao criar cenário.";
         sap.m.MessageBox.error(msg);
@@ -199,23 +212,25 @@ sap.ui.define([
     },
 
     /* ====== ViewSettings delegações ====== */
-    handleFilterButtonPressed(){ this._vs.openFilterDialog(ev => this._vs.handleFilterDialogConfirm(ev, (p)=>{ this._prefs=p; PrefsStore.save(p); })); },
-    handleSortButtonPressed(){ this._vs.openSortDialog(ev => this._vs.handleSortDialogConfirm(ev, (p)=>{ this._prefs=p; PrefsStore.save(p); })); },
-    handleGroupButtonPressed(){ this._vs.openGroupDialog(
-      ev => this._vs.handleGroupDialogConfirm(ev, (p)=>{ this._prefs=p; PrefsStore.save(p); }),
-      () => {}); },
+    handleFilterButtonPressed() { this._vs.openFilterDialog(ev => this._vs.handleFilterDialogConfirm(ev, (p) => { this._prefs = p; PrefsStore.save(p); })); },
+    handleSortButtonPressed() { this._vs.openSortDialog(ev => this._vs.handleSortDialogConfirm(ev, (p) => { this._prefs = p; PrefsStore.save(p); })); },
+    handleGroupButtonPressed() {
+      this._vs.openGroupDialog(
+        ev => this._vs.handleGroupDialogConfirm(ev, (p) => { this._prefs = p; PrefsStore.save(p); }),
+        () => { });
+    },
 
-    onFilterSelectAllFornecedor(){ this._prefs.filter.fornecedor = this._getDistinct("supplierName"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: selecionado tudo."); },
-    onFilterClearFornecedor(){ this._prefs.filter.fornecedor = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: seleção limpa."); },
-    onFilterSelectAllNomeItem(){ this._prefs.filter.nomeItem = this._getDistinct("itemDescription"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: selecionado tudo."); },
-    onFilterClearNomeItem(){ this._prefs.filter.nomeItem = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: seleção limpa."); },
+    onFilterSelectAllFornecedor() { this._prefs.filter.fornecedor = this._getDistinct("supplierName"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: selecionado tudo."); },
+    onFilterClearFornecedor() { this._prefs.filter.fornecedor = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: seleção limpa."); },
+    onFilterSelectAllNomeItem() { this._prefs.filter.nomeItem = this._getDistinct("itemDescription"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: selecionado tudo."); },
+    onFilterClearNomeItem() { this._prefs.filter.nomeItem = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: seleção limpa."); },
 
     /* ====== Helpers “de ponte” ====== */
     _getDistinct(path) {
       const rows = this.getView().getModel("vm").getProperty("/rows") || [];
       const set = new Set();
       rows.forEach(r => { const v = r[path]; if (v !== undefined && v !== null && v !== "") set.add(String(v)); });
-      return Array.from(set).sort((a,b)=>a.localeCompare(b,"pt-BR"));
+      return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
     },
 
     _ensureInvitationResourceId(invId, email) {
@@ -227,7 +242,7 @@ sap.ui.define([
     },
 
     onExit() {
-      if (this._dlgRes) { this._dlgRes.destroy(true); this._dlgRes=null; }
+      if (this._dlgRes) { this._dlgRes.destroy(true); this._dlgRes = null; }
     }
   });
 });
