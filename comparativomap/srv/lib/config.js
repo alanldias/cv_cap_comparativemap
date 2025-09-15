@@ -3,7 +3,7 @@ const path = require('path');
 try { require('dotenv').config() } catch { }
 
 module.exports = {
-  HTTP_TIMEOUT_MS: 30000,
+  HTTP_TIMEOUT_MS: 60000,
   ARIBA_EVENT_ROUND: 1,
 
   DEST: {
@@ -20,7 +20,7 @@ module.exports = {
   S4: {
     SAP_CLIENT: '300',
     ODATA_PATH: '/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData',
-    TIMEOUT_MS: 30000
+    TIMEOUT_MS: 60000
   },
 
   SOAP: {

@@ -1,12 +1,15 @@
+// srv/service.js
 const cds = require('@sap/cds')
 const { LOG } = require('./lib/util/log')
 const { formatAribaScenarioError, safeErr } = require('./lib/util/errors')
 const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require('./lib/config')
 
 const { destPost } = require('./lib/http/destination')
-const { fetchSupplierBids, fetchParentProjectId, fetchSupplierInvitationsList,
+const {
+  fetchSupplierBids, fetchParentProjectId, fetchSupplierInvitationsList,
   pickSupplierNameByInvitation, pickSupplierNameFromRows,
-  extractSapOrgEntry, extractSapVendorId } = require('./lib/ariba/events')
+  extractSapOrgEntry, extractSapVendorId
+} = require('./lib/ariba/events')
 const { fetchAribaHeader } = require('./lib/ariba/pm')
 const { enrichWithTaxCode } = require('./lib/s4/taxcode')
 const { getBapiClient, buildSmokePayload, normalizeBapiResult, padLeft } = require('./lib/soap/bapi-po-create')
@@ -19,23 +22,29 @@ module.exports = function () {
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
     const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
 
+    LOG.infoL('[GetQuotes] START', { docId, round })
+
     try {
       const { rows, results } = await fetchSupplierBids(docId)
+      LOG.infoL('[GetQuotes] supplierBids', { rows: rows.length, results: results.length })
       if (!rows.length || !results.length) return { header: null, items: [] }
 
       const list = await fetchSupplierInvitationsList(docId, round).catch(() => [])
+      LOG.infoL('[GetQuotes] invitations', { count: Array.isArray(list) ? list.length : 0 })
+
       const nameByInvId = new Map(), emailByInvId = new Map(), vendorByInvId = new Map()
       for (const it of list) {
         const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
         if (!invId) continue
-        const name = it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
+        const name  = it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
         const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
         const sapEntry = extractSapOrgEntry(it)
         const sapId = sapEntry?.value ?? extractSapVendorId(it)
-        if (name) nameByInvId.set(invId, name)
+        if (name)  nameByInvId.set(invId, name)
         if (email) emailByInvId.set(invId, email)
         if (sapId) vendorByInvId.set(invId, sapId)
       }
+
       for (const invId of new Set(results.map(r => r._invitationId).filter(Boolean))) {
         if (!nameByInvId.has(invId)) {
           const fb = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
@@ -44,9 +53,12 @@ module.exports = function () {
       }
 
       let parentProjectId = null
-      try { parentProjectId = await fetchParentProjectId(docId) } catch { }
+      try { parentProjectId = await fetchParentProjectId(docId) } catch {}
+      LOG.infoL('[GetQuotes] parentProjectId', { parentProjectId })
+
       let header = null
-      try { if (parentProjectId) header = await fetchAribaHeader(parentProjectId) } catch { }
+      try { if (parentProjectId) header = await fetchAribaHeader(parentProjectId) } catch {}
+      LOG.infoL('[GetQuotes] header', { hasHeader: !!header })
 
       const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null })
       const itemsOut = results.map(r => {
@@ -58,12 +70,13 @@ module.exports = function () {
         return { ...pub, supplierName, SupplierCode: supplierIdSap, invitationId: invId, invitationEmail: email }
       })
 
+      LOG.infoL('[GetQuotes] END', { items: itemsOut.length })
       return { header: headerWithDoc, items: itemsOut }
 
     } catch (e) {
       const status = e.response?.status || 502
       const msg = e.response?.data?.message || e.response?.data || e.message
-      LOG.error('[GetQuotes] Erro Ariba:', status, msg)
+      LOG.errorL('[GetQuotes] ERROR', { status, msg })
       return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
     }
   })
@@ -74,6 +87,10 @@ module.exports = function () {
     if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
       return req.error(400, "'supplierBids' deve ser um array com pelo menos 1 item.")
     }
+
+    LOG.infoL('[CreateScenario] START', {
+      eventId, title, scenarioType, bids: supplierBids.length
+    })
 
     const payload = {
       eventId,
@@ -94,24 +111,32 @@ module.exports = function () {
       const { data, headers } = await destPost(DEST.EVENTS, relPath, payload, { timeoutMs: HTTP_TIMEOUT_MS })
       const correlationId = headers?.['x-correlation-id'] || headers?.['x-correlationid'] || null
       const scenarioId = data?.scenarioId || data?.id || data?.scenarioID || null
+      LOG.infoL('[CreateScenario] OK', { scenarioId, correlationId })
       return { success: true, scenarioId, aribaResponse: JSON.stringify(data), correlationId }
     } catch (e) {
       const { status, correlationId, userMessage, technical } = formatAribaScenarioError(e)
-      LOG.error('[CreateScenario] Falha POST /scenarios:', technical)
+      LOG.errorL('[CreateScenario] ERROR', { status, correlationId, userMessage })
       return req.error(status, userMessage, { correlationId, technical })
     }
   })
 
   this.on('simularPO', async req => {
+    const { requests = [], concurrency } = req.data || {}
+    const LIMIT = Number((Number.isFinite(concurrency) ? concurrency : (process.env.CONCURRENCY || 4)))
+    LOG.infoL('[simularPO] START', { requests: requests.length, limit: LIMIT })
+
     try {
-      const { requests = [], concurrency } = req.data || {};
-      const LIMIT = Number((Number.isFinite(concurrency) ? concurrency : (process.env.CONCURRENCY || 4)));
-      if (!Array.isArray(requests) || requests.length === 0) return [];
+      if (!Array.isArray(requests) || requests.length === 0) return []
 
       const client = await getBapiClient()
 
-      const mapper = async (r) => {
+      const mapper = async (r, idx) => {
         const { header = {}, items: rawItems = [], schedules = [], testRun = true } = r || {}
+        LOG.infoL('[mapper] header', {
+          idx, vendor: header.vendor, purchOrg: header.purchOrg, compCode: header.compCode,
+          items: rawItems.length, testRun
+        })
+
         const items = rawItems.map(({ taxCode, ...rest }) => rest)
         const enrichInput = items.map((it, i) => ({
           __idx: i,
@@ -120,30 +145,41 @@ module.exports = function () {
           PurchasingOrganization: header.purchOrg,
           Plant: it.plant
         }))
+
+        // força erro se faltar TaxCode (mensagem já detalhada sai do taxcode.js)
         const enriched = await enrichWithTaxCode(enrichInput, {
-          headerVendor: padLeft(String(header.vendor || ''), 10, '0')
+          headerVendor: padLeft(String(header.vendor || ''), 10, '0'),
+          throwIfMissing: true
         })
+
+        // aplica resultado
         for (const row of enriched) {
           if (row?.__idx != null) {
-            items[row.__idx].taxCode = row.TaxCode ?? undefined;
-            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
+            items[row.__idx].taxCode = row.TaxCode ?? undefined
+            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined
           }
         }
-        const missing = items.map((it, i) => ({ i, poItem: it.poItem ?? (i + 1) * 10, material: it.material, plant: it.plant, taxCode: it.taxCode })).filter(x => !x.taxCode);
-        if (missing.length) throw new Error(`Não foi possível obter TaxCode para ${missing.length} item(ns).`);
+        const missing = items.filter(x => !x.taxCode).length
+        LOG.infoL('[mapper] taxcode', { idx, resolved: items.length - missing, missing })
 
-        const payload = buildSmokePayload(header, items, schedules, testRun);
-        const resp = await client.BAPI_PO_CREATE1Async(payload);
-        const r0 = Array.isArray(resp) ? resp[0] : resp;
-        return normalizeBapiResult(r0, !!payload.TESTRUN);
+        if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`)
+
+        const payload = buildSmokePayload(header, items, schedules, testRun)
+        const resp = await client.BAPI_PO_CREATE1Async(payload)
+        const r0 = Array.isArray(resp) ? resp[0] : resp
+        const out = normalizeBapiResult(r0, !!payload.TESTRUN)
+        LOG.infoL('[mapper] SOAP OK', { idx, returnMsgs: out.returnMessages?.length || 0, itens: out.itens?.length || 0 })
+        return out
       }
 
       const results = await mapWithConcurrency(requests, LIMIT, mapper)
+      LOG.infoL('[simularPO] END', { results: results.length })
       return results
 
     } catch (e) {
-      const info = safeErr(e);
-      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || 'Erro desconhecido'}`);
+      const info = safeErr(e)
+      LOG.errorL('[simularPO] ERROR', { msg: info.message || info.code || 'Erro', status: info.responseStatus })
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || 'Erro desconhecido'}`)
     }
   })
 }
