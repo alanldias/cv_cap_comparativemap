@@ -74,10 +74,10 @@ sap.ui.define([
         sap.ui.getCore().applyChanges();
         tbl.removeSelections(true);
 
-        if (!rows.length) sap.m.MessageToast.show("Nenhum item retornado para esse Doc ID.");
+        if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
       } catch (e) {
     /* eslint-disable no-console */ console.error("[onBuscar] ERRO:", e);
-        sap.m.MessageBox.error("Falha ao buscar dados: " + (e.message || e));
+        MessageBox.error("Falha ao buscar dados: " + (e.message || e));
       } finally {
         tbl.setBusy(false);
       }
@@ -103,7 +103,7 @@ sap.ui.define([
       const vm = view.getModel("vm");
       const qm = view.getModel("qm");
 
-      // ✅ FIX: limpar apenas o modelo "res" (nunca tocar no "vm")
+      // ✅ limpar apenas o modelo "res" (nunca tocar no "vm")
       let resModel = view.getModel("res");
       if (!resModel) {
         resModel = new sap.ui.model.json.JSONModel({ rows: [] });
@@ -114,31 +114,42 @@ sap.ui.define([
 
       console.groupCollapsed("[SIMULAR] clique");
       try {
-        const headerRaw = Map.getHeaderFromVM(vm); Debug.dbg("Header bruto (vm>/headerRows[0] ou vm>/header)", headerRaw);
+        const headerRaw = Map.getHeaderFromVM(vm);
+        Debug.dbg("Header bruto (vm>/headerRows[0] ou vm>/header)", headerRaw);
 
         const tbl = this.byId("tblDocs");
         if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
 
-        // ✅ Pega os itens selecionados atualmente na UI
+        // ✅ seleção atual da UI (sem contexts “fantasma”)
         const selItems = tbl.getSelectedItems();
         if (!selItems.length) throw new Error("Selecione pelo menos 1 item para simular.");
 
         const rows = selItems
-          .map(it => it.getBindingContext("vm")?.getObject())
-          .filter(Boolean); // evita undefined
+          .map(it => it.getBindingContext("vm")?.getObject?.())
+          .filter(r => r && (r.MaterialCode || r.materialCode || r.ItemId || r.itemId));
 
         if (!rows.length) {
-          throw new Error("Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção.");
+          // evita seleção visual enganosa
+          tbl.removeSelections(true);
+          throw new Error("Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente.");
         }
         Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
+        // índices para casar BAPI → Ariba
         qm.setProperty("/simSourceRows", rows);
         Map.prepareQMFromSelection(rows, qm);
 
+        // mapear header/itens/schedules
         const header = Map.mapHeaderFromAriba(headerRaw, rows[0]);
         const items = rows.map((r, idx) => Map.mapRowToPOItem(r, idx));
-        const schedules = rows.map((r, i) => ({ poItem: items[i].poItem, schedLine: 1, deliveryDate: Map.getDeliveryDateFromRow(r), quantity: items[i].quantity }));
+        const schedules = rows.map((r, i) => ({
+          poItem: items[i].poItem,
+          schedLine: 1,
+          deliveryDate: Map.getDeliveryDateFromRow(r),
+          quantity: items[i].quantity
+        }));
 
+        // validações rápidas
         const missing = [];
         if (!header.docType) missing.push("Tipo de Pedido (docType)");
         if (!header.compCode) missing.push("Empresa (compCode)");
@@ -146,13 +157,16 @@ sap.ui.define([
         if (!header.purchGroup) missing.push("Grupo de Compras (purchGroup)");
         if (!header.vendor) missing.push("Fornecedor (vendor/LIFNR)");
         if (!header.currency) missing.push("Moeda (currency)");
+
         const missingItems = [];
         items.forEach((it, i) => {
           const tag = `Item ${String((i + 1) * 10).padStart(5, "0")}`;
           if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
           if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
-          if (!it.quantity || it.quantity <= 0) missingItems.push(`${tag}: Quantidade (quantity)`);
-          if (!it.material && !it.shortText) missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
+          if (!it.quantity || it.quantity <= 0)
+            missingItems.push(`${tag}: Quantidade (quantity)`);
+          if (!it.material && !it.shortText)
+            missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
         });
         if (missing.length || missingItems.length) {
           const msg = [
@@ -162,29 +176,69 @@ sap.ui.define([
           throw new Error(msg);
         }
 
+        // chamada
         const requests = [{ header, items, schedules, testRun: true }];
 
         sap.ui.core.BusyIndicator.show(0);
         const result0 = await ODataSvc.simularPO(view, requests, 4);
         Debug.dbg("Resultado bruto da BAPI (result0)", result0);
 
+        // 🔴 1) erro “estrutural” do backend (ex.: {error:true, message:"..."})
+        if (result0?.error || result0?.success === false) {
+          if (Dialogs.showError) {
+            Dialogs.showError(
+              "Erro na simulação",
+              result0?.message || "Falha ao simular a compra.",
+              result0
+            );
+          } else {
+            // fallback se não tiver showError
+            MessageBox.error(result0?.message || "Falha ao simular a compra.", {
+              details: JSON.stringify(result0, null, 2),
+              contentWidth: "640px"
+            });
+          }
+          console.groupEnd();
+          return; // não abre fragment
+        }
+
+        // 🟠 2) mensagens BAPI — se tiver E/A, mostra e não abre
+        const allMsgs = result0?.returnMessages || result0?.mensagens || [];
+        const hasErrorMsg = Array.isArray(allMsgs) && allMsgs.some(m => m.type === "E" || m.type === "A");
+        if (hasErrorMsg) {
+          Dialogs.showBapiMessages(allMsgs);
+          console.groupEnd();
+          return; // não abre fragment em caso de erro
+        }
+
+        // ✅ segue: montar linhas do fragment e abrir
         const resRows = Map.buildResRowsFromBapiResult(result0, qm);
         Dialogs.openResultDialog(view, resRows, this);
 
-        this.byId("tblDocs").removeSelections(true);
-
-        const allMsgs = result0?.returnMessages || result0?.mensagens || [];
-        Dialogs.showBapiMessages(allMsgs);
+        // Mensagens informativas/aviso (sem erro) — pode mostrar depois de abrir
+        if (Array.isArray(allMsgs) && allMsgs.length) {
+          Dialogs.showBapiMessages(allMsgs);
+        }
 
         console.groupEnd();
       } catch (err) {
-        console.error("[SIMULAR] ERRO:", err); console.groupEnd();
-        MessageBox.error(err.message || String(err));
+        console.error("[SIMULAR] ERRO:", err);
+        console.groupEnd();
+        const details =
+          err?.cause?.response?.body ||
+          err?.cause?.message ||
+          err?.stack ||
+          (typeof err === "object" ? JSON.stringify(err, null, 2) : String(err));
+
+        MessageBox.error(err.message || String(err), {
+          details,
+          contentWidth: "640px"
+        });
       } finally {
         sap.ui.core.BusyIndicator.hide();
       }
     },
-
+    
     /* ====== PREMIAÇÃO ====== */
     onAwardQtyChangeRes(ev) {
       const input = ev.getSource();

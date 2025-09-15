@@ -50,8 +50,12 @@ sap.ui.define([
     }
 
     function mapRowToPOItem(r, idx) {
+        if (!r || typeof r !== "object") {
+            throw new Error(`Linha selecionada inválida na posição ${idx + 1}. Refaça a seleção.`);
+        }
+
         const poItem = (idx + 1) * 10;
-        const matRaw = (r.MaterialCode || "").toString().trim();
+        const matRaw = (r?.MaterialCode || r?.materialCode || "").toString().trim();
         const m = matRaw.match(/^(\d{4,})\b/);
         const material = m ? Keys.zpad(m[1], 18) : "";
         const desc = (r.itemDEscription || r.itemDescription || r.description || r.ItemDescription || "").toString();
@@ -63,7 +67,14 @@ sap.ui.define([
         const netPrice = (r.price != null) ? Number(r.price) : null;
         const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || "")) ? String(r.CodigoRequisicao).slice(0, 10) : undefined;
 
-        return { poItem, plant, material, shortText, quantity: Number(r.quantity || 0), unit, netPrice, itemCat, matlGroup, preqNo };
+        const it = { poItem, plant, material, shortText, quantity: Number(r?.quantity || 0), unit, netPrice, itemCat, matlGroup, preqNo };
+
+        if (!it.material && !it.shortText) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Sem MATERIAL e SHORT_TEXT`);
+        if (!it.unit) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Unidade vazia`);
+        if (!it.plant) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Centro vazio`);
+        if (!it.quantity) console.warn(`[ITEM ${String(poItem).padStart(5, '0')}] Quantidade vazia/zero`);
+
+        return it;
     }
 
     function prepareQMFromSelection(rows, qm) {

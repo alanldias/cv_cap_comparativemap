@@ -1,20 +1,53 @@
-sap.ui.define(["sap/ui/model/json/JSONModel","sap/m/MessageToast","sap/m/MessageBox"], function(JSONModel, MessageToast, MessageBox) {
+// controller/services/Dialogs.js
+sap.ui.define([
+  "sap/ui/model/json/JSONModel",
+  "sap/m/MessageToast",
+  "sap/m/MessageBox",
+  "sap/ui/core/Fragment"
+], function(JSONModel, MessageToast, MessageBox, Fragment) {
   "use strict";
 
-  function openResultDialog(view, rows, controller) {
-    const resModel = new JSONModel({ rows: rows || [] });
+  function _pickDialog(root) {
+    return Array.isArray(root)
+      ? root.find(c => c && c.isA && c.isA("sap.m.Dialog"))
+      : (root && root.isA && root.isA("sap.m.Dialog") ? root : null);
+  }
+
+  async function openResultDialog(view, rows, controller) {
+    // 1) Atualiza/garante o modelo "res"
+    const resModel = view.getModel("res") || new JSONModel({ rows: [] });
+    resModel.setData({ rows: rows || [] });
     view.setModel(resModel, "res");
 
-    if (!controller._dlgRes) {
-      controller._dlgRes = sap.ui.xmlfragment(
-        view.getId(),
-        "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
-        controller
-      );
-      view.addDependent(controller._dlgRes);
-      controller._dlgRes.attachAfterClose(() => { controller._dlgRes.destroy(); controller._dlgRes=null; });
+    // 2) Se ainda existe um Dialog antigo, destrói antes de recriar (fail-safe)
+    if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
+      try { controller._dlgRes.destroy(); } catch(e) {}
+      controller._dlgRes = null;
     }
-    controller._dlgRes.open();
+
+    // 3) Escopo único por instância (evita _IDGen* duplicar)
+    const scopeId = view.createId("resDlg-" + Date.now());
+
+    const root = await Fragment.load({
+      id: scopeId, // <<< escopo único
+      name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
+      controller
+    });
+
+    const dlg = _pickDialog(root);
+    if (!dlg) {
+      throw new Error("O fragmento ResultadoSimulacao não tem um <Dialog> como root.");
+    }
+
+    view.addDependent(dlg);
+    controller._dlgRes = dlg;
+
+    dlg.attachAfterClose(() => {
+      try { dlg.destroy(); } catch(e){}
+      controller._dlgRes = null;
+    });
+
+    dlg.open();
   }
 
   function closeAny(controller, evt) {
@@ -44,6 +77,18 @@ sap.ui.define(["sap/ui/model/json/JSONModel","sap/m/MessageToast","sap/m/Message
     else if (hasWarning) MessageBox.warning(text, { title:"Mensagens da BAPI" });
     else MessageBox.success(text, { title:"Mensagens da BAPI" });
   }
+  
+  function showError(title, text, details) {
+    const detailStr = typeof details === "string"
+      ? details
+      : JSON.stringify(details, null, 2);
 
-  return { openResultDialog, closeAny, showBapiMessages };
+    MessageBox.error(text || "Ocorreu um erro.", {
+      title: title || "Erro",
+      details: detailStr,
+      contentWidth: "640px"
+    });
+  }
+
+  return { openResultDialog, closeAny, showBapiMessages, showError };
 });
