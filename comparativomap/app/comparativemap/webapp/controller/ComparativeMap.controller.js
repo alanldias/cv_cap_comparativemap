@@ -249,8 +249,15 @@ sap.ui.define([
       const oView = this.getView();
       const idByKey = oView.getModel("qm").getProperty("/idByKey") || {};
 
-      const enrRows = (result?.rows || []).map(r => {
-        const itemKeyRaw = String(r.materialCode || r.MaterialCode || this._getItemKey(r));
+      const safeRows = Array.isArray(result?.rows) ? result.rows.filter(Boolean) : [];
+
+
+      const enrRows = safeRows.map((r) => {
+        const R = r || {};
+
+        const itemKeyRaw = String(
+          R.materialCode || R.MaterialCode || this._getItemKey(R) || ""
+        );
         const matKey = this._normKey(itemKeyRaw);
         const nameKey = this._normKey(r.supplierName);
         const lifnr = this._pad10(r.lifnr || r.supplierId || (/^\d+$/.test(r.supplierName) ? r.supplierName : ""));
@@ -265,16 +272,20 @@ sap.ui.define([
 
         const originalQty = Number(meta?.masterQty ?? r.masterQty ?? 0) || 0;
 
-        return Object.assign({}, r, {
+        return Object.assign({}, R, {
+          // normalize sempre os dois nomes:
+          materialCode: R.materialCode ?? R.MaterialCode ?? itemKeyRaw,
+          MaterialCode: R.MaterialCode ?? R.materialCode ?? itemKeyRaw,
+
           itemKey: itemKeyRaw,
-          itemId: meta?.itemId ?? r.itemId ?? r.ItemId ?? null,
-          invitationId: meta?.invitationId ?? r.invitationId ?? null,
-          invitationEmail: meta?.invitationEmail ?? r.invitationEmail ?? null,
+          itemId: meta?.itemId ?? R.itemId ?? R.ItemId ?? null,
+          invitationId: meta?.invitationId ?? R.invitationId ?? null,
+          invitationEmail: meta?.invitationEmail ?? R.invitationEmail ?? null,
 
-          supplierName: r.supplierName || meta?.supplierName || (lifnr || ""),
+          supplierName: R.supplierName || meta?.supplierName || (lifnr || ""),
 
-          originalQty, // NOVO: usado nas validações de premiação
-          qtyAward: 0  // usuário aloca
+          originalQty,
+          qtyAward: 0
         });
       });
 
@@ -282,10 +293,20 @@ sap.ui.define([
       oView.setModel(resModel, "res");
 
       if (!this._dlgRes) {
-        this._dlgRes = sap.ui.xmlfragment(oView.getId(),
-          "comparativemap.comparativemap.view.fragments.ResultadoSimulacao", this);
+        this._dlgRes = sap.ui.xmlfragment(
+          oView.getId(),
+          "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
+          this
+        );
         oView.addDependent(this._dlgRes);
+
+        // 💣 Destruir ao fechar para não “grudar” bindings antigos
+        this._dlgRes.attachAfterClose(() => {
+          this._dlgRes.destroy();
+          this._dlgRes = null;
+        });
       }
+
       this._dlgRes.open();
     },
     // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
@@ -949,6 +970,11 @@ sap.ui.define([
       const oOData = oView.getModel();      // OData V4 (/odata/v4/service)
       const vm = oView.getModel("vm");  // JSONModel com dados do Ariba
 
+      // 🔹 PATCH: zera o modelo "res" ANTES de simular (evita lixo da rodada anterior)
+      const resModel = oView.getModel("res") || new JSONModel({ rows: [] });
+      oView.setModel(resModel, "res");
+      resModel.setData({ rows: [] });
+
       console.groupCollapsed("[SIMULAR] clique");
       try {
         // 1) HEADER do VM
@@ -1025,26 +1051,12 @@ sap.ui.define([
 
         // 7) MONTA res>/rows ───► casamento por material+LIFNR (NADA de índice!)
         const resRows = this._buildResRowsFromBapiResult(result0);
-        this.getView().setModel(new sap.ui.model.json.JSONModel({ rows: resRows }), "res");
-
-        // sanity
-        console.log("[SIMULAR] resRows c/ IDs:", {
-          total: resRows.length,
-          comItemId: resRows.filter(r => r.itemId).length,
-          comInvitation: resRows.filter(r => r.invitationId).length,
-          itemIdsUnicos: Array.from(new Set(resRows.map(r => r.itemId))).length
-        });
 
         // 8) abre o fragment
-        if (!this._dlgRes) {
-          this._dlgRes = sap.ui.xmlfragment(
-            oView.getId(),
-            "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
-            this
-          );
-          oView.addDependent(this._dlgRes);
-        }
-        this._dlgRes.open();
+        this._openResultDialog({ rows: resRows });
+
+        // ✅ Limpa a seleção DEPOIS de abrir 
+        this.byId("tblDocs").removeSelections(true);
 
         // 9) mensagens da BAPI (se vierem)
         const allMsgs = result0?.returnMessages || result0?.mensagens || [];
@@ -1097,69 +1109,87 @@ sap.ui.define([
     },
 
     /** Mapeia BAPI result → res>/rows (já com itemId/invitationId/email); pronto para premiar */
-    _buildResRowsFromBapiResult(result) {
+    _buildResRowsFromBapiResult: function (result) {
       const qm = this.getView().getModel("qm");
       const idByKey = qm.getProperty("/idByKey") || {};
       const srcRows = qm.getProperty("/simSourceRows") || [];
+
       const lifnrHeader = (result?.header?.fornecedor || "").toString().padStart(10, "0");
       const currency = result?.header?.moeda || "BRL";
 
-      const itens = Array.isArray(result?.itens) ? result.itens : [];
+      // 🔒 Evita buracos (undefined) no array
+      const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
       return itens.map((it, idx) => {
-        // 1) tentativa por material + LIFNR (mais estável)
-        const matKey = this._matKeyFromBapiMaterial(it.material);
+        // 1) chave por material vinda da BAPI
+        const matKey = this._matKeyFromBapiMaterial(it?.material);
+
+        // 2) tentativa por material + LIFNR (mais estável)
         let meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
 
-        // 2) fallback por nome (se existir no índice)
-        if (!meta) meta = idByKey[`${matKey}|NAME:${this._normKey(srcRows[idx]?.supplierName || "")}`];
-
-        // 3) fallback por posição (poItem → índice 10,20,30…)
+        // 3) fallback por NOME do fornecedor (nome do selecionado de origem)
         if (!meta) {
-          const po = String(it.poItem || "");
+          const srcByIdx = srcRows[idx] || {};
+          const nameKey = this._normKey(srcByIdx?.supplierName || "");
+          meta = idByKey[`${matKey}|NAME:${nameKey}`];
+        }
+
+        // 4) fallback por posição (poItem → índice 10,20,30…)
+        if (!meta) {
+          const po = String(it?.poItem || "");
           if (/^\d+$/.test(po)) {
             const n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
             const src = srcRows[n] || {};
+
             const mk2 = this._normKey(this._getItemKey(src));
-            const lif2 = this._pad10(src.lifnr || src.supplierId || lifnrHeader);
-            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${this._normKey(src.supplierName || "")}`];
+            const lif2 = this._pad10(src?.lifnr || src?.supplierId || lifnrHeader);
+            const nm2 = this._normKey(src?.supplierName || "");
+
+            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${nm2}`];
           }
         }
 
+        // 5) dados de origem/contato
         const src = srcRows[idx] || {};
         const invitationId = (meta?.invitationId != null) ? meta.invitationId : (src.invitationId ?? null);
         const invitationEmail = (meta?.invitationEmail != null) ? meta.invitationEmail : (src.invitationEmail ?? null);
 
-        // dados numéricos
-        const quantity = Number(it.quantidade || 0) || 0;
-        const price = Number(it.netPrice || 0) || 0;
+        // 6) números (com proteção)
+        const quantity = Number(it?.quantidade || 0) || 0;
+        const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
         const originalQty = Number(meta?.masterQty ?? 0) || 0;
 
+        // 7) normalize SEMPRE os dois nomes: materialCode + MaterialCode
+        const matDisplay = meta?.materialCode || it?.material || this._getItemKey(src) || "";
+
         return {
           // exibição
-          supplierName: meta?.supplierName || lifnrHeader,
-          materialCode: meta?.materialCode || it.material,
+          materialCode: matDisplay,
+          MaterialCode: matDisplay,            // <- evita “Cannot read ... MaterialCode”
+          supplierName: meta?.supplierName || src?.supplierName || lifnrHeader,
+
           originalQty: originalQty,
-          quantity: quantity, // “Qtd Simulada”
-          qtyAward: 0,        // usuário vai preencher
+          quantity: quantity,              // “Qtd Simulada”
+          qtyAward: 0,                     // usuário preenche depois
           price: price,
           currency: currency,
           icms: null,
           ipi: null,
           total: total,
 
-          // NECESSÁRIOS para premiação
+          // necessários p/ premiação
           itemId: meta?.itemId ?? null,
-          invitationId,
-          invitationEmail,
+          invitationId: invitationId,
+          invitationEmail: invitationEmail,
           lifnr: lifnrHeader,
 
-          // debug
-          poItem: it.poItem
+          // debug/traço
+          poItem: it?.poItem
         };
       });
     },
+
 
     // --- Extrai LIFNR de uma linha (normaliza e zera à esquerda)
     _getVendorFromRow: function (r) {
@@ -1215,7 +1245,7 @@ sap.ui.define([
       }
 
       // Atualiza o modelo e abre
-      this._dlgResultadoPO.setModel(new sap.ui.model.json.JSONModel(result || {}), "simpo");
+      this._dlgResultadoPO.setModel(new JSONModel(result || {}), "simpo");
       this._dlgResultadoPO.open();
     },
     onExit: function () {
