@@ -39,25 +39,48 @@ sap.ui.define([
 
     /* ====== BUSCAR ====== */
     async onBuscar() {
-      const view = this.getView();
-      const vm = view.getModel("vm");
-      const docId = (view.byId("inputDoID").getValue() || "").trim();
-      const tbl = view.byId("tblDocs");
-      try {
-        if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
-        tbl.setBusy(true);
-        const res = await ODataSvc.fetchQuotes(view, docId);
+      const oView = this.getView();
+      const oOData = oView.getModel();
+      const oVM = oView.getModel("vm");
+      const oQM = oView.getModel("qm");
+      const docId = (oView.byId("inputDoID").getValue() || "").trim();
+      const tbl = oView.byId("tblDocs");
 
-        const rows = (Array.isArray(res?.items) ? res.items : []).map(r => Object.assign({}, r, { _originalQty: Number(r.quantity) || 0 }));
-        vm.setProperty("/header", res?.header || {});
-        vm.setProperty("/rows", rows);
-        vm.setProperty("/headerRows", res?.header ? [res.header] : []);
-        view.byId("tblDocs").getBinding("items")?.refresh(true);
-        if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
+      try {
+        if (!oOData) throw new Error("Modelo OData V4 não encontrado.");
+        if (!docId) { sap.m.MessageToast.show("Informe o Doc ID"); return; }
+
+        // ✅ limpar seleção e caches da simulação antes de carregar novos dados
+        tbl.removeSelections(true);
+        oQM?.setProperty("/idByKey", {});
+        oQM?.setProperty("/simSourceRows", []);
+
+        tbl.setBusy(true);
+
+        // ⬅️ aqui era 'view', troque para 'oView'
+        const res = await ODataSvc.fetchQuotes(oView, docId);
+
+        const rows = (Array.isArray(res?.items) ? res.items : [])
+          .map(r => Object.assign({}, r, { _originalQty: Number(r.quantity) || 0 }));
+
+        // ⬅️ aqui era 'vm', troque para 'oVM'
+        oVM.setProperty("/header", res?.header || {});
+        oVM.setProperty("/rows", rows);
+        oVM.setProperty("/headerRows", res?.header ? [res.header] : []);
+
+        this.byId("tblDocs").getBinding("items")?.refresh(true);
+
+        // reforço: evitar “seleção fantasma” após rebind
+        sap.ui.getCore().applyChanges();
+        tbl.removeSelections(true);
+
+        if (!rows.length) sap.m.MessageToast.show("Nenhum item retornado para esse Doc ID.");
       } catch (e) {
-        /* eslint-disable no-console */ console.error("[onBuscar] ERRO:", e);
-        MessageBox.error("Falha ao buscar dados: " + (e.message || e));
-      } finally { tbl.setBusy(false); }
+    /* eslint-disable no-console */ console.error("[onBuscar] ERRO:", e);
+        sap.m.MessageBox.error("Falha ao buscar dados: " + (e.message || e));
+      } finally {
+        tbl.setBusy(false);
+      }
     },
 
     onQtyInlineChange(ev) {
@@ -96,14 +119,16 @@ sap.ui.define([
         const tbl = this.byId("tblDocs");
         if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
 
-        // ✅ FIX: API correta do ListBase: boolean (true = todos)
-        const selectedCtx = tbl.getSelectedContexts(true);
+        // ✅ Pega os itens selecionados atualmente na UI
+        const selItems = tbl.getSelectedItems();
+        if (!selItems.length) throw new Error("Selecione pelo menos 1 item para simular.");
 
-        // ✅ FIX: map para objetos e removendo nulos
-        const rows = selectedCtx.map(c => c.getObject()).filter(Boolean);
+        const rows = selItems
+          .map(it => it.getBindingContext("vm")?.getObject())
+          .filter(Boolean); // evita undefined
 
         if (!rows.length) {
-          throw new Error("Selecione ao menos 1 item válido para simular.");
+          throw new Error("Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção.");
         }
         Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
@@ -154,7 +179,7 @@ sap.ui.define([
         console.groupEnd();
       } catch (err) {
         console.error("[SIMULAR] ERRO:", err); console.groupEnd();
-        sap.m.MessageBox.error(err.message || String(err));
+        MessageBox.error(err.message || String(err));
       } finally {
         sap.ui.core.BusyIndicator.hide();
       }
@@ -180,14 +205,14 @@ sap.ui.define([
 
       const tbl = this._dlgRes?.getContent?.()[0];
       const selected = tbl?.getSelectedContexts("res").map(c => c.getObject()) || [];
-      if (!selected.length) { sap.m.MessageToast.show("Selecione ao menos uma linha para premiar."); return; }
+      if (!selected.length) { MessageToast.show("Selecione ao menos uma linha para premiar."); return; }
 
       const allRows = vm?.getProperty("/rows") || [];
       const supplierBids = AwardSvc.validarEMontarPayload(allRows, selected, this._ensureInvitationResourceId.bind(this));
       if (!supplierBids) return;
 
       const sEventId = vm.getProperty("/header/docId") || view.getModel("res")?.getProperty("/header/docId");
-      if (!sEventId) { sap.m.MessageBox.error("DocID do evento não encontrado no header."); return; }
+      if (!sEventId) { MessageBox.error("DocID do evento não encontrado no header."); return; }
 
       sap.ui.core.BusyIndicator.show(0);
       try {
@@ -199,15 +224,15 @@ sap.ui.define([
         });
         sap.ui.core.BusyIndicator.hide();
         if (out?.success) {
-          sap.m.MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`);
+          MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`);
           this._dlgRes?.close();
         } else {
-          sap.m.MessageBox.warning("CreateScenario executou, porém sem success=true.");
+          MessageBox.warning("CreateScenario executou, porém sem success=true.");
         }
       } catch (e) {
         sap.ui.core.BusyIndicator.hide();
         const msg = e?.message || "Falha ao criar cenário.";
-        sap.m.MessageBox.error(msg);
+        MessageBox.error(msg);
       }
     },
 
@@ -220,10 +245,10 @@ sap.ui.define([
         () => { });
     },
 
-    onFilterSelectAllFornecedor() { this._prefs.filter.fornecedor = this._getDistinct("supplierName"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: selecionado tudo."); },
-    onFilterClearFornecedor() { this._prefs.filter.fornecedor = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Fornecedor: seleção limpa."); },
-    onFilterSelectAllNomeItem() { this._prefs.filter.nomeItem = this._getDistinct("itemDescription"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: selecionado tudo."); },
-    onFilterClearNomeItem() { this._prefs.filter.nomeItem = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); sap.m.MessageToast.show("Nome do item: seleção limpa."); },
+    onFilterSelectAllFornecedor() { this._prefs.filter.fornecedor = this._getDistinct("supplierName"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); MessageToast.show("Fornecedor: selecionado tudo."); },
+    onFilterClearFornecedor() { this._prefs.filter.fornecedor = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); MessageToast.show("Fornecedor: seleção limpa."); },
+    onFilterSelectAllNomeItem() { this._prefs.filter.nomeItem = this._getDistinct("itemDescription"); PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); MessageToast.show("Nome do item: selecionado tudo."); },
+    onFilterClearNomeItem() { this._prefs.filter.nomeItem = []; PrefsStore.save(this._prefs); this._vs.applyFiltersFromPrefs(); MessageToast.show("Nome do item: seleção limpa."); },
 
     /* ====== Helpers “de ponte” ====== */
     _getDistinct(path) {
