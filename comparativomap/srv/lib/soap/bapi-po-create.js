@@ -1,5 +1,6 @@
-const { getSoapService } = require('../../soap-destination')
-const { SOAP } = require('../config')
+const { getSoapService } = require('../../soap-destination');
+const { SOAP } = require('../config');
+const { dbg } = require('../util/log');
 
 function padLeft(str, len, ch = '0') {
     str = String(str ?? '');
@@ -20,6 +21,7 @@ function markX(obj, extra = {}) {
 
 async function getBapiClient() {
     const endpoint = { url: null };
+    dbg('[getBapiClient] WSDL_PATH (resolved) =', SOAP.WSDL_PATH);
     const client = await getSoapService('BAPI_PO_CREATE', SOAP.WSDL_PATH, endpoint, 'POST');
     if (typeof client.BAPI_PO_CREATE1Async !== 'function') {
         throw new Error('Método SOAP BAPI_PO_CREATE1Async indisponível no port/endereço atual.');
