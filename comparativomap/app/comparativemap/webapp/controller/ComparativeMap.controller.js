@@ -166,85 +166,6 @@ sap.ui.define([
       this._oSimDialog && this._oSimDialog.close && this._oSimDialog.close();
     },
 
-
-    /* =========================================================================
-     * 3) SIMULAÇÃO (sem popup intermediário)
-     * ========================================================================= */
-    onConfirmSimulate: async function () {
-      const oView = this.getView();
-      const oModel = oView.getModel();
-      const qm = oView.getModel("qm");
-      const vm = oView.getModel("vm");
-
-      const itemsQM = qm.getProperty("/items") || [];
-      const rawHeader = vm.getProperty("/header") || {};
-
-      const payload = itemsQM
-        .filter(it => Number(it.qtySim) > 0)
-        .map(it => ({
-          // IDs (se o backend ecoar ótimo; senão enriquecemos na volta)
-          itemId: it.itemId ?? null,
-          invitationId: it.invitationId ?? null,
-          invitationEmail: it.invitationEmail ?? null,
-          supplierName: it.supplierName ?? null,
-          lifnr: it.lifnr ?? null,
-
-          // dados de item
-          MaterialCode: it.MaterialCode ?? it.materialCode ?? null,
-          itemDescription: it.itemDescription ?? it.description ?? it.materialDesc ?? it.itemDEscription ?? null,
-          quantity: Number(it.qtySim), // usa a quantidade editada na tabela principal
-          unitOfMeasure: it.unitOfMeasure ?? it.PO_UNIT ?? it.unidade ?? null,
-          price: Number(it.price) || 0,
-          currency: it.currency ?? null,
-          PLANT: it.PLANT ?? it.plant ?? it.centro ?? null,
-          // TAX_CODE: it.TAX_CODE ?? it.iva ?? null,
-          ItemCategory: it.ItemCategory ?? it.itemCategory ?? null,
-          grupo_de_materias: it.grupo_de_materias ?? it.grupoMateriais ?? it.MaterialGroup ?? null,
-          PREQ_NO: it.PREQ_NO ?? null,
-          PREQ_ITEM: it.PREQ_ITEM ?? null
-        }));
-
-      const firstCurrency = payload.length ? payload[0].currency : null;
-
-      const header = {
-        docId: rawHeader.docId ?? null,
-        tipoPedido: rawHeader.tipoPedido ?? null,
-        purchasingOrganization: rawHeader.purchasingOrganization ?? null,
-        purchasingGroup: rawHeader.purchasingGroup ?? null,
-        companyCode: rawHeader.companyCode ?? null,
-        incoterms1: rawHeader.incoterms1 ?? null,
-        incoterms2: rawHeader.incoterms2 ?? null,
-        paymentTerms: rawHeader.paymentTerms ?? null,
-        fornecedor: rawHeader.fornecedor ?? null,
-        moeda: rawHeader.moeda ?? firstCurrency
-      };
-
-      if (!payload.length) {
-        MessageToast.show("Informe quantidades maiores que zero para simular.");
-        return;
-      }
-
-      sap.ui.core.BusyIndicator.show(0);
-      try {
-        const ctx = oModel.bindContext("/SimulateBapiPoCreate(...)");
-        ctx.setParameter("header", header);
-        ctx.setParameter("items", payload);
-
-        await ctx.execute();
-
-        const result = await ctx.getBoundContext().requestObject();
-        await this._openResultDialog(result);
-      } catch (e) {
-        console.error("[onConfirmSimulate] ERRO:", e);
-        MessageBox.error("Falha na simulação: " + (e.message || e));
-      } finally {
-        sap.ui.core.BusyIndicator.hide();
-      }
-    },
-
-    /* =========================================================================
-     * 4) RESULTADO DA SIMULAÇÃO (Original + Qtd p/ premiar + Premiar direto)
-     * ========================================================================= */
     _openResultDialog: function (result) {
       const oView = this.getView();
       const idByKey = oView.getModel("qm").getProperty("/idByKey") || {};
@@ -309,6 +230,7 @@ sap.ui.define([
 
       this._dlgRes.open();
     },
+
     // ################################ FIM - BEATRIZ - FOI ALTERADO PARA RECUPERAR CAMPOS NECESSARIOS PARA A PREMIAÇÃO  #####################################
     // ################################ BEATRIZ - QUANTIDADE  #####################################
     onAwardQtyChangeRes: function (oEvent) {
@@ -934,31 +856,6 @@ sap.ui.define([
       return Array.from(byDoc.values());
     },
 
-    async _openSimFragment(aRows, docIds) {
-      const oView = this.getView();
-
-      const oSimModel = new JSONModel({
-        docIds,                 // agora é array (IDs envolvidos)
-        total: aRows.length,
-        rows: aRows,            // coleção p/ tabela
-        first: aRows?.[0] || {} // primeiro item (p/ cabeçalho/resumo)
-      });
-
-      if (!this._oSimDialog) {
-        this._oSimDialog = await Fragment.load({
-          id: oView.getId(), // importante p/ IDs estáveis
-          name: "comparativemap.comparativemap.view.fragments.Simulacao", // ajuste ao seu namespace
-          type: "XML",
-          controller: this
-        });
-        oView.addDependent(this._oSimDialog);
-      }
-
-      this._oSimDialog.setModel(oSimModel, "sim");
-      this._oSimDialog.open();
-    },
-
-
     /** ************************************************************
   * SIMULAR (lote): Agrupa por fornecedor, monta requests[] e chama a action única
   * - Header-base vem do vm>/headerRows[0] (sem seleção)
@@ -1190,7 +1087,6 @@ sap.ui.define([
       });
     },
 
-
     // --- Extrai LIFNR de uma linha (normaliza e zera à esquerda)
     _getVendorFromRow: function (r) {
       const raw = (r.SupplierCode || r.suppliercode || r.supplierId || r.lifnr || r.VENDOR || r.vendor || "").toString();
@@ -1228,26 +1124,6 @@ sap.ui.define([
       return { header, items, schedules, testRun: true };
     },
 
-
-    // Abre o Dialog com o resultado da simulação (usa o fragment acima)
-    _openResultadoPO: async function (result) {
-      const oView = this.getView();
-
-      if (!this._dlgResultadoPO) {
-        // Use um prefixo estável da própria view para o fragment:
-        const fragPrefix = oView.createId("resPO"); // gera "viewId--resPO"
-        this._dlgResultadoPO = await sap.ui.core.Fragment.load({
-          id: fragPrefix, // ⬅️ agora os controles ficam "viewId--resPO--<id>"
-          name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacaoPO",
-          controller: this
-        });
-        oView.addDependent(this._dlgResultadoPO);
-      }
-
-      // Atualiza o modelo e abre
-      this._dlgResultadoPO.setModel(new JSONModel(result || {}), "simpo");
-      this._dlgResultadoPO.open();
-    },
     onExit: function () {
       if (this._dlgResultadoPO) {
         this._dlgResultadoPO.destroy(true);
