@@ -23,14 +23,21 @@
   },
   "devDependencies": {
     "@cap-js/cds-types": "^0.13.0",
-    "@sap/cds-dk": ">=8"
+    "@sap/cds-dk": ">=8",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.6.2"
   },
   "scripts": {
     "start": "cds-serve",
     "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false",
     "build": "mbt build -t .",
     "deploy": "cf deploy comparativomap_1.0.0.mtar",
-    "undeploy": "cf undeploy comparativomap --delete-services --delete-service-keys --delete-service-brokers"
+    "undeploy": "cf undeploy comparativomap --delete-services --delete-service-keys --delete-service-brokers",
+    "format": "prettier --write \"src/**/*.{js,ts,json,md}\"",
+    "lint": "eslint \"src/**/*.{js,ts}\"",
+    "lint:fix": "eslint \"src/**/*.{js,ts}\" --fix"
   },
   "cds": {
     "requires": {

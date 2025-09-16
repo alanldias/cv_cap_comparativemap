@@ -86,9 +86,9 @@
                 </Toolbar>
                 <ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false">
                     <Table id="tblDocs"
-                        
                            inset="false"
                            mode="MultiSelect"
+                           rememberSelections="false"
                            growing="true"
                            noDataText="{i18n>instrucaoTabela}"
                            items="{vm>/rows}">

@@ -19,7 +19,7 @@
       }
     }
   },
-  "folders": {  
+  "folders": {
     "srv": "srv/"
   },
   "cov2ap": {
@@ -27,15 +27,12 @@
   },
   "build": {
     "target": "gen",
-    "tasks": [      
+    "tasks": [
       {
         "for": "nodejs",
         "srv": "srv",
         "options": {
-          "model": [
-            "srv",
-            "srv/external/bapi_po_create1"
-          ]
+          "model": ["srv", "srv/external/bapi_po_create1"]
         }
       }
     ]

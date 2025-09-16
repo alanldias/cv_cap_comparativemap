@@ -1,15 +1,1329 @@
 //@ui5-bundle comparativemap/comparativemap/Component-preload.js
-sap.ui.predefine("comparativemap/comparativemap/Component", ["sap/ui/core/UIComponent","comparativemap/comparativemap/model/models"],(e,t)=>{"use strict";return e.extend("comparativemap.comparativemap.Component",{metadata:{manifest:"json",interfaces:["sap.ui.core.IAsyncContentCreation"]},init(){e.prototype.init.apply(this,arguments);this.setModel(t.createDeviceModel(),"device");this.getRouter().initialize()}})});
-sap.ui.predefine("comparativemap/comparativemap/controller/App.controller", ["sap/ui/core/mvc/Controller"],e=>{"use strict";return e.extend("comparativemap.comparativemap.controller.App",{onInit(){}})});
-sap.ui.predefine("comparativemap/comparativemap/controller/ComparativeMap.controller", ["sap/ui/core/mvc/Controller","sap/ui/Device","sap/ui/model/Filter","sap/ui/model/FilterOperator","sap/ui/model/Sorter","sap/ui/model/json/JSONModel","sap/m/ViewSettingsDialog","sap/m/ViewSettingsItem","sap/m/ViewSettingsFilterItem","sap/m/MessageBox","sap/ui/util/Storage","sap/m/MessageToast","sap/ui/core/Fragment"],function(e,t,o,i,r,s,n,a,l,c,d,p,u){"use strict";return e.extend("comparativemap.comparativemap.controller.ComparativeMap",{onInit(){const e=new s({header:{tipoPedido:"",purchasingOrganization:"",purchasingGroup:"",companyCode:"",incoterms1:"",incoterms2:"",paymentTerms:"",docId:"",moeda:"",fornecedor:""},headerRows:[],rows:[]});e.setSizeLimit(1e4);e.setDefaultBindingMode(sap.ui.model.BindingMode.TwoWay);this.getView().setModel(e,"vm");const t=new s({items:[],perKey:{},validAward:false,_summaryText:"",idx:{},idByKey:{}});t.setSizeLimit(1e4);this.getView().setModel(t,"qm");this._oFilterDialog=null;this._oSortDialog=null;this._oGroupDialog=null;this._groupReset=false;this._storage=new d(d.Type.local,"comparativemap");this._prefsKey="tblDocs-prefs";this._prefs=this._loadPrefs();this.mGroupFunctions={supplierName:e=>{const t=e.getProperty("supplierName")||"";return{key:t,text:t}},arb_PurchasingOrganization:e=>{const t=e.getProperty("arb_PurchasingOrganization")||"";return{key:t,text:"Org. Compras "+t}},arb_CompanyCode:e=>{const t=e.getProperty("arb_CompanyCode")||"";return{key:t,text:"Empresa "+t}}}},async onBuscar(){const e=this.getView();const t=e.getModel();const o=e.getModel("vm");const i=(e.byId("inputDoID").getValue()||"").trim();const r=e.byId("tblDocs");try{if(!t)throw new Error("Modelo OData V4 não encontrado.");if(!i){p.show("Informe o Doc ID");return}r.setBusy(true);const e=t.bindContext("/GetQuotes(...)");e.setParameter("docId",i);await e.execute();const s=await e.getBoundContext().requestObject();const n=(Array.isArray(s?.items)?s.items:[]).map(e=>({...e,_originalQty:Number(e.quantity)||0}));o.setProperty("/header",s?.header||{});o.setProperty("/rows",n);o.setProperty("/headerRows",s?.header?[s.header]:[]);this.byId("tblDocs").getBinding("items")?.refresh(true);if(!n.length)p.show("Nenhum item retornado para esse Doc ID.")}catch(e){console.error("[onBuscar] ERRO:",e);c.error("Falha ao buscar dados: "+(e.message||e))}finally{r.setBusy(false)}},onQtyInlineChange:function(e){const t=e.getSource()?.getBindingContext("vm");if(!t)return;const o=t.getObject()||{};const i=Number(o._originalQty)||0;let r=Number(o.quantity);if(isNaN(r)||r<0)r=0;if(i&&r>i)r=i;r=Math.floor(r);o.quantity=r;t.getModel().checkUpdate(true)},onCloseDialog:function(e){try{let t=e&&e.getSource?e.getSource():null;while(t&&t.getParent&&!(t.isA&&t.isA("sap.m.Dialog"))){t=t.getParent()}if(t&&t.isA&&t.isA("sap.m.Dialog")){t.close();return}}catch(e){}this._dlgRes&&this._dlgRes.close&&this._dlgRes.close();this._dlgAward&&this._dlgAward.close&&this._dlgAward.close();this._dlgSim&&this._dlgSim.close&&this._dlgSim.close();this._oSimDialog&&this._oSimDialog.close&&this._oSimDialog.close()},onConfirmSimulate:async function(){const e=this.getView();const t=e.getModel();const o=e.getModel("qm");const i=e.getModel("vm");const r=o.getProperty("/items")||[];const s=i.getProperty("/header")||{};const n=r.filter(e=>Number(e.qtySim)>0).map(e=>({itemId:e.itemId??null,invitationId:e.invitationId??null,invitationEmail:e.invitationEmail??null,supplierName:e.supplierName??null,lifnr:e.lifnr??null,MaterialCode:e.MaterialCode??e.materialCode??null,itemDescription:e.itemDescription??e.description??e.materialDesc??e.itemDEscription??null,quantity:Number(e.qtySim),unitOfMeasure:e.unitOfMeasure??e.PO_UNIT??e.unidade??null,price:Number(e.price)||0,currency:e.currency??null,PLANT:e.PLANT??e.plant??e.centro??null,ItemCategory:e.ItemCategory??e.itemCategory??null,grupo_de_materias:e.grupo_de_materias??e.grupoMateriais??e.MaterialGroup??null,PREQ_NO:e.PREQ_NO??null,PREQ_ITEM:e.PREQ_ITEM??null}));const a=n.length?n[0].currency:null;const l={docId:s.docId??null,tipoPedido:s.tipoPedido??null,purchasingOrganization:s.purchasingOrganization??null,purchasingGroup:s.purchasingGroup??null,companyCode:s.companyCode??null,incoterms1:s.incoterms1??null,incoterms2:s.incoterms2??null,paymentTerms:s.paymentTerms??null,fornecedor:s.fornecedor??null,moeda:s.moeda??a};if(!n.length){p.show("Informe quantidades maiores que zero para simular.");return}sap.ui.core.BusyIndicator.show(0);try{const e=t.bindContext("/SimulateBapiPoCreate(...)");e.setParameter("header",l);e.setParameter("items",n);await e.execute();const o=await e.getBoundContext().requestObject();await this._openResultDialog(o)}catch(e){console.error("[onConfirmSimulate] ERRO:",e);c.error("Falha na simulação: "+(e.message||e))}finally{sap.ui.core.BusyIndicator.hide()}},_openResultDialog:function(e){const t=this.getView();const o=t.getModel("qm").getProperty("/idByKey")||{};const i=Array.isArray(e?.rows)?e.rows.filter(Boolean):[];const r=i.map(e=>{const t=e||{};const i=String(t.materialCode||t.MaterialCode||this._getItemKey(t)||"");const r=this._normKey(i);const s=this._normKey(e.supplierName);const n=this._pad10(e.lifnr||e.supplierId||(/^\d+$/.test(e.supplierName)?e.supplierName:""));const a=[n?`${r}|LIFNR:${n}`:null,`${r}|NAME:${s}`].filter(Boolean);let l=null;for(const e of a){if(o[e]){l=o[e];break}}const c=Number(l?.masterQty??e.masterQty??0)||0;return Object.assign({},t,{materialCode:t.materialCode??t.MaterialCode??i,MaterialCode:t.MaterialCode??t.materialCode??i,itemKey:i,itemId:l?.itemId??t.itemId??t.ItemId??null,invitationId:l?.invitationId??t.invitationId??null,invitationEmail:l?.invitationEmail??t.invitationEmail??null,supplierName:t.supplierName||l?.supplierName||(n||""),originalQty:c,qtyAward:0})});const n=new s({rows:r});t.setModel(n,"res");if(!this._dlgRes){this._dlgRes=sap.ui.xmlfragment(t.getId(),"comparativemap.comparativemap.view.fragments.ResultadoSimulacao",this);t.addDependent(this._dlgRes);this._dlgRes.attachAfterClose(()=>{this._dlgRes.destroy();this._dlgRes=null})}this._dlgRes.open()},onAwardQtyChangeRes:function(e){const t=e.getSource();const o=t.getBindingContext("res");const i=o?.getObject()||{};let r=Number(t.getValue());if(isNaN(r)||r<0)r=0;const s=Number(i.originalQty)||0;if(r>s)r=s;r=Math.floor(r);i.qtyAward=r;o.getModel().checkUpdate(true);t.setValue(String(r))},onAwardDirect:async function(){const e=this.getView();const t=e.getModel();const o=e.getModel("vm");const i=this._dlgRes?.getContent?.()[0];const r=i?.getSelectedContexts("res").map(e=>e.getObject())||[];if(!r.length){p.show("Selecione ao menos uma linha para premiar.");return}const s=o?.getProperty("/rows")||[];const n=new Map;s.forEach(e=>{const t=Number(e.itemId??e.ItemId);if(!Number.isFinite(t))return;const o=e.itemKey||e.itemDescription||e.MaterialCode||e.materialCode||String(t);const i=Number(e.originalQty??e.original??e.quantityOriginal??e.quantity??0);const r=n.get(t)||{label:o,original:0};const s=Number.isFinite(i)?Math.max(r.original,Math.floor(i)):r.original;n.set(t,{label:o,original:s})});const a=[];const l=[];const c=[];const d=new Map;r.forEach(e=>{const t=Number(e.itemId??e.ItemId);if(!Number.isFinite(t)){c.push(`${e.supplierName||"Fornecedor"} / ${e.materialCode||e.MaterialCode||e.itemKey||e.itemDescription||"(sem chave)"}`);return}const o=e.itemKey||e.itemDescription||e.MaterialCode||e.materialCode||String(t);const i=Number(e.originalQty??e.original??e.quantityOriginal??e.quantity??0);if(!d.has(t))d.set(t,{label:o,original:0,rows:[]});const r=d.get(t);if(Number.isFinite(i)&&i>r.original)r.original=Math.floor(i);r.rows.push(e)});console.log("[Award] Grupos (SELECIONADOS) por itemId:",Array.from(d.entries()).map(([e,t])=>({itemId:e,label:t.label,original:t.original,rows:t.rows.length})));console.log("[Award] Itens obrigatórios (TODOS) do evento:",Array.from(n.entries()).map(([e,t])=>({itemId:e,label:t.label,original:t.original})));const u=[];for(const[e,t]of n.entries()){if(!d.has(e))u.push(`#${e} (${t.label})`)}if(u.length){sap.m.MessageBox.error("Para concluir a premiação, TODOS os itens do evento devem estar selecionados.\n\n"+"Itens não selecionados:\n"+u.join("\n"));return}for(const[e,t]of d.entries()){const o=n.get(e);const i=Math.floor(Number((o?.original??0)||t.original||0));if(i<=0){l.push(`Item #${e} (${o?.label||t.label}): quantidade ORIGINAL inválida.`);continue}let r=0;t.rows.forEach(e=>{let t=Math.floor(Number(e.qtyAward)||0);if(t<0)t=0;if(t>i)t=i;e.qtyAward=t;r+=t});if(r!==i){l.push(`Item #${e} (${o?.label||t.label}): restante ${i-r} (a soma deve fechar ${i}).`);continue}}if(l.length){sap.m.MessageBox.error("As quantidades por item precisam fechar com a quantidade ORIGINAL:\n\n"+l.join("\n"));return}for(const[e,t]of d.entries()){const o=n.get(e);const i=Math.floor(Number((o?.original??0)||t.original||0));let r=0;const s=t.rows.map((e,t)=>{const o=Math.round(e.qtyAward*100/i*1e3)/1e3;r+=o;return{ix:t,p:o}});const l=Math.round((100-r)*1e3)/1e3;if(Math.abs(l)>=.001){const e=s.findLast?.(e=>e.p>0)?.ix??s.length-1;if(e>=0)s[e].p=Math.max(0,Math.round((s[e].p+l)*1e3)/1e3)}s.forEach(({ix:i,p:r})=>{const s=t.rows[i];if(r<=0)return;const n=this._ensureInvitationResourceId(s.invitationId,s.invitationEmail);if(!n){c.push(`${s.supplierName||"Fornecedor"} / #${e} (${o?.label||t.label})`);return}a.push({itemId:e,invitationId:String(n),bidType:"Primary",winningSplitType:1,winningSplitValue:Number(r.toFixed(3))})});console.log("[Award] itemId:",e,"| label:",o?.label||t.label,"| original:",o?.original??t.original,"| splits:",a.filter(t=>t.itemId===e))}if(!a.length||c.length){sap.m.MessageBox.error("Itens sem identificação suficiente (itemId/invitationId). Revise a seleção.\n\n"+(c.length?`Pendentes:\n${c.join("\n")}`:""));return}console.log("[Award] supplierBids payload:",a);const m=o.getProperty("/header/docId")||e.getModel("res")?.getProperty("/header/docId");if(!m){sap.m.MessageBox.error("DocID do evento não encontrado no header.");return}const g=t.bindContext("/CreateScenario(...)");g.setParameter("eventId",m);g.setParameter("title","Premiação via UI (direto)");g.setParameter("scenarioType",0);g.setParameter("supplierBids",a);sap.ui.core.BusyIndicator.show(0);try{await g.execute();const e=g.getBoundContext().getObject();sap.ui.core.BusyIndicator.hide();if(e?.success){sap.m.MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${e.scenarioId||"(n/a)"}\nCorrelation-ID: ${e.correlationId||"(n/a)"}`);this._dlgRes?.close()}else{sap.m.MessageBox.warning("CreateScenario executou, porém sem success=true.")}}catch(e){sap.ui.core.BusyIndicator.hide();let t="Falha ao criar cenário.";if(this._compactODataErrorText){t=this._compactODataErrorText(e)}else if(this._parseODataError){const o=this._parseODataError(e);t=o.correlationId?`${o.text}\n\nCorrelation-ID: ${o.correlationId}`:o.text}sap.m.MessageBox.error(t)}},_parseODataError(e){const t=e=>{try{return JSON.parse(e)}catch{return null}};let o=e?.cause?.error||typeof e?.cause?.response?.body==="string"&&t(e.cause.response.body)||typeof e?.message==="string"&&t(e.message)||e?.error||null;const i=o?.error||o||{};const r=typeof i?.message==="string"&&i.message||typeof i?.message?.value==="string"&&i.message.value||"Falha ao criar cenário.";const s=Array.isArray(i?.details)?i.details:[];const n=s.map(e=>{const t=e.message||e["@aribaDescription"]||e["@aribaMessage"]||"";const o=e["@aribaCode"]?` [${e["@aribaCode"]}]`:"";const i=e.target?` (${e.target})`:"";return`• ${t}${o}${i}`});const a=i?.correlationId||s.find(e=>e["@correlationId"])?.["@correlationId"]||e?.cause?.response?.headers?.["x-correlation-id"]||e?.cause?.response?.headers?.["x-correlationid"]||null;let l="";if(n.length){l=n.join("\n")}else if(i&&Object.keys(i).length){l=JSON.stringify(i,null,2)}else if(typeof e?.cause?.response?.body==="string"){l=e.cause.response.body}else{l=e?.message||""}const c=s.find(e=>e["@raw"])?.["@raw"];if(c){const e=typeof c==="string"?c:JSON.stringify(c);l+=`\n\nRaw:\n${e.substring(0,2e3)}${e.length>2e3?"...":""}`}return{text:r,details:l,correlationId:a}},handleFilterButtonPressed(){this._openFilterDialog()},handleSortButtonPressed(){this._openSortDialog()},handleGroupButtonPressed(){this._openGroupDialog()},onFilterSelectAllFornecedor(){this._prefs.filter.fornecedor=this._getDistinct("supplierName");this._savePrefs();this._applyFiltersFromPrefs();p.show("Fornecedor: selecionado tudo.")},onFilterClearFornecedor(){this._prefs.filter.fornecedor=[];this._savePrefs();this._applyFiltersFromPrefs();p.show("Fornecedor: seleção limpa.")},onFilterSelectAllNomeItem(){this._prefs.filter.nomeItem=this._getDistinct("itemDescription");this._savePrefs();this._applyFiltersFromPrefs();p.show("Nome do item: selecionado tudo.")},onFilterClearNomeItem(){this._prefs.filter.nomeItem=[];this._savePrefs();this._applyFiltersFromPrefs();p.show("Nome do item: seleção limpa.")},handleFilterDialogConfirm(e){const t=e.getParameters().filterItems||[];const r={};t.forEach(e=>{const[t,s,n,a]=e.getKey().split("___");(r[t]||=[]).push(new o(t,i[s]||s,n,a))});const s=[];Object.keys(r).forEach(e=>{const t=r[e];s.push(t.length>1?new o({filters:t,and:false}):t[0])});const n=this.byId("tblDocs");n.getBinding("items").filter(s);this._prefs.filter.fornecedor=(r.supplierName||[]).map(e=>String(e.oValue1));this._prefs.filter.nomeItem=(r.itemDescription||[]).map(e=>String(e.oValue1));this._savePrefs();this._applyFiltersFromPrefs()},handleSortDialogConfirm(e){const t=e.getParameters();const o=t.sortItem.getKey();const i=t.sortDescending;const s=this.byId("tblDocs");const n=[];if(this._prefs.group.key){n.push(new r(this._prefs.group.key,!!this._prefs.group.desc,this.mGroupFunctions[this._prefs.group.key]))}n.push(new r(o,i));s.getBinding("items").sort(n);this._prefs.sort={key:o,desc:!!i};this._savePrefs()},resetGroupDialog(){this._groupReset=true},handleGroupDialogConfirm(e){const t=e.getParameters();const o=this.byId("tblDocs");const i=o.getBinding("items");if(t.groupItem){const e=t.groupItem.getKey();const o=t.groupDescending;const s=this.mGroupFunctions[e];const n=[new r(e,o,s)];if(this._prefs.sort.key){n.push(new r(this._prefs.sort.key,!!this._prefs.sort.desc))}i.sort(n);this._prefs.group={key:e,desc:!!o};this._savePrefs()}else if(this._groupReset){if(this._prefs.sort.key){i.sort([new r(this._prefs.sort.key,!!this._prefs.sort.desc)])}else{i.sort()}this._groupReset=false;this._prefs.group={key:null,desc:false};this._savePrefs()}},_openFilterDialog(){if(this._oFilterDialog){this._oFilterDialog.destroy();this._oFilterDialog=null}this._oFilterDialog=this._buildFilterDialog();this._oFilterDialog.open()},_buildFilterDialog(){const e=this.getView();const o=new n({confirm:this.handleFilterDialogConfirm.bind(this)});if(t.system.desktop)o.addStyleClass("sapUiSizeCompact");e.addDependent(o);const i=new l({text:"Fornecedor",key:"supplierName"});this._getDistinct("supplierName").forEach(e=>{const t=new a({text:e,key:`supplierName___EQ___${e}`});if(this._prefs.filter.fornecedor?.includes(e))t.setSelected(true);i.addItem(t)});o.addFilterItem(i);const r=new l({text:"Nome do item",key:"itemDescription"});this._getDistinct("itemDescription").forEach(e=>{const t=new a({text:e,key:`itemDescription___EQ___${e}`});if(this._prefs.filter.nomeItem?.includes(e))t.setSelected(true);r.addItem(t)});o.addFilterItem(r);return o},_openGroupDialog(){const e=this.getView();if(!this._oGroupDialog){this._oGroupDialog=new n({confirm:this.handleGroupDialogConfirm.bind(this),reset:this.resetGroupDialog.bind(this)});if(t.system.desktop)this._oGroupDialog.addStyleClass("sapUiSizeCompact");e.addDependent(this._oGroupDialog)}this._oGroupDialog.destroyGroupItems();[{text:"Fornecedor",key:"supplierName"},{text:"Org. Compras",key:"arb_PurchasingOrganization"},{text:"Empresa",key:"arb_CompanyCode"}].forEach(e=>this._oGroupDialog.addGroupItem(new a(e)));if(this._prefs.group.key){this._oGroupDialog.setSelectedGroupItem(this._prefs.group.key);this._oGroupDialog.setGroupDescending(!!this._prefs.group.desc)}this._oGroupDialog.open()},_openSortDialog(){const e=this.getView();if(!this._oSortDialog){this._oSortDialog=new n({confirm:this.handleSortDialogConfirm.bind(this)});if(t.system.desktop)this._oSortDialog.addStyleClass("sapUiSizeCompact");e.addDependent(this._oSortDialog)}this._oSortDialog.destroySortItems();[{text:"Fornecedor",key:"supplierName"},{text:"Nome do item",key:"itemDescription"},{text:"Tipo de pedido",key:"arb_Document_Type"},{text:"Org. Compras",key:"arb_PurchasingOrganization"},{text:"Grp. Compradores",key:"arb_PurchasingGroup"},{text:"Empresa",key:"arb_CompanyCode"}].forEach(e=>this._oSortDialog.addSortItem(new a(e)));if(this._prefs.sort.key){this._oSortDialog.setSelectedSortItem(this._prefs.sort.key);this._oSortDialog.setSortDescending(!!this._prefs.sort.desc)}this._oSortDialog.open()},_loadPrefs(){try{const e=this._storage.get(this._prefsKey);if(e)return JSON.parse(e)}catch(e){}return{filter:{supplierName:[],itemDescription:[]},sort:{key:null,desc:false},group:{key:null,desc:false}}},_savePrefs(){this._storage.put(this._prefsKey,JSON.stringify(this._prefs))},_getDistinct(e){const t=this.getView().getModel("vm").getProperty("/rows")||[];const o=new Set;t.forEach(t=>{const i=t[e];if(i!==undefined&&i!==null&&i!=="")o.add(String(i))});return Array.from(o).sort((e,t)=>e.localeCompare(t,"pt-BR"))},_applyFiltersFromPrefs(){const e=this.byId("tblDocs");if(!e)return;const t=e.getBinding("items");if(!t)return;const r=[];if(this._prefs.filter.fornecedor?.length){r.push(new o({and:false,filters:this._prefs.filter.fornecedor.map(e=>new o("supplierName",i.EQ,e))}))}if(this._prefs.filter.nomeItem?.length){r.push(new o({and:false,filters:this._prefs.filter.nomeItem.map(e=>new o("itemDescription",i.EQ,e))}))}t.filter(r);const s=this.byId("vsdFilterBar");const n=this.byId("vsdFilterLabel");if(s&&n){if(r.length){s.setVisible(true);const e=[this._prefs.filter.fornecedor?.length?`Fornecedor: ${this._prefs.filter.fornecedor.join(", ")}`:"",this._prefs.filter.nomeItem?.length?`Nome do item: ${this._prefs.filter.nomeItem.join(", ")}`:""].filter(Boolean).join("  |  ");n.setText(e)}else{s.setVisible(false);n.setText("")}}},_applyGroupSortFromPrefs(){const e=this.byId("tblDocs");if(!e)return;const t=e.getBinding("items");if(!t)return;const o=[];if(this._prefs.group.key){o.push(new r(this._prefs.group.key,!!this._prefs.group.desc,this.mGroupFunctions[this._prefs.group.key]))}if(this._prefs.sort.key){o.push(new r(this._prefs.sort.key,!!this._prefs.sort.desc))}if(o.length)t.sort(o)},_getItemKey(e){return String(e.MaterialCode||e.materialCode||e.ItemId||"")},_normKey(e){return String(e||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/\s+/g," ").trim().toLowerCase()},_pad10(e){const t=String(e||"").replace(/\D/g,"");return t?t.padStart(10,"0"):null},_ensureInvitationResourceId(e,t){if(!e)return null;const o=String(e);if(o.includes("_"))return o;if(t)return`${o}_${String(t)}`;return o},_filterItemsByDoc(e){const t=this.byId("tblDocs");const r=t?.getBinding("items");if(!r)return;const s=e?[new o("docId",i.EQ,String(e))]:[];r.filter(s)},_buildHeaderRows(e,t){if(!Array.isArray(e)||!e.length)return[];const o=new Map;for(const i of e){const e=i.docId??"";if(t&&String(e)!==String(t))continue;if(!o.has(e)){o.set(e,{docId:e,arb_Document_Type:i.arb_Document_Type??"",arb_PurchasingOrganization:i.arb_PurchasingOrganization??"",arb_PurchasingGroup:i.arb_PurchasingGroup??"",arb_CompanyCode:i.arb_CompanyCode??"",INCOTERMS1:i.INCOTERMS1??"",INCOTERMS2:i.INCOTERMS2??"",arb_PaymentTerms:i.arb_PaymentTerms??""})}}return Array.from(o.values())},async _openSimFragment(e,t){const o=this.getView();const i=new s({docIds:t,total:e.length,rows:e,first:e?.[0]||{}});if(!this._oSimDialog){this._oSimDialog=await u.load({id:o.getId(),name:"comparativemap.comparativemap.view.fragments.Simulacao",type:"XML",controller:this});o.addDependent(this._oSimDialog)}this._oSimDialog.setModel(i,"sim");this._oSimDialog.open()},onSimularPress:async function(){const e=this.getView();const t=e.getModel();const o=e.getModel("vm");const i=e.getModel("res")||new s({rows:[]});e.setModel(i,"res");i.setData({rows:[]});console.groupCollapsed("[SIMULAR] clique");try{const e=this._getHeaderFromVM(o);this._dbg("Header bruto (vm>/headerRows[0] ou vm>/header)",e);const i=this.byId("tblDocs");if(!i)throw new Error("Tabela 'tblDocs' não encontrada.");const r=i.getSelectedContexts("vm");if(!r.length)throw new Error("Selecione pelo menos 1 item para simular.");const s=r.map(e=>e.getObject());this._dbg(`Linhas selecionadas (count=${s.length})`,s);const n=this.getView().getModel("qm");n.setProperty("/simSourceRows",s);this._prepareQMFromSelection(s);const a=this._mapHeaderFromAriba(e,s[0]);const l=s.map((e,t)=>this._mapRowToPOItem(e,t));const c=s.map((e,t)=>({poItem:l[t].poItem,schedLine:1,deliveryDate:this._getDeliveryDateFromRow(e),quantity:l[t].quantity}));const d=[];if(!a.docType)d.push("Tipo de Pedido (docType)");if(!a.compCode)d.push("Empresa (compCode)");if(!a.purchOrg)d.push("Org. de Compras (purchOrg)");if(!a.purchGroup)d.push("Grupo de Compras (purchGroup)");if(!a.vendor)d.push("Fornecedor (vendor/LIFNR)");if(!a.currency)d.push("Moeda (currency)");const p=[];l.forEach((e,t)=>{const o=`Item ${String((t+1)*10).padStart(5,"0")}`;if(!e.plant)p.push(`${o}: Centro (plant)`);if(!e.unit)p.push(`${o}: Unidade (unit)`);if(!e.quantity||e.quantity<=0)p.push(`${o}: Quantidade (quantity)`);if(!e.material&&!e.shortText)p.push(`${o}: MATERIAL ou SHORT_TEXT`)});if(d.length||p.length){const e=[d.length?"Cabeçalho faltando:\n- "+d.join("\n- "):"",p.length?"Itens faltando:\n- "+p.join("\n- "):""].filter(Boolean).join("\n\n");throw new Error(e)}const u=[{header:a,items:l,schedules:c,testRun:true}];const m=t.bindContext("/simularPO(...)");m.setParameter("requests",u);m.setParameter("concurrency",4);console.log("→ Executando /simularPO(...)");sap.ui.core.BusyIndicator.show(0);await m.execute();let g=m.getBoundContext().getObject();if(typeof m.getReturnValueContext==="function"){const e=m.getReturnValueContext();if(e)g=e.getObject()||g}const h=Array.isArray(g)?g:g?.value||g?.results||[];const f=Array.isArray(h)?h[0]||{}:g||{};this._dbg("Resultado bruto da BAPI (result0)",f);const y=this._buildResRowsFromBapiResult(f);this._openResultDialog({rows:y});this.byId("tblDocs").removeSelections(true);const _=f?.returnMessages||f?.mensagens||[];this._showBapiMessages(_);console.groupEnd()}catch(e){console.error("[SIMULAR] ERRO:",e);console.groupEnd();sap.m.MessageBox.error(e.message||String(e))}finally{sap.ui.core.BusyIndicator.hide()}},_prepareQMFromSelection(e){const t=this.getView().getModel("qm");const o={};e.forEach(e=>{const t=this._normKey(this._getItemKey(e));const i=this._normKey(e.supplierName||"");const r=this._pad10(e.lifnr||e.supplierId||(/^\d+$/.test(e.supplierName)?e.supplierName:""));const s={itemId:e.itemId??e.ItemId??null,invitationId:e.invitationId??e._invitationId??null,invitationEmail:e.invitationEmail??null,masterQty:Number(e._originalQty||e.quantity)||0,supplierName:e.supplierName||"",lifnr:r,materialCode:e.MaterialCode||e.materialCode||""};o[`${t}|NAME:${i}`]=s;if(r)o[`${t}|LIFNR:${r}`]=s});t.setProperty("/idByKey",o)},_matKeyFromBapiMaterial(e){const t=String(e||"");const o=t.replace(/\D/g,"");const i=o.replace(/^0+/,"");return this._normKey(i||o||t)},_buildResRowsFromBapiResult:function(e){const t=this.getView().getModel("qm");const o=t.getProperty("/idByKey")||{};const i=t.getProperty("/simSourceRows")||[];const r=(e?.header?.fornecedor||"").toString().padStart(10,"0");const s=e?.header?.moeda||"BRL";const n=Array.isArray(e?.itens)?e.itens.filter(Boolean):[];return n.map((e,t)=>{const n=this._matKeyFromBapiMaterial(e?.material);let a=o[`${n}|LIFNR:${r}`];if(!a){const e=i[t]||{};const r=this._normKey(e?.supplierName||"");a=o[`${n}|NAME:${r}`]}if(!a){const t=String(e?.poItem||"");if(/^\d+$/.test(t)){const e=Math.max(0,Math.floor(parseInt(t,10)/10)-1);const s=i[e]||{};const n=this._normKey(this._getItemKey(s));const l=this._pad10(s?.lifnr||s?.supplierId||r);const c=this._normKey(s?.supplierName||"");a=o[`${n}|LIFNR:${l}`]||o[`${n}|NAME:${c}`]}}const l=i[t]||{};const c=a?.invitationId!=null?a.invitationId:l.invitationId??null;const d=a?.invitationEmail!=null?a.invitationEmail:l.invitationEmail??null;const p=Number(e?.quantidade||0)||0;const u=Number(e?.netPrice||0)||0;const m=Number((u*p).toFixed(2));const g=Number(a?.masterQty??0)||0;const h=a?.materialCode||e?.material||this._getItemKey(l)||"";return{materialCode:h,MaterialCode:h,supplierName:a?.supplierName||l?.supplierName||r,originalQty:g,quantity:p,qtyAward:0,price:u,currency:s,icms:null,ipi:null,total:m,itemId:a?.itemId??null,invitationId:c,invitationEmail:d,lifnr:r,poItem:e?.poItem}})},_getVendorFromRow:function(e){const t=(e.SupplierCode||e.suppliercode||e.supplierId||e.lifnr||e.VENDOR||e.vendor||"").toString();const o=t.replace(/\D/g,"");return this._zpad(o,10)},_groupByVendor:function(e,t){const o=new Map;e.forEach(e=>{const i=this._getVendorFromRow(e)||t;if(!i)throw new Error("Não foi possível resolver o fornecedor (LIFNR) de uma das linhas.");if(!o.has(i))o.set(i,[]);o.get(i).push(e)});return o},_buildPayloadForVendor:function(e,t,o){const i={...o,vendor:e};const r=t.map((e,t)=>this._mapRowToPOItem(e,t));const s=t.map((e,t)=>({poItem:r[t].poItem,schedLine:1,deliveryDate:this._getDeliveryDateFromRow(e),quantity:r[t].quantity}));return{header:i,items:r,schedules:s,testRun:true}},_openResultadoPO:async function(e){const t=this.getView();if(!this._dlgResultadoPO){const e=t.createId("resPO");this._dlgResultadoPO=await sap.ui.core.Fragment.load({id:e,name:"comparativemap.comparativemap.view.fragments.ResultadoSimulacaoPO",controller:this});t.addDependent(this._dlgResultadoPO)}this._dlgResultadoPO.setModel(new s(e||{}),"simpo");this._dlgResultadoPO.open()},onExit:function(){if(this._dlgResultadoPO){this._dlgResultadoPO.destroy(true);this._dlgResultadoPO=null}},fmt2:function(e){const t=Number(e);return isNaN(t)?"":t.toFixed(2)},_showBapiMessages:function(e){const t=Array.isArray(e)?e:[];if(!t.length){sap.m.MessageToast.show("Simulação concluída. Sem mensagens da BAPI.");return}const o=e=>{const t=[e.id,e.number].filter(Boolean).join("/");const o=e.type?`[${e.type}]`:"[?]";return`${o} ${e.message||""}${t?` (${t})`:""}`};const i=t.map(o).join("\n");const r=t.some(e=>e.type==="E"||e.type==="A");const s=t.some(e=>e.type==="W");if(r){sap.m.MessageBox.error(i,{title:"Mensagens da BAPI"})}else if(s){sap.m.MessageBox.warning(i,{title:"Mensagens da BAPI"})}else{sap.m.MessageBox.success(i,{title:"Mensagens da BAPI"})}},_getHeaderFromVM:function(e){let t=e.getProperty("/headerRows");if(Array.isArray(t))t=t[0]||{};if(!t||!Object.keys(t).length)t=e.getProperty("/header")||{};return t},_mapHeaderFromAriba:function(e,t){const o=(e.moeda||t?.currency||"BRL").toString().toUpperCase().slice(0,3);const i=e.fornecedor&&String(e.fornecedor).trim()||t?.SupplierCode||t?.suppliercode||t?.supplierId||t?.lifnr;const r=this._zpad(String(i).replace(/\D/g,""),10);const s=(e.tipoPedido||"NB").toString().trim();const n=s.match(/([A-Z0-9]{2,4})\s*$/i);const a=(n?n[1]:s).toUpperCase().slice(0,4);return{docType:a,compCode:(e.companyCode||"").toString().slice(0,4),purchOrg:(e.purchasingOrganization||"").toString().slice(0,4),purchGroup:(e.purchasingGroup||"").toString().slice(0,3),vendor:r,currency:o,incoterms1:(e.incoterms1||"").toString().toUpperCase().slice(0,3),incoterms2:(e.incoterms2||"").toString().slice(0,28)}},_mapRowToPOItem:function(e,t){const o=(t+1)*10;const i=(e.MaterialCode||"").toString().trim();const r=i.match(/^(\d{4,})\b/);const s=r?this._zpad(r[1],18):"";const n=(e.itemDEscription||e.itemDescription||e.description||e.ItemDescription||"").toString();const a=n.slice(0,40);const l=this._mapUoM((e.unitOfMeasure||"").toString().toUpperCase());const c=this._mapPlant((e.PLANT||"").toString());const d=this._mapItemCategory((e.ItemCategory||"").toString());const p=(e.grupo_de_materias||"").toString().slice(0,9);const u=e.price!=null?Number(e.price):null;const m=/^\d+$/.test(String(e.CodigoRequisicao||""))?String(e.CodigoRequisicao).slice(0,10):undefined;const g={poItem:o,plant:c,material:s,shortText:a,quantity:Number(e.quantity||0),unit:l,netPrice:u,itemCat:d,matlGroup:p,preqNo:m};if(!g.material&&!g.shortText)console.warn(`[ITEM ${String(o).padStart(5,"0")}] Sem MATERIAL e SHORT_TEXT`);if(!g.unit)console.warn(`[ITEM ${String(o).padStart(5,"0")}] Unidade vazia`);if(!g.plant)console.warn(`[ITEM ${String(o).padStart(5,"0")}] Centro vazio`);if(!g.quantity)console.warn(`[ITEM ${String(o).padStart(5,"0")}] Quantidade vazia/zero`);return g},_normalizeDate:function(e){if(!e)return this._toEdmDate(new Date);let t=typeof e==="object"&&e.dateValue?e.dateValue:String(e).trim();if(/^\d{4}-\d{2}-\d{2}$/.test(t))return t;if(/^\d{8}$/.test(t))return`${t.slice(0,4)}-${t.slice(4,6)}-${t.slice(6,8)}`;const o=new Date(t);if(!isNaN(o))return this._toEdmDate(o);throw new Error(`Data inválida: ${e}`)},_getDeliveryDateFromRow:function(e){const t=e?.DELIVERY_DATE_RAW?.dateValue||e?.DELIVERY_DATE_RAW||e?.deliveryDate;return this._normalizeDate(t||new Date)},_toEdmDate:function(e){const t=e.getFullYear();const o=String(e.getMonth()+1).padStart(2,"0");const i=String(e.getDate()).padStart(2,"0");return`${t}-${o}-${i}`},_zpad:function(e,t){const o=String(e||"");return o.length>=t?o:"0".repeat(t-o.length)+o},_mapUoM:function(e){const t={UN:"PC",PC:"PC","PÇ":"PC",KG:"KG",G:"G",L:"L",M:"M",CX:"CX"};return t[e]||e.slice(0,3)},_mapPlant:function(e){const t=e.split(/[ -]/)[0].trim();return t.slice(0,4)},_mapItemCategory:function(e){const t=(e||"").trim().toUpperCase();const o={"":"0",STD:"0",STANDARD:"0",MATERIAL:"0",K:"2",CONSIGNMENT:"2",CONSIGNADO:"2",L:"3",SUBCONTRACTING:"3",SUBCONTRATACAO:"3","SUBCONTRATAÇÃO":"3",S:"5","THIRD-PARTY":"5","THIRD PARTY":"5",TERCEIROS:"5",U:"7","STOCK TRANSFER":"7",TRANSFERENCIA:"7","TRANSFERÊNCIA":"7",E:"A","ENHANCED LIMITS":"A",LIMITS:"A"};return o[t]||"0"},_dbg:function(e,t){console.groupCollapsed("🔎 "+e);try{console.log(this._safe(t))}catch(e){console.log(t)}console.groupEnd()},_safe:function(e){const t=new Set;const o=JSON.parse(JSON.stringify(e,(e,o)=>{if(typeof o==="function")return undefined;if(typeof o==="object"&&o!==null){if(t.has(o))return;t.add(o)}return o}));t.clear();return o}})});
-sap.ui.predefine("comparativemap/comparativemap/model/models", ["sap/ui/model/json/JSONModel","sap/ui/Device"],function(e,n){"use strict";return{createDeviceModel:function(){var i=new e(n);i.setDefaultBindingMode("OneWay");return i}}});
+sap.ui.predefine(
+  "comparativemap/comparativemap/Component",
+  ["sap/ui/core/UIComponent", "comparativemap/comparativemap/model/models"],
+  (e, t) => {
+    "use strict";
+    return e.extend("comparativemap.comparativemap.Component", {
+      metadata: {
+        manifest: "json",
+        interfaces: ["sap.ui.core.IAsyncContentCreation"],
+      },
+      init() {
+        e.prototype.init.apply(this, arguments);
+        this.setModel(t.createDeviceModel(), "device");
+        this.getRouter().initialize();
+      },
+    });
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/App.controller",
+  ["sap/ui/core/mvc/Controller"],
+  (e) => {
+    "use strict";
+    return e.extend("comparativemap.comparativemap.controller.App", {
+      onInit() {},
+    });
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/ComparativeMap.controller",
+  [
+    "sap/ui/core/mvc/Controller",
+    "sap/ui/model/Sorter",
+    "sap/ui/model/Filter",
+    "sap/ui/model/FilterOperator",
+    "comparativemap/comparativemap/model/models",
+    "comparativemap/comparativemap/controller/prefs/PrefsStore",
+    "comparativemap/comparativemap/controller/components/ViewSettings",
+    "comparativemap/comparativemap/controller/services/ODataService",
+    "comparativemap/comparativemap/controller/services/SimulationMapper",
+    "comparativemap/comparativemap/controller/services/Dialogs",
+    "comparativemap/comparativemap/controller/services/AwardService",
+    "comparativemap/comparativemap/controller/helpers/KeyUtils",
+    "comparativemap/comparativemap/controller/helpers/Debug",
+    "comparativemap/comparativemap/controller/helpers/Formatters",
+    "sap/m/MessageToast",
+    "sap/m/MessageBox",
+    "sap/ui/Device",
+  ],
+  function (e, t, r, o, s, a, i, n, c, l, p, m, d, u, h, g, f) {
+    "use strict";
+    return e.extend("comparativemap.comparativemap.controller.ComparativeMap", {
+      formatter: u,
+      onInit() {
+        this.getView().setModel(s.createVM(), "vm");
+        this.getView().setModel(s.createQM(), "qm");
+        this._prefs = a.load();
+        this.mGroupFunctions = {
+          supplierName: (e) => {
+            const t = e.getProperty("supplierName") || "";
+            return { key: t, text: t };
+          },
+          arb_PurchasingOrganization: (e) => {
+            const t = e.getProperty("arb_PurchasingOrganization") || "";
+            return { key: t, text: "Org. Compras " + t };
+          },
+          arb_CompanyCode: (e) => {
+            const t = e.getProperty("arb_CompanyCode") || "";
+            return { key: t, text: "Empresa " + t };
+          },
+        };
+        this._vs = i.create(
+          this.getView(),
+          this._prefs,
+          this._getDistinct.bind(this),
+          this.mGroupFunctions,
+        );
+        this._vs.applyFiltersFromPrefs();
+        this._vs.applyGroupSortFromPrefs();
+      },
+      async onBuscar() {
+        const e = this.getView();
+        const t = e.getModel();
+        const r = e.getModel("vm");
+        const o = e.getModel("qm");
+        const s = (e.byId("inputDoID").getValue() || "").trim();
+        const a = e.byId("tblDocs");
+        try {
+          if (!t) throw new Error("Modelo OData V4 não encontrado.");
+          if (!s) {
+            sap.m.MessageToast.show("Informe o Doc ID");
+            return;
+          }
+          a.removeSelections(true);
+          o?.setProperty("/idByKey", {});
+          o?.setProperty("/simSourceRows", []);
+          a.setBusy(true);
+          const i = await n.fetchQuotes(e, s);
+          const c = (Array.isArray(i?.items) ? i.items : []).map((e) =>
+            Object.assign({}, e, { _originalQty: Number(e.quantity) || 0 }),
+          );
+          r.setProperty("/header", i?.header || {});
+          r.setProperty("/rows", c);
+          r.setProperty("/headerRows", i?.header ? [i.header] : []);
+          this.byId("tblDocs").getBinding("items")?.refresh(true);
+          sap.ui.getCore().applyChanges();
+          a.removeSelections(true);
+          if (!c.length) h.show("Nenhum item retornado para esse Doc ID.");
+        } catch (e) {
+          console.error("[onBuscar] ERRO:", e);
+          g.error("Falha ao buscar dados: " + (e.message || e));
+        } finally {
+          a.setBusy(false);
+        }
+      },
+      onQtyInlineChange(e) {
+        const t = e.getSource()?.getBindingContext("vm");
+        if (!t) return;
+        const r = t.getObject() || {};
+        const o = Number(r._originalQty) || 0;
+        let s = Number(r.quantity);
+        if (isNaN(s) || s < 0) s = 0;
+        if (o && s > o) s = o;
+        r.quantity = Math.floor(s);
+        t.getModel().checkUpdate(true);
+      },
+      onCloseDialog(e) {
+        l.closeAny(this, e);
+      },
+      async onSimularPress() {
+        const e = this.getView();
+        const t = e.getModel("vm");
+        const r = e.getModel("qm");
+        let o = e.getModel("res");
+        if (!o) {
+          o = new sap.ui.model.json.JSONModel({ rows: [] });
+          e.setModel(o, "res");
+        } else {
+          o.setData({ rows: [] });
+        }
+        console.groupCollapsed("[SIMULAR] clique");
+        try {
+          const o = c.getHeaderFromVM(t);
+          d.dbg("Header bruto (vm>/headerRows[0] ou vm>/header)", o);
+          const s = this.byId("tblDocs");
+          if (!s) throw new Error("Tabela 'tblDocs' não encontrada.");
+          const a = s.getSelectedItems();
+          if (!a.length)
+            throw new Error("Selecione pelo menos 1 item para simular.");
+          const i = a
+            .map((e) => e.getBindingContext("vm")?.getObject?.())
+            .filter(
+              (e) =>
+                e && (e.MaterialCode || e.materialCode || e.ItemId || e.itemId),
+            );
+          if (!i.length) {
+            s.removeSelections(true);
+            throw new Error(
+              "Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente.",
+            );
+          }
+          d.dbg(`Linhas selecionadas (count=${i.length})`, i);
+          r.setProperty("/simSourceRows", i);
+          c.prepareQMFromSelection(i, r);
+          const p = c.mapHeaderFromAriba(o, i[0]);
+          const m = i.map((e, t) => c.mapRowToPOItem(e, t));
+          const u = i.map((e, t) => ({
+            poItem: m[t].poItem,
+            schedLine: 1,
+            deliveryDate: c.getDeliveryDateFromRow(e),
+            quantity: m[t].quantity,
+          }));
+          const h = [];
+          if (!p.docType) h.push("Tipo de Pedido (docType)");
+          if (!p.compCode) h.push("Empresa (compCode)");
+          if (!p.purchOrg) h.push("Org. de Compras (purchOrg)");
+          if (!p.purchGroup) h.push("Grupo de Compras (purchGroup)");
+          if (!p.vendor) h.push("Fornecedor (vendor/LIFNR)");
+          if (!p.currency) h.push("Moeda (currency)");
+          const f = [];
+          m.forEach((e, t) => {
+            const r = `Item ${String((t + 1) * 10).padStart(5, "0")}`;
+            if (!e.plant) f.push(`${r}: Centro (plant)`);
+            if (!e.unit) f.push(`${r}: Unidade (unit)`);
+            if (!e.quantity || e.quantity <= 0)
+              f.push(`${r}: Quantidade (quantity)`);
+            if (!e.material && !e.shortText)
+              f.push(`${r}: MATERIAL ou SHORT_TEXT`);
+          });
+          if (h.length || f.length) {
+            const e = [
+              h.length ? "Cabeçalho faltando:\n- " + h.join("\n- ") : "",
+              f.length ? "Itens faltando:\n- " + f.join("\n- ") : "",
+            ]
+              .filter(Boolean)
+              .join("\n\n");
+            throw new Error(e);
+          }
+          const y = [{ header: p, items: m, schedules: u, testRun: true }];
+          sap.ui.core.BusyIndicator.show(0);
+          const v = await n.simularPO(e, y, 4);
+          d.dbg("Resultado bruto da BAPI (result0)", v);
+          if (v?.error || v?.success === false) {
+            if (l.showError) {
+              l.showError(
+                "Erro na simulação",
+                v?.message || "Falha ao simular a compra.",
+                v,
+              );
+            } else {
+              g.error(v?.message || "Falha ao simular a compra.", {
+                details: JSON.stringify(v, null, 2),
+                contentWidth: "640px",
+              });
+            }
+            console.groupEnd();
+            return;
+          }
+          const w = v?.returnMessages || v?.mensagens || [];
+          const I =
+            Array.isArray(w) && w.some((e) => e.type === "E" || e.type === "A");
+          if (I) {
+            l.showBapiMessages(w);
+            console.groupEnd();
+            return;
+          }
+          const _ = c.buildResRowsFromBapiResult(v, r);
+          l.openResultDialog(e, _, this);
+          if (Array.isArray(w) && w.length) {
+            l.showBapiMessages(w);
+          }
+          console.groupEnd();
+        } catch (e) {
+          console.error("[SIMULAR] ERRO:", e);
+          console.groupEnd();
+          const t =
+            e?.cause?.response?.body ||
+            e?.cause?.message ||
+            e?.stack ||
+            (typeof e === "object" ? JSON.stringify(e, null, 2) : String(e));
+          g.error(e.message || String(e), {
+            details: t,
+            contentWidth: "640px",
+          });
+        } finally {
+          sap.ui.core.BusyIndicator.hide();
+        }
+      },
+      onAwardQtyChangeRes(e) {
+        const t = e.getSource();
+        const r = t.getBindingContext("res");
+        const o = r?.getObject() || {};
+        let s = Number(t.getValue());
+        if (isNaN(s) || s < 0) s = 0;
+        const a = Number(o.originalQty) || 0;
+        if (s > a) s = a;
+        o.qtyAward = Math.floor(s);
+        r.getModel().checkUpdate(true);
+        t.setValue(String(o.qtyAward));
+      },
+      async onAwardDirect() {
+        const e = this.getView();
+        const t = e.getModel();
+        const r = e.getModel("vm");
+        const o = this._dlgRes?.getContent?.()[0];
+        const s = o?.getSelectedContexts("res").map((e) => e.getObject()) || [];
+        if (!s.length) {
+          h.show("Selecione ao menos uma linha para premiar.");
+          return;
+        }
+        const a = r?.getProperty("/rows") || [];
+        const i = p.validarEMontarPayload(
+          a,
+          s,
+          this._ensureInvitationResourceId.bind(this),
+        );
+        if (!i) return;
+        const c =
+          r.getProperty("/header/docId") ||
+          e.getModel("res")?.getProperty("/header/docId");
+        if (!c) {
+          g.error("DocID do evento não encontrado no header.");
+          return;
+        }
+        sap.ui.core.BusyIndicator.show(0);
+        try {
+          const t = await n.createScenario(e, {
+            eventId: c,
+            title: "Premiação via UI (direto)",
+            scenarioType: 0,
+            supplierBids: i,
+          });
+          sap.ui.core.BusyIndicator.hide();
+          if (t?.success) {
+            g.success(
+              `Cenário criado com sucesso!\nScenario ID: ${t.scenarioId || "(n/a)"}\nCorrelation-ID: ${t.correlationId || "(n/a)"}`,
+            );
+            this._dlgRes?.close();
+          } else {
+            g.warning("CreateScenario executou, porém sem success=true.");
+          }
+        } catch (e) {
+          sap.ui.core.BusyIndicator.hide();
+          const t = e?.message || "Falha ao criar cenário.";
+          g.error(t);
+        }
+      },
+      handleFilterButtonPressed() {
+        this._vs.openFilterDialog((e) =>
+          this._vs.handleFilterDialogConfirm(e, (e) => {
+            this._prefs = e;
+            a.save(e);
+          }),
+        );
+      },
+      handleSortButtonPressed() {
+        this._vs.openSortDialog((e) =>
+          this._vs.handleSortDialogConfirm(e, (e) => {
+            this._prefs = e;
+            a.save(e);
+          }),
+        );
+      },
+      handleGroupButtonPressed() {
+        this._vs.openGroupDialog(
+          (e) =>
+            this._vs.handleGroupDialogConfirm(e, (e) => {
+              this._prefs = e;
+              a.save(e);
+            }),
+          () => {},
+        );
+      },
+      onFilterSelectAllFornecedor() {
+        this._prefs.filter.fornecedor = this._getDistinct("supplierName");
+        a.save(this._prefs);
+        this._vs.applyFiltersFromPrefs();
+        h.show("Fornecedor: selecionado tudo.");
+      },
+      onFilterClearFornecedor() {
+        this._prefs.filter.fornecedor = [];
+        a.save(this._prefs);
+        this._vs.applyFiltersFromPrefs();
+        h.show("Fornecedor: seleção limpa.");
+      },
+      onFilterSelectAllNomeItem() {
+        this._prefs.filter.nomeItem = this._getDistinct("itemDescription");
+        a.save(this._prefs);
+        this._vs.applyFiltersFromPrefs();
+        h.show("Nome do item: selecionado tudo.");
+      },
+      onFilterClearNomeItem() {
+        this._prefs.filter.nomeItem = [];
+        a.save(this._prefs);
+        this._vs.applyFiltersFromPrefs();
+        h.show("Nome do item: seleção limpa.");
+      },
+      _getDistinct(e) {
+        const t = this.getView().getModel("vm").getProperty("/rows") || [];
+        const r = new Set();
+        t.forEach((t) => {
+          const o = t[e];
+          if (o !== undefined && o !== null && o !== "") r.add(String(o));
+        });
+        return Array.from(r).sort((e, t) => e.localeCompare(t, "pt-BR"));
+      },
+      _ensureInvitationResourceId(e, t) {
+        if (!e) return null;
+        const r = String(e);
+        if (r.includes("_")) return r;
+        if (t) return `${r}_${String(t)}`;
+        return r;
+      },
+      onExit() {
+        if (this._dlgRes) {
+          this._dlgRes.destroy(true);
+          this._dlgRes = null;
+        }
+      },
+    });
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/components/ViewSettings",
+  [
+    "sap/m/ViewSettingsDialog",
+    "sap/m/ViewSettingsItem",
+    "sap/m/ViewSettingsFilterItem",
+    "sap/ui/Device",
+    "sap/ui/model/Filter",
+    "sap/ui/model/FilterOperator",
+  ],
+  function (e, t, o, r, s, n) {
+    "use strict";
+    function i(i, a, l, p) {
+      let c = null,
+        d = null,
+        m = null,
+        u = false;
+      function f(s) {
+        if (c) {
+          c.destroy();
+          c = null;
+        }
+        c = new e({ confirm: s });
+        if (r.system.desktop) c.addStyleClass("sapUiSizeCompact");
+        i.addDependent(c);
+        const n = new o({ text: "Fornecedor", key: "supplierName" });
+        l("supplierName").forEach((e) => {
+          const o = new t({ text: e, key: `supplierName___EQ___${e}` });
+          if (a.filter.fornecedor?.includes(e)) o.setSelected(true);
+          n.addItem(o);
+        });
+        c.addFilterItem(n);
+        const p = new o({ text: "Nome do item", key: "itemDescription" });
+        l("itemDescription").forEach((e) => {
+          const o = new t({ text: e, key: `itemDescription___EQ___${e}` });
+          if (a.filter.nomeItem?.includes(e)) o.setSelected(true);
+          p.addItem(o);
+        });
+        c.addFilterItem(p);
+        c.open();
+      }
+      function g(o) {
+        if (!d) {
+          d = new e({ confirm: o });
+          if (r.system.desktop) d.addStyleClass("sapUiSizeCompact");
+          i.addDependent(d);
+        }
+        d.destroySortItems();
+        [
+          { text: "Fornecedor", key: "supplierName" },
+          { text: "Nome do item", key: "itemDescription" },
+          { text: "Tipo de pedido", key: "arb_Document_Type" },
+          { text: "Org. Compras", key: "arb_PurchasingOrganization" },
+          { text: "Grp. Compradores", key: "arb_PurchasingGroup" },
+          { text: "Empresa", key: "arb_CompanyCode" },
+        ].forEach((e) => d.addSortItem(new t(e)));
+        if (a.sort.key) {
+          d.setSelectedSortItem(a.sort.key);
+          d.setSortDescending(!!a.sort.desc);
+        }
+        d.open();
+      }
+      function y(o, s) {
+        if (!m) {
+          m = new e({
+            confirm: o,
+            reset: () => {
+              u = true;
+              s?.();
+            },
+          });
+          if (r.system.desktop) m.addStyleClass("sapUiSizeCompact");
+          i.addDependent(m);
+        }
+        m.destroyGroupItems();
+        [
+          { text: "Fornecedor", key: "supplierName" },
+          { text: "Org. Compras", key: "arb_PurchasingOrganization" },
+          { text: "Empresa", key: "arb_CompanyCode" },
+        ].forEach((e) => m.addGroupItem(new t(e)));
+        if (a.group.key) {
+          m.setSelectedGroupItem(a.group.key);
+          m.setGroupDescending(!!a.group.desc);
+        }
+        m.open();
+      }
+      function k() {
+        const e = i.byId("tblDocs");
+        if (!e) return;
+        const t = e.getBinding("items");
+        if (!t) return;
+        const o = [];
+        if (a.filter.fornecedor?.length) {
+          o.push(
+            new s({
+              and: false,
+              filters: a.filter.fornecedor.map(
+                (e) => new s("supplierName", n.EQ, e),
+              ),
+            }),
+          );
+        }
+        if (a.filter.nomeItem?.length) {
+          o.push(
+            new s({
+              and: false,
+              filters: a.filter.nomeItem.map(
+                (e) => new s("itemDescription", n.EQ, e),
+              ),
+            }),
+          );
+        }
+        t.filter(o);
+        const r = i.byId("vsdFilterBar");
+        const l = i.byId("vsdFilterLabel");
+        if (r && l) {
+          if (o.length) {
+            r.setVisible(true);
+            const e = [
+              a.filter.fornecedor?.length
+                ? `Fornecedor: ${a.filter.fornecedor.join(", ")}`
+                : "",
+              a.filter.nomeItem?.length
+                ? `Nome do item: ${a.filter.nomeItem.join(", ")}`
+                : "",
+            ]
+              .filter(Boolean)
+              .join("  |  ");
+            l.setText(e);
+          } else {
+            r.setVisible(false);
+            l.setText("");
+          }
+        }
+      }
+      function I() {
+        const e = i.byId("tblDocs");
+        if (!e) return;
+        const t = e.getBinding("items");
+        if (!t) return;
+        const o = [];
+        if (a.group.key)
+          o.push(
+            new sap.ui.model.Sorter(
+              a.group.key,
+              !!a.group.desc,
+              p[a.group.key],
+            ),
+          );
+        if (a.sort.key)
+          o.push(new sap.ui.model.Sorter(a.sort.key, !!a.sort.desc));
+        if (o.length) t.sort(o);
+      }
+      function S(e, t) {
+        const o = e.getParameters().filterItems || [];
+        const r = {};
+        o.forEach((e) => {
+          const [t, o, s, n] = e.getKey().split("___");
+          (r[t] ||= []).push(
+            new sap.ui.model.Filter(
+              t,
+              sap.ui.model.FilterOperator[o] || o,
+              s,
+              n,
+            ),
+          );
+        });
+        const s = [];
+        Object.keys(r).forEach((e) => {
+          const t = r[e];
+          s.push(
+            t.length > 1
+              ? new sap.ui.model.Filter({ filters: t, and: false })
+              : t[0],
+          );
+        });
+        const n = i.byId("tblDocs");
+        n.getBinding("items").filter(s);
+        const l = Object.assign({}, a, {
+          filter: {
+            fornecedor: (r.supplierName || []).map((e) => String(e.oValue1)),
+            nomeItem: (r.itemDescription || []).map((e) => String(e.oValue1)),
+          },
+        });
+        t(l);
+        k();
+      }
+      function h(e, t) {
+        const o = e.getParameters();
+        const r = o.sortItem.getKey();
+        const s = o.sortDescending;
+        const n = i.byId("tblDocs");
+        const l = [];
+        if (a.group.key)
+          l.push(
+            new sap.ui.model.Sorter(
+              a.group.key,
+              !!a.group.desc,
+              p[a.group.key],
+            ),
+          );
+        l.push(new sap.ui.model.Sorter(r, s));
+        n.getBinding("items").sort(l);
+        t(Object.assign({}, a, { sort: { key: r, desc: !!s } }));
+      }
+      function D(e, t) {
+        const o = e.getParameters();
+        const r = i.byId("tblDocs");
+        const s = r.getBinding("items");
+        if (o.groupItem) {
+          const e = o.groupItem.getKey();
+          const r = o.groupDescending;
+          const n = p[e];
+          const i = [new sap.ui.model.Sorter(e, r, n)];
+          if (a.sort.key)
+            i.push(new sap.ui.model.Sorter(a.sort.key, !!a.sort.desc));
+          s.sort(i);
+          t(Object.assign({}, a, { group: { key: e, desc: !!r } }));
+        } else if (u) {
+          if (a.sort.key)
+            s.sort([new sap.ui.model.Sorter(a.sort.key, !!a.sort.desc)]);
+          else s.sort();
+          u = false;
+          t(Object.assign({}, a, { group: { key: null, desc: false } }));
+        }
+      }
+      return {
+        openFilterDialog: f,
+        openSortDialog: g,
+        openGroupDialog: y,
+        handleFilterDialogConfirm: S,
+        handleSortDialogConfirm: h,
+        handleGroupDialogConfirm: D,
+        applyFiltersFromPrefs: k,
+        applyGroupSortFromPrefs: I,
+      };
+    }
+    return { create: i };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/helpers/Debug",
+  [],
+  function () {
+    "use strict";
+    function n(n) {
+      const e = new Set();
+      const o = JSON.parse(
+        JSON.stringify(n, (n, o) => {
+          if (typeof o === "function") return undefined;
+          if (typeof o === "object" && o !== null) {
+            if (e.has(o)) return;
+            e.add(o);
+          }
+          return o;
+        }),
+      );
+      e.clear();
+      return o;
+    }
+    function e(e, o) {
+      console.groupCollapsed("🔎 " + e);
+      try {
+        console.log(n(o));
+      } catch (n) {
+        console.log(o);
+      }
+      console.groupEnd();
+    }
+    return { dbg: e, safe: n };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/helpers/Formatters",
+  [],
+  function () {
+    "use strict";
+    function t(t) {
+      const n = Number(t);
+      return isNaN(n) ? "" : n.toFixed(2);
+    }
+    return { fmt2: t };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/helpers/KeyUtils",
+  [],
+  function () {
+    "use strict";
+    function t(t) {
+      return String(t || "")
+        .normalize("NFD")
+        .replace(/[\u0300-\u036f]/g, "")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLowerCase();
+    }
+    function n(t, n) {
+      const e = String(t || "");
+      return e.length >= n ? e : "0".repeat(n - e.length) + e;
+    }
+    function e(t) {
+      const n = String(t || "").replace(/\D/g, "");
+      return n ? n.padStart(10, "0") : null;
+    }
+    function r(t) {
+      return String(t?.MaterialCode || t?.materialCode || t?.ItemId || "");
+    }
+    function o(n) {
+      const e = String(n || "");
+      const r = e.replace(/\D/g, "");
+      const o = r.replace(/^0+/, "");
+      return t(o || r || e);
+    }
+    function i(t) {
+      const n = (t || "").toUpperCase();
+      const e = {
+        UN: "PC",
+        PC: "PC",
+        PÇ: "PC",
+        KG: "KG",
+        G: "G",
+        L: "L",
+        M: "M",
+        CX: "CX",
+      };
+      return e[n] || n.slice(0, 3);
+    }
+    function a(t) {
+      const n = String(t || "")
+        .split(/[ -]/)[0]
+        .trim();
+      return n.slice(0, 4);
+    }
+    function c(t) {
+      const n = (t || "").trim().toUpperCase();
+      const e = {
+        "": "0",
+        STD: "0",
+        STANDARD: "0",
+        MATERIAL: "0",
+        K: "2",
+        CONSIGNMENT: "2",
+        CONSIGNADO: "2",
+        L: "3",
+        SUBCONTRACTING: "3",
+        SUBCONTRATACAO: "3",
+        SUBCONTRATAÇÃO: "3",
+        S: "5",
+        "THIRD-PARTY": "5",
+        "THIRD PARTY": "5",
+        TERCEIROS: "5",
+        U: "7",
+        "STOCK TRANSFER": "7",
+        TRANSFERENCIA: "7",
+        TRANSFERÊNCIA: "7",
+        E: "A",
+        "ENHANCED LIMITS": "A",
+        LIMITS: "A",
+      };
+      return e[n] || "0";
+    }
+    return {
+      normKey: t,
+      zpad: n,
+      pad10: e,
+      getItemKey: r,
+      matKeyFromBapiMaterial: o,
+      mapUoM: i,
+      mapPlant: a,
+      mapItemCategory: c,
+    };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/prefs/PrefsStore",
+  ["sap/ui/util/Storage"],
+  function (e) {
+    "use strict";
+    const t = "tblDocs-prefs";
+    const n = new e(e.Type.local, "comparativemap");
+    function r() {
+      try {
+        const e = n.get(t);
+        if (e) return JSON.parse(e);
+      } catch (e) {}
+      return {
+        filter: { fornecedor: [], nomeItem: [] },
+        sort: { key: null, desc: false },
+        group: { key: null, desc: false },
+      };
+    }
+    function s(e) {
+      n.put(t, JSON.stringify(e));
+    }
+    return { load: r, save: s };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/services/AwardService",
+  ["sap/m/MessageBox"],
+  function (e) {
+    "use strict";
+    function i(i, n, t) {
+      const o = new Map();
+      (i || []).forEach((e) => {
+        const i = Number(e.itemId ?? e.ItemId);
+        if (!Number.isFinite(i)) return;
+        const n =
+          e.itemKey ||
+          e.itemDescription ||
+          e.MaterialCode ||
+          e.materialCode ||
+          String(i);
+        const t = Number(
+          e.originalQty ?? e.original ?? e.quantityOriginal ?? e.quantity ?? 0,
+        );
+        const r = o.get(i) || { label: n, original: 0 };
+        const a = Number.isFinite(t)
+          ? Math.max(r.original, Math.floor(t))
+          : r.original;
+        o.set(i, { label: n, original: a });
+      });
+      const r = new Map();
+      const a = [];
+      const s = [];
+      const l = [];
+      n.forEach((e) => {
+        const i = Number(e.itemId ?? e.ItemId);
+        if (!Number.isFinite(i)) {
+          a.push(
+            `${e.supplierName || "Fornecedor"} / ${e.materialCode || e.MaterialCode || e.itemKey || e.itemDescription || "(sem chave)"}`,
+          );
+          return;
+        }
+        const n =
+          e.itemKey ||
+          e.itemDescription ||
+          e.MaterialCode ||
+          e.materialCode ||
+          String(i);
+        const t = Number(
+          e.originalQty ?? e.original ?? e.quantityOriginal ?? e.quantity ?? 0,
+        );
+        if (!r.has(i)) r.set(i, { label: n, original: 0, rows: [] });
+        const o = r.get(i);
+        if (Number.isFinite(t) && t > o.original) o.original = Math.floor(t);
+        o.rows.push(e);
+      });
+      const c = [];
+      for (const [e, i] of o.entries()) {
+        if (!r.has(e)) c.push(`#${e} (${i.label})`);
+      }
+      if (c.length) {
+        e.error(
+          "Para concluir a premiação, TODOS os itens do evento devem estar selecionados.\n\nItens não selecionados:\n" +
+            c.join("\n"),
+        );
+        return null;
+      }
+      for (const [e, i] of r.entries()) {
+        const n = o.get(e);
+        const t = Math.floor(Number((n?.original ?? 0) || i.original || 0));
+        if (t <= 0) {
+          s.push(
+            `Item #${e} (${n?.label || i.label}): quantidade ORIGINAL inválida.`,
+          );
+          continue;
+        }
+        let r = 0;
+        i.rows.forEach((e) => {
+          let i = Math.floor(Number(e.qtyAward) || 0);
+          if (i < 0) i = 0;
+          if (i > t) i = t;
+          e.qtyAward = i;
+          r += i;
+        });
+        if (r !== t) {
+          s.push(
+            `Item #${e} (${n?.label || i.label}): restante ${t - r} (a soma deve fechar ${t}).`,
+          );
+        }
+      }
+      if (s.length) {
+        e.error(
+          "As quantidades por item precisam fechar com a quantidade ORIGINAL:\n\n" +
+            s.join("\n"),
+        );
+        return null;
+      }
+      for (const [e, i] of r.entries()) {
+        const n = o.get(e);
+        const r = Math.floor(Number((n?.original ?? 0) || i.original || 0));
+        let s = 0;
+        const c = i.rows.map((e, i) => {
+          const n = Math.round(((e.qtyAward * 100) / r) * 1e3) / 1e3;
+          s += n;
+          return { ix: i, p: n };
+        });
+        const u = Math.round((100 - s) * 1e3) / 1e3;
+        if (Math.abs(u) >= 0.001) {
+          const e = c.findLast?.((e) => e.p > 0)?.ix ?? c.length - 1;
+          if (e >= 0)
+            c[e].p = Math.max(0, Math.round((c[e].p + u) * 1e3) / 1e3);
+        }
+        c.forEach(({ ix: o, p: r }) => {
+          const s = i.rows[o];
+          if (r <= 0) return;
+          const c = t(s.invitationId, s.invitationEmail);
+          if (!c) {
+            a.push(
+              `${s.supplierName || "Fornecedor"} / #${e} (${n?.label || i.label})`,
+            );
+            return;
+          }
+          l.push({
+            itemId: e,
+            invitationId: String(c),
+            bidType: "Primary",
+            winningSplitType: 1,
+            winningSplitValue: Number(r.toFixed(3)),
+          });
+        });
+      }
+      if (!l.length || a.length) {
+        e.error(
+          "Itens sem identificação suficiente (itemId/invitationId). Revise a seleção.\n\n" +
+            (a.length ? `Pendentes:\n${a.join("\n")}` : ""),
+        );
+        return null;
+      }
+      return l;
+    }
+    return { validarEMontarPayload: i };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/services/Dialogs",
+  [
+    "sap/ui/model/json/JSONModel",
+    "sap/m/MessageToast",
+    "sap/m/MessageBox",
+    "sap/ui/core/Fragment",
+  ],
+  function (e, s, o, t) {
+    "use strict";
+    function a(e) {
+      return Array.isArray(e)
+        ? e.find((e) => e && e.isA && e.isA("sap.m.Dialog"))
+        : e && e.isA && e.isA("sap.m.Dialog")
+          ? e
+          : null;
+    }
+    async function n(s, o, n) {
+      const l = s.getModel("res") || new e({ rows: [] });
+      l.setData({ rows: o || [] });
+      s.setModel(l, "res");
+      if (n._dlgRes && n._dlgRes.destroy && !n._dlgRes.bIsDestroyed) {
+        try {
+          n._dlgRes.destroy();
+        } catch (e) {}
+        n._dlgRes = null;
+      }
+      const r = s.createId("resDlg-" + Date.now());
+      const i = await t.load({
+        id: r,
+        name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
+        controller: n,
+      });
+      const c = a(i);
+      if (!c) {
+        throw new Error(
+          "O fragmento ResultadoSimulacao não tem um <Dialog> como root.",
+        );
+      }
+      s.addDependent(c);
+      n._dlgRes = c;
+      c.attachAfterClose(() => {
+        try {
+          c.destroy();
+        } catch (e) {}
+        n._dlgRes = null;
+      });
+      c.open();
+    }
+    function l(e, s) {
+      try {
+        let e = s && s.getSource ? s.getSource() : null;
+        while (e && e.getParent && !(e.isA && e.isA("sap.m.Dialog")))
+          e = e.getParent();
+        if (e && e.isA && e.isA("sap.m.Dialog")) {
+          e.close();
+          return;
+        }
+      } catch (e) {}
+      e._dlgRes && e._dlgRes.close && e._dlgRes.close();
+      e._dlgAward && e._dlgAward.close && e._dlgAward.close();
+      e._dlgSim && e._dlgSim.close && e._dlgSim.close();
+      e._oSimDialog && e._oSimDialog.close && e._oSimDialog.close();
+    }
+    function r(e) {
+      const t = Array.isArray(e) ? e : [];
+      if (!t.length) {
+        s.show("Simulação concluída. Sem mensagens da BAPI.");
+        return;
+      }
+      const a = (e) => {
+        const s = [e.id, e.number].filter(Boolean).join("/");
+        const o = e.type ? `[${e.type}]` : "[?]";
+        return `${o} ${e.message || ""}${s ? ` (${s})` : ""}`;
+      };
+      const n = t.map(a).join("\n");
+      const l = t.some((e) => e.type === "E" || e.type === "A");
+      const r = t.some((e) => e.type === "W");
+      if (l) o.error(n, { title: "Mensagens da BAPI" });
+      else if (r) o.warning(n, { title: "Mensagens da BAPI" });
+      else o.success(n, { title: "Mensagens da BAPI" });
+    }
+    function i(e, s, t) {
+      const a = typeof t === "string" ? t : JSON.stringify(t, null, 2);
+      o.error(s || "Ocorreu um erro.", {
+        title: e || "Erro",
+        details: a,
+        contentWidth: "640px",
+      });
+    }
+    return {
+      openResultDialog: n,
+      closeAny: l,
+      showBapiMessages: r,
+      showError: i,
+    };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/services/ODataService",
+  [],
+  function () {
+    "use strict";
+    async function e(e, t) {
+      const r = e.getModel();
+      if (!r) throw new Error("Modelo OData V4 não encontrado.");
+      const n = r.bindContext("/GetQuotes(...)");
+      n.setParameter("docId", String(t));
+      await n.execute();
+      return n.getBoundContext().requestObject();
+    }
+    async function t(e, t, r) {
+      const n = e.getModel();
+      const o = n.bindContext("/simularPO(...)");
+      o.setParameter("requests", t);
+      o.setParameter("concurrency", Number(r) || 4);
+      await o.execute();
+      let a = o.getBoundContext().getObject();
+      if (typeof o.getReturnValueContext === "function") {
+        const e = o.getReturnValueContext();
+        if (e) a = e.getObject() || a;
+      }
+      const s = Array.isArray(a) ? a : a?.value || a?.results || [];
+      return Array.isArray(s) ? s[0] || {} : a || {};
+    }
+    async function r(
+      e,
+      { eventId: t, title: r, scenarioType: n, supplierBids: o },
+    ) {
+      const a = e.getModel();
+      const s = a.bindContext("/CreateScenario(...)");
+      s.setParameter("eventId", t);
+      s.setParameter("title", r);
+      s.setParameter("scenarioType", Number(n) || 0);
+      s.setParameter("supplierBids", o);
+      await s.execute();
+      return s.getBoundContext().getObject();
+    }
+    return { fetchQuotes: e, simularPO: t, createScenario: r };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/controller/services/SimulationMapper",
+  ["comparativemap/comparativemap/controller/helpers/KeyUtils"],
+  function (t) {
+    "use strict";
+    function e(t) {
+      const e = t.getFullYear(),
+        i = String(t.getMonth() + 1).padStart(2, "0"),
+        n = String(t.getDate()).padStart(2, "0");
+      return `${e}-${i}-${n}`;
+    }
+    function i(t) {
+      if (!t) return e(new Date());
+      const i =
+        typeof t === "object" && t.dateValue ? t.dateValue : String(t).trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(i)) return i;
+      if (/^\d{8}$/.test(i))
+        return `${i.slice(0, 4)}-${i.slice(4, 6)}-${i.slice(6, 8)}`;
+      const n = new Date(i);
+      if (!isNaN(n)) return e(n);
+      throw new Error("Data inválida: " + t);
+    }
+    function n(t) {
+      const e =
+        t?.DELIVERY_DATE_RAW?.dateValue ||
+        t?.DELIVERY_DATE_RAW ||
+        t?.deliveryDate;
+      return i(e || new Date());
+    }
+    function r(t) {
+      let e = t.getProperty("/headerRows");
+      if (Array.isArray(e)) e = e[0] || {};
+      if (!e || !Object.keys(e).length) e = t.getProperty("/header") || {};
+      return e;
+    }
+    function o(e, i) {
+      const n = (e.moeda || i?.currency || "BRL")
+        .toString()
+        .toUpperCase()
+        .slice(0, 3);
+      const r =
+        (e.fornecedor && String(e.fornecedor).trim()) ||
+        i?.SupplierCode ||
+        i?.suppliercode ||
+        i?.supplierId ||
+        i?.lifnr;
+      const o = t.zpad(String(r || "").replace(/\D/g, ""), 10);
+      const a = (e.tipoPedido || "NB").toString().trim();
+      const s = a.match(/([A-Z0-9]{2,4})\s*$/i);
+      const c = (s ? s[1] : a).toUpperCase().slice(0, 4);
+      return {
+        docType: c,
+        compCode: (e.companyCode || "").toString().slice(0, 4),
+        purchOrg: (e.purchasingOrganization || "").toString().slice(0, 4),
+        purchGroup: (e.purchasingGroup || "").toString().slice(0, 3),
+        vendor: o,
+        currency: n,
+        incoterms1: (e.incoterms1 || "").toString().toUpperCase().slice(0, 3),
+        incoterms2: (e.incoterms2 || "").toString().slice(0, 28),
+      };
+    }
+    function a(e, i) {
+      if (!e || typeof e !== "object") {
+        throw new Error(
+          `Linha selecionada inválida na posição ${i + 1}. Refaça a seleção.`,
+        );
+      }
+      const n = (i + 1) * 10;
+      const r = (e?.MaterialCode || e?.materialCode || "").toString().trim();
+      const o = r.match(/^(\d{4,})\b/);
+      const a = o ? t.zpad(o[1], 18) : "";
+      const s = (
+        e.itemDEscription ||
+        e.itemDescription ||
+        e.description ||
+        e.ItemDescription ||
+        ""
+      ).toString();
+      const c = s.slice(0, 40);
+      const l = t.mapUoM((e.unitOfMeasure || "").toString().toUpperCase());
+      const p = t.mapPlant((e.PLANT || "").toString());
+      const m = t.mapItemCategory((e.ItemCategory || "").toString());
+      const u = (e.grupo_de_materias || "").toString().slice(0, 9);
+      const d = e.price != null ? Number(e.price) : null;
+      const g = /^\d+$/.test(String(e.CodigoRequisicao || ""))
+        ? String(e.CodigoRequisicao).slice(0, 10)
+        : undefined;
+      const y = {
+        poItem: n,
+        plant: p,
+        material: a,
+        shortText: c,
+        quantity: Number(e?.quantity || 0),
+        unit: l,
+        netPrice: d,
+        itemCat: m,
+        matlGroup: u,
+        preqNo: g,
+      };
+      if (!y.material && !y.shortText)
+        console.warn(
+          `[ITEM ${String(n).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`,
+        );
+      if (!y.unit)
+        console.warn(`[ITEM ${String(n).padStart(5, "0")}] Unidade vazia`);
+      if (!y.plant)
+        console.warn(`[ITEM ${String(n).padStart(5, "0")}] Centro vazio`);
+      if (!y.quantity)
+        console.warn(
+          `[ITEM ${String(n).padStart(5, "0")}] Quantidade vazia/zero`,
+        );
+      return y;
+    }
+    function s(e, i) {
+      const n = {};
+      (e || []).filter(Boolean).forEach((e) => {
+        const i = t.normKey(t.getItemKey(e));
+        const r = t.normKey(e.supplierName || "");
+        const o = t.pad10(
+          e.lifnr ||
+            e.supplierId ||
+            (/^\d+$/.test(e.supplierName) ? e.supplierName : ""),
+        );
+        const a = {
+          itemId: e.itemId ?? e.ItemId ?? null,
+          invitationId: e.invitationId ?? e._invitationId ?? null,
+          invitationEmail: e.invitationEmail ?? null,
+          masterQty: Number(e._originalQty || e.quantity) || 0,
+          supplierName: e.supplierName || "",
+          lifnr: o,
+          materialCode: e.MaterialCode || e.materialCode || "",
+        };
+        n[`${i}|NAME:${r}`] = a;
+        if (o) n[`${i}|LIFNR:${o}`] = a;
+      });
+      i.setProperty("/idByKey", n);
+    }
+    function c(e, i) {
+      const n = i.getProperty("/idByKey") || {};
+      const r = i.getProperty("/simSourceRows") || [];
+      const o = (e?.header?.fornecedor || "").toString().padStart(10, "0");
+      const a = e?.header?.moeda || "BRL";
+      const s = Array.isArray(e?.itens) ? e.itens.filter(Boolean) : [];
+      return s.map((e, i) => {
+        const s = t.matKeyFromBapiMaterial(e?.material);
+        let c = n[`${s}|LIFNR:${o}`];
+        if (!c) {
+          const e = r[i] || {};
+          const o = t.normKey(e?.supplierName || "");
+          c = n[`${s}|NAME:${o}`];
+        }
+        if (!c) {
+          const i = String(e?.poItem || "");
+          if (/^\d+$/.test(i)) {
+            const e = Math.max(0, Math.floor(parseInt(i, 10) / 10) - 1);
+            const a = r[e] || {};
+            const s = t.normKey(t.getItemKey(a));
+            const l = t.pad10(a?.lifnr || a?.supplierId || o);
+            const p = t.normKey(a?.supplierName || "");
+            c = n[`${s}|LIFNR:${l}`] || n[`${s}|NAME:${p}`];
+          }
+        }
+        const l = r[i] || {};
+        const p =
+          c?.invitationId != null ? c.invitationId : (l.invitationId ?? null);
+        const m =
+          c?.invitationEmail != null
+            ? c.invitationEmail
+            : (l.invitationEmail ?? null);
+        const u = Number(e?.quantidade || 0) || 0;
+        const d = Number(e?.netPrice || 0) || 0;
+        const g = Number((d * u).toFixed(2));
+        const y = Number(c?.masterQty ?? 0) || 0;
+        const f = c?.materialCode || e?.material || t.getItemKey(l) || "";
+        return {
+          materialCode: f,
+          MaterialCode: f,
+          supplierName: c?.supplierName || l?.supplierName || o,
+          originalQty: y,
+          quantity: u,
+          qtyAward: 0,
+          price: d,
+          currency: a,
+          icms: null,
+          ipi: null,
+          total: g,
+          itemId: c?.itemId ?? null,
+          invitationId: p,
+          invitationEmail: m,
+          lifnr: o,
+          poItem: e?.poItem,
+        };
+      });
+    }
+    return {
+      toEdmDate: e,
+      normalizeDate: i,
+      getDeliveryDateFromRow: n,
+      getHeaderFromVM: r,
+      mapHeaderFromAriba: o,
+      mapRowToPOItem: a,
+      prepareQMFromSelection: s,
+      buildResRowsFromBapiResult: c,
+    };
+  },
+);
+sap.ui.predefine(
+  "comparativemap/comparativemap/model/models",
+  ["sap/ui/model/json/JSONModel", "sap/ui/Device", "sap/ui/model/BindingMode"],
+  function (e, i, n) {
+    "use strict";
+    function o() {
+      const o = new e(i);
+      o.setDefaultBindingMode(n.OneWay);
+      return o;
+    }
+    function t() {
+      const i = new e({
+        header: {
+          tipoPedido: "",
+          purchasingOrganization: "",
+          purchasingGroup: "",
+          companyCode: "",
+          incoterms1: "",
+          incoterms2: "",
+          paymentTerms: "",
+          docId: "",
+          moeda: "",
+          fornecedor: "",
+        },
+        headerRows: [],
+        rows: [],
+      });
+      i.setSizeLimit(1e4);
+      i.setDefaultBindingMode(n.TwoWay);
+      return i;
+    }
+    function r() {
+      const i = new e({
+        items: [],
+        perKey: {},
+        validAward: false,
+        _summaryText: "",
+        idx: {},
+        idByKey: {},
+        simSourceRows: [],
+      });
+      i.setSizeLimit(1e4);
+      return i;
+    }
+    return { createDeviceModel: o, createVM: t, createQM: r };
+  },
+);
 sap.ui.require.preload({
-	"comparativemap/comparativemap/i18n/i18n.properties":'',
-	"comparativemap/comparativemap/i18n/i18n_en.properties":'#NAME \nappTitle=Comparative Map\n\n#DESCRIPTION\nappDescription=Quotation comparison map\n\n#TITLES AND BUTTONS\ntitle=Quotation Overview\nlabelDoc=Enter the Quote ID\nbuscar=Search\ntituloTabela=Ariba Table\nsimular=Simulate Purchase\n\n#TABLE CONTENT\ninstrucaoTabela=Enter an ID and click Search\n\ncoluna1=Supplier\ncoluna2=Item\ncoluna3=Order Type\ncoluna4=Purchasing Org.\ncoluna5=Purchasing Group\ncoluna6=Company\ncoluna7=Incoterms\ncoluna8=Incoterms Location\ncoluna9=Payment Terms\n',
-	"comparativemap/comparativemap/i18n/i18n_pt.properties":'#XTIT: Application name\nappTitle=Mapa Comparativo\n\n#YDES: Application description\nappDescription=Mapa para compara\\u00e7\\u00e3o de cota\\u00e7\\u00f5es\n\n#TITULOS E BOTOES\n\ntitle=Compara\\u00e7\\u00e3o de Cota\\u00e7\\u00f5es\nlabelDoc=Digite o ID da Cota\\u00e7\\u00e3o\nbuscar=Buscar\ntituloTabela=Tabela do Ariba\nsimular=Simular Compra\n\n\n#PREENCHIMENTO DA TABELA\ninstrucaoTabela=Digite um ID e clique em Buscar\n\ncoluna1=Fornecedor\ncoluna2=Item\ncoluna3=Tipo de Pedido\ncoluna4=Org. de Compras\ncoluna5=Grp. Compradores\ncoluna6=Empresa\ncoluna7=Incoterms\ncoluna8=Local Incoterms\ncoluna9=Condi\\u00e7\\u00e3o de Pagamento',
-	"comparativemap/comparativemap/manifest.json":'{"_version":"1.76.0","sap.app":{"id":"comparativemap.comparativemap","type":"application","i18n":{"bundleUrl":"i18n/i18n.properties","supportedLocales":["","en","pt"]},"applicationVersion":{"version":"0.0.1"},"title":"{{appTitle}}","description":"{{appDescription}}","resources":"resources.json","sourceTemplate":{"id":"@sap/generator-fiori:basic","version":"1.18.5","toolsId":"c52af18c-7cee-4e63-a80a-95749707ab17"},"dataSources":{"mainService":{"uri":"odata/v4/service/","type":"OData","settings":{"annotations":[],"odataVersion":"4.0"}}}},"sap.ui":{"technology":"UI5","icons":{"icon":"","favIcon":"","phone":"","phone@2":"","tablet":"","tablet@2":""},"deviceTypes":{"desktop":true,"tablet":true,"phone":true}},"sap.cloud":{"public":true,"service":"comparativomap.service"},"sap.ui5":{"flexEnabled":true,"dependencies":{"minUI5Version":"1.139.0","libs":{"sap.m":{},"sap.ui.core":{}}},"contentDensities":{"compact":true,"cozy":true},"models":{"i18n":{"type":"sap.ui.model.resource.ResourceModel","settings":{"bundleName":"comparativemap.comparativemap.i18n.i18n","supportedLocales":["","en","pt"]}},"":{"type":"sap.ui.model.odata.v4.ODataModel","dataSource":"mainService","preload":true,"settings":{"synchronizationMode":"None","operationMode":"Server","autoExpandSelect":true,"earlyRequests":true}}},"resources":{"css":[{"uri":"css/style.css"}]},"routing":{"config":{"routerClass":"sap.m.routing.Router","controlAggregation":"pages","controlId":"app","transition":"slide","type":"View","viewType":"XML","path":"comparativemap.comparativemap.view","async":true,"viewPath":"comparativemap.comparativemap.view"},"routes":[{"name":"RouteComparativeMap","pattern":":?query:","target":["TargetComparativeMap"]}],"targets":{"TargetComparativeMap":{"id":"ComparativeMap","name":"ComparativeMap"}}},"rootView":{"viewName":"comparativemap.comparativemap.view.App","type":"XML","id":"App","async":true}}}',
-	"comparativemap/comparativemap/view/App.view.xml":'<mvc:View controllerName="comparativemap.comparativemap.controller.App"\n    displayBlock="true"\n    xmlns:mvc="sap.ui.core.mvc"\n    xmlns="sap.m"><App id="app"></App></mvc:View>',
-	"comparativemap/comparativemap/view/ComparativeMap.view.xml":'<mvc:View controllerName="comparativemap.comparativemap.controller.ComparativeMap"\n    xmlns:mvc="sap.ui.core.mvc"\n    xmlns="sap.m"\n    xmlns:l="sap.ui.layout"\n    xmlns:core="sap.ui.core"><Page id="page" showHeader="false"><Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo sapUiSmallMarginBottom"><HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween"><HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo"><Image id="logoTopoNf"\n                           src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"\n                           height="2rem"\n                           width="auto"\n                           class="sapUiTinyMarginBegin" /></HBox><HBox id="hboxCentroNf" width="100%" justifyContent="Center"><Text id="tituloCabecalhoNf"\n                          text="{i18n>title}"\n                          class="cabecalhoTexto" /></HBox><HBox id="hboxDireitaNf" width="2rem" /></HBox></Toolbar><l:VerticalLayout id="searchLayout" class="sapUiContentPadding"><HBox id="searchHBox" alignItems="Center" ><Label id="labelDoc" text="Doc ID:" labelFor="inputDoID" class="sapUiTinyMarginEnd"/><Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"\n                       submit=".onBuscar" /><Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"\n                        press=".onBuscar" class="sapUiTinyMarginBegin" /></HBox></l:VerticalLayout><VBox id="tableVBox" class="centralizarTabela"><Toolbar id="tableToolbar" class="cabecalhoTabela"><Text id="tituloTabelaAriba"\n                      text="{i18n>tituloTabela}"\n                      class="textoTabela" /></Toolbar><Table id="tblHeader"\n                   class="wideTable sapUiSmallMarginBottom"\n                   inset="false"\n                   mode="SingleSelectMaster"\n                   includeItemInSelection="true"\n                   sticky="ColumnHeaders"\n                   selectionChange=".onHeaderSelect"\n                   items="{vm>/headerRows}"><columns><Column id="colHdrDocId" width="5rem" hAlign="Center"><header><Text id="txtHdrDocId" text="Doc ID"/></header></Column><Column id="colHdrTipoPedido" width="5rem" hAlign="Center"><header><Text id="txtHdrTipoPedido" text="Tipo Pedido"/></header></Column><Column id="colHdrOrgCompras" width="5rem" hAlign="Center"><header><Text id="txtHdrOrgCompras" text="Org. Compras"/></header></Column><Column id="colHdrGrpCompradores" width="5rem" hAlign="Center"><header><Text id="txtHdrGrpCompradores" text="Grp. Compradores"/></header></Column><Column id="colHdrEmpresa" width="5rem" hAlign="Center"><header><Text id="txtHdrEmpresa" text="Empresa"/></header></Column><Column id="colHdrIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrIncoterms" text="Incoterms"/></header></Column><Column id="colHdrLocalIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrLocalIncoterms" text="Local Incoterms"/></header></Column><Column id="colHdrCondPagamento" width="5rem" hAlign="Center"><header><Text id="txtHdrCondPagamento" text="Cond. Pagamento"/></header></Column></columns><items><ColumnListItem id="hdrItemTemplate" type="Inactive"><cells><Text id="cellHdrDocId" text="{vm>docId}" wrapping="false"/><Text id="cellHdrTipoPedido" text="{vm>tipoPedido}" wrapping="false"/><Text id="cellHdrOrgCompras" text="{vm>purchasingOrganization}" wrapping="false"/><Text id="cellHdrGrpCompradores" text="{vm>purchasingGroup}" wrapping="false"/><Text id="cellHdrEmpresa" text="{vm>companyCode}" wrapping="false"/><Text id="cellHdrIncoterms" text="{vm>incoterms1}" wrapping="false"/><Text id="cellHdrLocalIncoterms" text="{vm>incoterms2}" wrapping="false"/><Text id="cellHdrCondPagamento" text="{vm>paymentTerms}" wrapping="false"/></cells></ColumnListItem></items></Table><VBox id="detailsVBox" class="sapUiSmallMarginTop"><Toolbar id="detailsToolbar"><Button id="btnSimular" text="{i18n>simular}" type="Ghost"\n                            icon="sap-icon://simulate"\n                            press=".onSimularPress" /><ToolbarSpacer id="spacerTabela"/><Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/><Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/><Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/></Toolbar><ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false"><Table id="tblDocs"\n                        \n                           inset="false"\n                           mode="MultiSelect"\n                           growing="true"\n                           noDataText="{i18n>instrucaoTabela}"\n                           items="{vm>/rows}"><infoToolbar><OverflowToolbar id="vsdFilterBar" visible="false"><Text id="vsdFilterLabel" /></OverflowToolbar></infoToolbar><columns><Column id="colFornecedor"      width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column><Column id="colNomeItem"        width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column><Column id="colQuantidade"      width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column><Column id="colPreco"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column><Column id="colMoeda"           width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column><Column id="colNCM"             width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column><Column id="colMVA"             width="5rem"     hAlign="Center"><header><Text id="txtHdrMVA"            text="MVA (%)"/></header></Column><Column id="colAliqICMS"        width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMS"       text="Alíquota ICMS (%)"/></header></Column><Column id="colICMSAp"          width="7rem"     hAlign="Center"><header><Text id="txtHdrICMSAp"         text="ICMS Apurado"/></header></Column><Column id="colAliqIPI"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqIPI"        text="Alíquota IPI (%)"/></header></Column><Column id="colIPIAp"           width="6rem"     hAlign="Center"><header><Text id="txtHdrIPIAp"          text="IPI Apurado"/></header></Column><Column id="colAliqPIS"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqPIS"        text="Alíquota PIS (%)"/></header></Column><Column id="colPISAp"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPISAp"          text="PIS Apurado"/></header></Column><Column id="colAliqCOFINS"      width="10rem"    hAlign="Center"><header><Text id="txtHdrAliqCOFINS"     text="Alíquota COFINS (%)"/></header></Column><Column id="colCOFINSAp"        width="8rem"     hAlign="Center"><header><Text id="txtHdrCOFINSAp"       text="COFINS Apurado"/></header></Column><Column id="colAliqICMSIntra"   width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMSIntra"  text="Alíquota ICMS Interna (%)"/></header></Column><Column id="colOrigem"          width="9rem"     hAlign="Center"><header><Text id="txtHdrOrigem"         text="Origem do Material"/></header></Column><Column id="colPrecoEstendido"  width="9rem"     hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column><Column id="colCentro"          width="15rem"    hAlign="Center"><header><Text id="txtHdrCentro"         text="Centro"/></header></Column><Column id="colCategoriaItem"   width="10rem"    hAlign="Center"><header><Text id="txtHdrCategoriaItem"  text="Categoria do Item"/></header></Column><Column id="colReq"             width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column><Column id="colGrpMateriais"    width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column><Column id="colCodMaterial"     width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column><Column id="coluna"             visible="false"><Text id = "textotax" text="deliverydate"/></Column><Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column></columns><items><ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress"><cells><Text id="cellFornecedor"     text="{= ${vm>supplierName}                    || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>supplierName}"/><Text id="cellNomeItem"       text="{= ${vm>itemDescription}                 || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/><StepInput id="cellQuantidade" value="{ path: \'vm>quantity\', type: \'sap.ui.model.type.Float\', constraints: { minimum: 0 } }" step="1" width="7rem" change=".onQtyInlineChange" /><Text id="cellPreco"          text="{= ${vm>price}                           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellMoeda"          text="{= ${vm>currency}                        || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellNCM"            text="{= ${vm>ncm}                             || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellMVA"            text="{= ${vm>mva}                             || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}         || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}       || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}        || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna} || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}    || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}                   || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellCentro"         text="{= ${vm>PLANT}                           || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>PLANT}"/><Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                    || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/><Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/><Text id="deliverydate"       text="{= ${vm>DELIVERY_DATE_RAW}               || \'-\'}"    visible="false"/><Text id="suppliercodeText"   text="{= ${vm>suppliercode}                    || \'-\'}"    visible="false"/></cells></ColumnListItem></items></Table></ScrollContainer></VBox></VBox></Page></mvc:View>',
-	"comparativemap/comparativemap/view/fragments/ResultadoSimulacao.fragment.xml":'<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core"><Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="1000px" draggable="true" resizable="true"><Table id="_IDGenTable2" items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect"\n           autoPopinMode="true" growing="true"><columns><Column id="_IDGenColumn14" width="12rem"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column><Column id="_IDGenColumn15" width="10rem"><header><Text id="_IDGenText25" text="Item"/></header></Column><Column id="_IDGenColumn30" width="6rem"  hAlign="End"><header><Text id="_IDGenText47" text="Quantidade"/></header></Column><Column id="_IDGenColumn16" width="6rem" hAlign="End"><header><Text id="_IDGenText26" text="Qtd Simulada"/></header></Column><Column id="_IDGenColumn29" width="9rem" hAlign="Center"><header><Text id="_IDGenText46" text="Qtd p/ premiar"/></header></Column><Column id="_IDGenColumn17" width="8rem" hAlign="End"><header><Text id="_IDGenText27" text="Preço"/></header></Column><Column id="_IDGenColumn18" width="8rem" hAlign="End"><header><Text id="_IDGenText28" text="ICMS"/></header></Column><Column id="_IDGenColumn19" width="8rem" hAlign="End"><header><Text id="_IDGenText29" text="IPI"/></header></Column><Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column><Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column><Column id="_IDGenColumn22" visible="true" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column></columns><items><ColumnListItem id="_IDGenColumnListItem2"><cells><Text id="_IDGenText33" text="{res>supplierName}"/><Text id="_IDGenText34" text="{res>materialCode}"/><ObjectNumber id="_IDGenObjectNumber12"  number="{res>originalQty}"/><ObjectNumber id="_IDGenObjectNumber4" number="{res>quantity}"/><Input id="_IDGenInput3" type="Number"\n                   value="{path:\'res>qtyAward\', type:\'sap.ui.model.type.Integer\'}"\n                   liveChange=".onAwardQtyChangeRes"\n                   width="7rem"/><ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/><ObjectNumber id="_IDGenObjectNumber6" number="{res>icms}"/><ObjectNumber id="_IDGenObjectNumber7" number="{res>ipi}"/><ObjectNumber id="_IDGenObjectNumber8" number="{res>total}" unit="{res>currency}"/><Text id="_IDGenText35" text="{res>itemId}"/><Text id="_IDGenText36" text="{res>invitationId}"/></cells></ColumnListItem></items></Table><beginButton><Button id="_IDGenButton4" text="Premiar" type="Emphasized" press=".onAwardDirect"/></beginButton><endButton><Button id="_IDGenButton6" text="Fechar" press=".onCloseDialog"/></endButton></Dialog></core:FragmentDefinition>\n'
+  "comparativemap/comparativemap/i18n/i18n.properties": "",
+  "comparativemap/comparativemap/i18n/i18n_en.properties":
+    "#NAME \nappTitle=Comparative Map\n\n#DESCRIPTION\nappDescription=Quotation comparison map\n\n#TITLES AND BUTTONS\ntitle=Quotation Overview\nlabelDoc=Enter the Quote ID\nbuscar=Search\ntituloTabela=Ariba Table\nsimular=Simulate Purchase\n\n#TABLE CONTENT\ninstrucaoTabela=Enter an ID and click Search\n\ncoluna1=Supplier\ncoluna2=Item\ncoluna3=Order Type\ncoluna4=Purchasing Org.\ncoluna5=Purchasing Group\ncoluna6=Company\ncoluna7=Incoterms\ncoluna8=Incoterms Location\ncoluna9=Payment Terms\n",
+  "comparativemap/comparativemap/i18n/i18n_pt.properties":
+    "#XTIT: Application name\nappTitle=Mapa Comparativo\n\n#YDES: Application description\nappDescription=Mapa para compara\\u00e7\\u00e3o de cota\\u00e7\\u00f5es\n\n#TITULOS E BOTOES\n\ntitle=Compara\\u00e7\\u00e3o de Cota\\u00e7\\u00f5es\nlabelDoc=Digite o ID da Cota\\u00e7\\u00e3o\nbuscar=Buscar\ntituloTabela=Tabela do Ariba\nsimular=Simular Compra\n\n\n#PREENCHIMENTO DA TABELA\ninstrucaoTabela=Digite um ID e clique em Buscar\n\ncoluna1=Fornecedor\ncoluna2=Item\ncoluna3=Tipo de Pedido\ncoluna4=Org. de Compras\ncoluna5=Grp. Compradores\ncoluna6=Empresa\ncoluna7=Incoterms\ncoluna8=Local Incoterms\ncoluna9=Condi\\u00e7\\u00e3o de Pagamento",
+  "comparativemap/comparativemap/manifest.json":
+    '{"_version":"1.76.0","sap.app":{"id":"comparativemap.comparativemap","type":"application","i18n":{"bundleUrl":"i18n/i18n.properties","supportedLocales":["","en","pt"]},"applicationVersion":{"version":"0.0.1"},"title":"{{appTitle}}","description":"{{appDescription}}","resources":"resources.json","sourceTemplate":{"id":"@sap/generator-fiori:basic","version":"1.18.5","toolsId":"c52af18c-7cee-4e63-a80a-95749707ab17"},"dataSources":{"mainService":{"uri":"odata/v4/service/","type":"OData","settings":{"annotations":[],"odataVersion":"4.0"}}}},"sap.ui":{"technology":"UI5","icons":{"icon":"","favIcon":"","phone":"","phone@2":"","tablet":"","tablet@2":""},"deviceTypes":{"desktop":true,"tablet":true,"phone":true}},"sap.cloud":{"public":true,"service":"comparativomap.service"},"sap.ui5":{"flexEnabled":true,"dependencies":{"minUI5Version":"1.139.0","libs":{"sap.m":{},"sap.ui.core":{}}},"contentDensities":{"compact":true,"cozy":true},"models":{"i18n":{"type":"sap.ui.model.resource.ResourceModel","settings":{"bundleName":"comparativemap.comparativemap.i18n.i18n","supportedLocales":["","en","pt"]}},"":{"type":"sap.ui.model.odata.v4.ODataModel","dataSource":"mainService","preload":true,"settings":{"synchronizationMode":"None","operationMode":"Server","autoExpandSelect":true,"earlyRequests":true}}},"resources":{"css":[{"uri":"css/style.css"}]},"routing":{"config":{"routerClass":"sap.m.routing.Router","controlAggregation":"pages","controlId":"app","transition":"slide","type":"View","viewType":"XML","path":"comparativemap.comparativemap.view","async":true,"viewPath":"comparativemap.comparativemap.view"},"routes":[{"name":"RouteComparativeMap","pattern":":?query:","target":["TargetComparativeMap"]}],"targets":{"TargetComparativeMap":{"id":"ComparativeMap","name":"ComparativeMap"}}},"rootView":{"viewName":"comparativemap.comparativemap.view.App","type":"XML","id":"App","async":true}}}',
+  "comparativemap/comparativemap/view/App.view.xml":
+    '<mvc:View controllerName="comparativemap.comparativemap.controller.App"\n    displayBlock="true"\n    xmlns:mvc="sap.ui.core.mvc"\n    xmlns="sap.m"><App id="app"></App></mvc:View>',
+  "comparativemap/comparativemap/view/ComparativeMap.view.xml":
+    '<mvc:View controllerName="comparativemap.comparativemap.controller.ComparativeMap"\n    xmlns:mvc="sap.ui.core.mvc"\n    xmlns="sap.m"\n    xmlns:l="sap.ui.layout"\n    xmlns:core="sap.ui.core"><Page id="page" showHeader="false"><Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo sapUiSmallMarginBottom"><HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween"><HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo"><Image id="logoTopoNf"\n                           src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"\n                           height="2rem"\n                           width="auto"\n                           class="sapUiTinyMarginBegin" /></HBox><HBox id="hboxCentroNf" width="100%" justifyContent="Center"><Text id="tituloCabecalhoNf"\n                          text="{i18n>title}"\n                          class="cabecalhoTexto" /></HBox><HBox id="hboxDireitaNf" width="2rem" /></HBox></Toolbar><l:VerticalLayout id="searchLayout" class="sapUiContentPadding"><HBox id="searchHBox" alignItems="Center" ><Label id="labelDoc" text="Doc ID:" labelFor="inputDoID" class="sapUiTinyMarginEnd"/><Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"\n                       submit=".onBuscar" /><Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"\n                        press=".onBuscar" class="sapUiTinyMarginBegin" /></HBox></l:VerticalLayout><VBox id="tableVBox" class="centralizarTabela"><Toolbar id="tableToolbar" class="cabecalhoTabela"><Text id="tituloTabelaAriba"\n                      text="{i18n>tituloTabela}"\n                      class="textoTabela" /></Toolbar><Table id="tblHeader"\n                   class="wideTable sapUiSmallMarginBottom"\n                   inset="false"\n                   mode="SingleSelectMaster"\n                   includeItemInSelection="true"\n                   sticky="ColumnHeaders"\n                   selectionChange=".onHeaderSelect"\n                   items="{vm>/headerRows}"><columns><Column id="colHdrDocId" width="5rem" hAlign="Center"><header><Text id="txtHdrDocId" text="Doc ID"/></header></Column><Column id="colHdrTipoPedido" width="5rem" hAlign="Center"><header><Text id="txtHdrTipoPedido" text="Tipo Pedido"/></header></Column><Column id="colHdrOrgCompras" width="5rem" hAlign="Center"><header><Text id="txtHdrOrgCompras" text="Org. Compras"/></header></Column><Column id="colHdrGrpCompradores" width="5rem" hAlign="Center"><header><Text id="txtHdrGrpCompradores" text="Grp. Compradores"/></header></Column><Column id="colHdrEmpresa" width="5rem" hAlign="Center"><header><Text id="txtHdrEmpresa" text="Empresa"/></header></Column><Column id="colHdrIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrIncoterms" text="Incoterms"/></header></Column><Column id="colHdrLocalIncoterms" width="5rem" hAlign="Center"><header><Text id="txtHdrLocalIncoterms" text="Local Incoterms"/></header></Column><Column id="colHdrCondPagamento" width="5rem" hAlign="Center"><header><Text id="txtHdrCondPagamento" text="Cond. Pagamento"/></header></Column></columns><items><ColumnListItem id="hdrItemTemplate" type="Inactive"><cells><Text id="cellHdrDocId" text="{vm>docId}" wrapping="false"/><Text id="cellHdrTipoPedido" text="{vm>tipoPedido}" wrapping="false"/><Text id="cellHdrOrgCompras" text="{vm>purchasingOrganization}" wrapping="false"/><Text id="cellHdrGrpCompradores" text="{vm>purchasingGroup}" wrapping="false"/><Text id="cellHdrEmpresa" text="{vm>companyCode}" wrapping="false"/><Text id="cellHdrIncoterms" text="{vm>incoterms1}" wrapping="false"/><Text id="cellHdrLocalIncoterms" text="{vm>incoterms2}" wrapping="false"/><Text id="cellHdrCondPagamento" text="{vm>paymentTerms}" wrapping="false"/></cells></ColumnListItem></items></Table><VBox id="detailsVBox" class="sapUiSmallMarginTop"><Toolbar id="detailsToolbar"><Button id="btnSimular" text="{i18n>simular}" type="Ghost"\n                            icon="sap-icon://simulate"\n                            press=".onSimularPress" /><ToolbarSpacer id="spacerTabela"/><Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/><Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/><Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/></Toolbar><ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false"><Table id="tblDocs"\n                           inset="false"\n                           mode="MultiSelect"\n                           rememberSelections="false"\n                           growing="true"\n                           noDataText="{i18n>instrucaoTabela}"\n                           items="{vm>/rows}"><infoToolbar><OverflowToolbar id="vsdFilterBar" visible="false"><Text id="vsdFilterLabel" /></OverflowToolbar></infoToolbar><columns><Column id="colFornecedor"      width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column><Column id="colNomeItem"        width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column><Column id="colQuantidade"      width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column><Column id="colPreco"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column><Column id="colMoeda"           width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column><Column id="colNCM"             width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column><Column id="colMVA"             width="5rem"     hAlign="Center"><header><Text id="txtHdrMVA"            text="MVA (%)"/></header></Column><Column id="colAliqICMS"        width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMS"       text="Alíquota ICMS (%)"/></header></Column><Column id="colICMSAp"          width="7rem"     hAlign="Center"><header><Text id="txtHdrICMSAp"         text="ICMS Apurado"/></header></Column><Column id="colAliqIPI"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqIPI"        text="Alíquota IPI (%)"/></header></Column><Column id="colIPIAp"           width="6rem"     hAlign="Center"><header><Text id="txtHdrIPIAp"          text="IPI Apurado"/></header></Column><Column id="colAliqPIS"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqPIS"        text="Alíquota PIS (%)"/></header></Column><Column id="colPISAp"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPISAp"          text="PIS Apurado"/></header></Column><Column id="colAliqCOFINS"      width="10rem"    hAlign="Center"><header><Text id="txtHdrAliqCOFINS"     text="Alíquota COFINS (%)"/></header></Column><Column id="colCOFINSAp"        width="8rem"     hAlign="Center"><header><Text id="txtHdrCOFINSAp"       text="COFINS Apurado"/></header></Column><Column id="colAliqICMSIntra"   width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMSIntra"  text="Alíquota ICMS Interna (%)"/></header></Column><Column id="colOrigem"          width="9rem"     hAlign="Center"><header><Text id="txtHdrOrigem"         text="Origem do Material"/></header></Column><Column id="colPrecoEstendido"  width="9rem"     hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column><Column id="colCentro"          width="15rem"    hAlign="Center"><header><Text id="txtHdrCentro"         text="Centro"/></header></Column><Column id="colCategoriaItem"   width="10rem"    hAlign="Center"><header><Text id="txtHdrCategoriaItem"  text="Categoria do Item"/></header></Column><Column id="colReq"             width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column><Column id="colGrpMateriais"    width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column><Column id="colCodMaterial"     width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column><Column id="coluna"             visible="false"><Text id = "textotax" text="deliverydate"/></Column><Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column></columns><items><ColumnListItem id="itemTemplate" vAlign="Middle" type="Active" press=".onItemPress"><cells><Text id="cellFornecedor"     text="{= ${vm>supplierName}                    || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>supplierName}"/><Text id="cellNomeItem"       text="{= ${vm>itemDescription}                 || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/><StepInput id="cellQuantidade" value="{ path: \'vm>quantity\', type: \'sap.ui.model.type.Float\', constraints: { minimum: 0 } }" step="1" width="7rem" change=".onQtyInlineChange" /><Text id="cellPreco"          text="{= ${vm>price}                           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellMoeda"          text="{= ${vm>currency}                        || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellNCM"            text="{= ${vm>ncm}                             || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellMVA"            text="{= ${vm>mva}                             || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqICMS"       text="{= ${vm>Extrinsic_Aliquota_ICMS}         || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellICMSAp"         text="{= ${vm>Extrinsic_ICMS_Apurado}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqIPI"        text="{= ${vm>Extrinsic_Aliquota_IPI}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellIPIAp"          text="{= ${vm>Extrinsic_IPI_Apurado}           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqPIS"        text="{= ${vm>Extrinsic_Aliquota_PIS}          || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellPISAp"          text="{= ${vm>Extrinsic_PIS_Apurado}           || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqCOFINS"     text="{= ${vm>Extrinsic_Aliquota_Cofins}       || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellCOFINSAp"       text="{= ${vm>Extrinsic_Cofins_apurado}        || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellAliqICMSIntra"  text="{= ${vm>Extrinsic_Aliquota_ICMS_Interna} || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellOrigem"         text="{= ${vm>Extrinsic_Origem_do_Material}    || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellPrecoEstendido" text="{= ${vm>EXTENDEDPRICE}                   || \'0.00\'}" wrapping="true" maxLines="2" /><Text id="cellCentro"         text="{= ${vm>PLANT}                           || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>PLANT}"/><Text id="cellCategoriaItem"  text="{= ${vm>ItemCategory}                    || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || \'-\'}"    wrapping="true" maxLines="2" /><Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/><Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || \'-\'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/><Text id="deliverydate"       text="{= ${vm>DELIVERY_DATE_RAW}               || \'-\'}"    visible="false"/><Text id="suppliercodeText"   text="{= ${vm>suppliercode}                    || \'-\'}"    visible="false"/></cells></ColumnListItem></items></Table></ScrollContainer></VBox></VBox></Page></mvc:View>',
+  "comparativemap/comparativemap/view/fragments/ResultadoSimulacao.fragment.xml":
+    '<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core"><Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="1000px" draggable="true" resizable="true"><Table id="_IDGenTable2" items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect"\n           autoPopinMode="true" growing="true"><columns><Column id="_IDGenColumn14" width="12rem"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column><Column id="_IDGenColumn15" width="10rem"><header><Text id="_IDGenText25" text="Item"/></header></Column><Column id="_IDGenColumn30" width="6rem"  hAlign="End"><header><Text id="_IDGenText47" text="Quantidade"/></header></Column><Column id="_IDGenColumn16" width="6rem" hAlign="End"><header><Text id="_IDGenText26" text="Qtd Simulada"/></header></Column><Column id="_IDGenColumn29" width="9rem" hAlign="Center"><header><Text id="_IDGenText46" text="Qtd p/ premiar"/></header></Column><Column id="_IDGenColumn17" width="8rem" hAlign="End"><header><Text id="_IDGenText27" text="Preço"/></header></Column><Column id="_IDGenColumn18" width="8rem" hAlign="End"><header><Text id="_IDGenText28" text="ICMS"/></header></Column><Column id="_IDGenColumn19" width="8rem" hAlign="End"><header><Text id="_IDGenText29" text="IPI"/></header></Column><Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column><Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column><Column id="_IDGenColumn22" visible="true" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column></columns><items><ColumnListItem id="_IDGenColumnListItem2"><cells><Text id="_IDGenText33" text="{res>supplierName}"/><Text id="_IDGenText34" text="{res>materialCode}"/><ObjectNumber id="_IDGenObjectNumber12"  number="{res>originalQty}"/><ObjectNumber id="_IDGenObjectNumber4" number="{res>quantity}"/><Input id="_IDGenInput3" type="Number"\n                   value="{path:\'res>qtyAward\', type:\'sap.ui.model.type.Integer\'}"\n                   liveChange=".onAwardQtyChangeRes"\n                   width="7rem"/><ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/><ObjectNumber id="_IDGenObjectNumber6" number="{res>icms}"/><ObjectNumber id="_IDGenObjectNumber7" number="{res>ipi}"/><ObjectNumber id="_IDGenObjectNumber8" number="{res>total}" unit="{res>currency}"/><Text id="_IDGenText35" text="{res>itemId}"/><Text id="_IDGenText36" text="{res>invitationId}"/></cells></ColumnListItem></items></Table><beginButton><Button id="_IDGenButton4" text="Premiar" type="Emphasized" press=".onAwardDirect"/></beginButton><endButton><Button id="_IDGenButton6" text="Fechar" press=".onCloseDialog"/></endButton></Dialog></core:FragmentDefinition>\n',
 });
 //# sourceMappingURL=Component-preload.js.map

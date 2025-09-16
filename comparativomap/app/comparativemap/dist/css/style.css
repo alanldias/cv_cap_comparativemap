@@ -1,7 +1,7 @@
 /* Enter your custom styles here */
 .centralizarTabela {
-    width: 99%;
-    margin: auto;
+  width: 99%;
+  margin: auto;
 }
 
 .cabecalhoTopo {
@@ -15,19 +15,19 @@
   font-weight: bold;
 }
 
-.textoTabela{
+.textoTabela {
   color: #354b9d;
   font-size: 1.1rem;
   font-weight: 900;
 }
 
-.cabecalhoTabela{
+.cabecalhoTabela {
   background-color: white;
   height: 2.5rem !important;
 }
 
 .tituloDialog {
-  color: #0a6ed1;   
-  font-size: 1.4rem;     
-  font-weight: 600;      
+  color: #0a6ed1;
+  font-size: 1.4rem;
+  font-weight: 600;
 }

@@ -1,185 +1,280 @@
 // srv/service.js
-const cds = require('@sap/cds')
-const { LOG } = require('./lib/util/log')
-const { formatAribaScenarioError, safeErr } = require('./lib/util/errors')
-const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require('./lib/config')
+const cds = require("@sap/cds");
+const { LOG } = require("./lib/util/log");
+const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
+const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require("./lib/config");
 
-const { destPost } = require('./lib/http/destination')
+const { destPost } = require("./lib/http/destination");
 const {
-  fetchSupplierBids, fetchParentProjectId, fetchSupplierInvitationsList,
-  pickSupplierNameByInvitation, pickSupplierNameFromRows,
-  extractSapOrgEntry, extractSapVendorId
-} = require('./lib/ariba/events')
-const { fetchAribaHeader } = require('./lib/ariba/pm')
-const { enrichWithTaxCode } = require('./lib/s4/taxcode')
-const { getBapiClient, buildSmokePayload, normalizeBapiResult, padLeft } = require('./lib/soap/bapi-po-create')
-const { mapWithConcurrency } = require('./lib/util/concurrency')
+  fetchSupplierBids,
+  fetchParentProjectId,
+  fetchSupplierInvitationsList,
+  pickSupplierNameByInvitation,
+  pickSupplierNameFromRows,
+  extractSapOrgEntry,
+  extractSapVendorId,
+} = require("./lib/ariba/events");
+const { fetchAribaHeader } = require("./lib/ariba/pm");
+const { enrichWithTaxCode } = require("./lib/s4/taxcode");
+const {
+  getBapiClient,
+  buildSmokePayload,
+  normalizeBapiResult,
+  padLeft,
+} = require("./lib/soap/bapi-po-create");
+const { mapWithConcurrency } = require("./lib/util/concurrency");
 
 module.exports = function () {
+  this.on("GetQuotes", async (req) => {
+    const { docId } = req.data || {};
+    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
+    const round = Number.isFinite(Number(ARIBA_EVENT_ROUND))
+      ? Number(ARIBA_EVENT_ROUND)
+      : 1;
 
-  this.on('GetQuotes', async (req) => {
-    const { docId } = (req.data || {})
-    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.")
-    const round = Number.isFinite(Number(ARIBA_EVENT_ROUND)) ? Number(ARIBA_EVENT_ROUND) : 1
-
-    LOG.infoL('[GetQuotes] START', { docId, round })
+    LOG.infoL("[GetQuotes] START", { docId, round });
 
     try {
-      const { rows, results } = await fetchSupplierBids(docId)
-      LOG.infoL('[GetQuotes] supplierBids', { rows: rows.length, results: results.length })
-      if (!rows.length || !results.length) return { header: null, items: [] }
+      const { rows, results } = await fetchSupplierBids(docId);
+      LOG.infoL("[GetQuotes] supplierBids", {
+        rows: rows.length,
+        results: results.length,
+      });
+      if (!rows.length || !results.length) return { header: null, items: [] };
 
-      const list = await fetchSupplierInvitationsList(docId, round).catch(() => [])
-      LOG.infoL('[GetQuotes] invitations', { count: Array.isArray(list) ? list.length : 0 })
+      const list = await fetchSupplierInvitationsList(docId, round).catch(
+        () => [],
+      );
+      LOG.infoL("[GetQuotes] invitations", {
+        count: Array.isArray(list) ? list.length : 0,
+      });
 
-      const nameByInvId = new Map(), emailByInvId = new Map(), vendorByInvId = new Map()
+      const nameByInvId = new Map(),
+        emailByInvId = new Map(),
+        vendorByInvId = new Map();
       for (const it of list) {
-        const invId = String(it?.invitationId ?? it?.userId ?? it?.uniqueName ?? '')
-        if (!invId) continue
-        const name  = it?.organization?.name || it?.supplierName || it?.organizationName || it?.supplier?.name || null
-        const email = it?.emailAddress || it?.supplierEmail || it?.email || it?.mainContact?.emailAddress || it?.contact?.email || null
-        const sapEntry = extractSapOrgEntry(it)
-        const sapId = sapEntry?.value ?? extractSapVendorId(it)
-        if (name)  nameByInvId.set(invId, name)
-        if (email) emailByInvId.set(invId, email)
-        if (sapId) vendorByInvId.set(invId, sapId)
+        const invId = String(
+          it?.invitationId ?? it?.userId ?? it?.uniqueName ?? "",
+        );
+        if (!invId) continue;
+        const name =
+          it?.organization?.name ||
+          it?.supplierName ||
+          it?.organizationName ||
+          it?.supplier?.name ||
+          null;
+        const email =
+          it?.emailAddress ||
+          it?.supplierEmail ||
+          it?.email ||
+          it?.mainContact?.emailAddress ||
+          it?.contact?.email ||
+          null;
+        const sapEntry = extractSapOrgEntry(it);
+        const sapId = sapEntry?.value ?? extractSapVendorId(it);
+        if (name) nameByInvId.set(invId, name);
+        if (email) emailByInvId.set(invId, email);
+        if (sapId) vendorByInvId.set(invId, sapId);
       }
 
-      for (const invId of new Set(results.map(r => r._invitationId).filter(Boolean))) {
+      for (const invId of new Set(
+        results.map((r) => r._invitationId).filter(Boolean),
+      )) {
         if (!nameByInvId.has(invId)) {
-          const fb = pickSupplierNameByInvitation(rows, invId) || pickSupplierNameFromRows(rows)
-          if (fb) nameByInvId.set(invId, fb)
+          const fb =
+            pickSupplierNameByInvitation(rows, invId) ||
+            pickSupplierNameFromRows(rows);
+          if (fb) nameByInvId.set(invId, fb);
         }
       }
 
-      let parentProjectId = null
-      try { parentProjectId = await fetchParentProjectId(docId) } catch {}
-      LOG.infoL('[GetQuotes] parentProjectId', { parentProjectId })
+      let parentProjectId = null;
+      try {
+        parentProjectId = await fetchParentProjectId(docId);
+      } catch { }
+      LOG.infoL("[GetQuotes] parentProjectId", { parentProjectId });
 
-      let header = null
-      try { if (parentProjectId) header = await fetchAribaHeader(parentProjectId) } catch {}
-      LOG.infoL('[GetQuotes] header', { hasHeader: !!header })
+      let header = null;
+      try {
+        if (parentProjectId) header = await fetchAribaHeader(parentProjectId);
+      } catch { }
+      LOG.infoL("[GetQuotes] header", { hasHeader: !!header });
 
-      const headerWithDoc = Object.assign({ docId }, header || {}, { supplierName: null })
-      const itemsOut = results.map(r => {
-        const { _invitationId, _itemId, ...pub } = r
-        const invId = _invitationId || null
-        const supplierName = invId ? (nameByInvId.get(invId) || null) : null
-        const supplierIdSap = invId ? (vendorByInvId.get(invId) || null) : null
-        const email = invId ? (emailByInvId.get(invId) || null) : null
-        return { ...pub, supplierName, SupplierCode: supplierIdSap, invitationId: invId, invitationEmail: email }
-      })
+      const headerWithDoc = Object.assign({ docId }, header || {}, {
+        supplierName: null,
+      });
+      const itemsOut = results.map((r) => {
+        const { _invitationId, _itemId, ...pub } = r;
+        const invId = _invitationId || null;
+        const supplierName = invId ? nameByInvId.get(invId) || null : null;
+        const supplierIdSap = invId ? vendorByInvId.get(invId) || null : null;
+        const email = invId ? emailByInvId.get(invId) || null : null;
+        return {
+          ...pub,
+          supplierName,
+          SupplierCode: supplierIdSap,
+          invitationId: invId,
+          invitationEmail: email,
+        };
+      });
 
-      LOG.infoL('[GetQuotes] END', { items: itemsOut.length })
-      return { header: headerWithDoc, items: itemsOut }
-
+      LOG.infoL("[GetQuotes] END", { items: itemsOut.length });
+      return { header: headerWithDoc, items: itemsOut };
     } catch (e) {
-      const status = e.response?.status || 502
-      const msg = e.response?.data?.message || e.response?.data || e.message
-      LOG.errorL('[GetQuotes] ERROR', { status, msg })
-      return req.error(status, 'Falha ao consultar supplierBids no Ariba.')
+      const status = e.response?.status || 502;
+      const msg = e.response?.data?.message || e.response?.data || e.message;
+      LOG.errorL("[GetQuotes] ERROR", { status, msg });
+      return req.error(status, "Falha ao consultar supplierBids no Ariba.");
     }
-  })
+  });
 
-  this.on('CreateScenario', async (req) => {
-    const { eventId, title, scenarioType, supplierBids } = req.data || {}
-    if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.")
+  this.on("CreateScenario", async (req) => {
+    const { eventId, title, scenarioType, supplierBids } = req.data || {};
+    if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
     if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
-      return req.error(400, "'supplierBids' deve ser um array com pelo menos 1 item.")
+      return req.error(
+        400,
+        "'supplierBids' deve ser um array com pelo menos 1 item.",
+      );
     }
 
-    LOG.infoL('[CreateScenario] START', {
-      eventId, title, scenarioType, bids: supplierBids.length
-    })
+    LOG.infoL("[CreateScenario] START", {
+      eventId,
+      title,
+      scenarioType,
+      bids: supplierBids.length,
+    });
 
     const payload = {
       eventId,
-      title: title || 'Cenário via API',
+      title: title || "Cenário via API",
       scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
       supplierBids: supplierBids.map((it) => ({
         eventId,
         itemId: Number(it.itemId),
-        invitationId: String(it.invitationId || ''),
-        bidType: it.bidType || 'Primary',
+        invitationId: String(it.invitationId || ""),
+        bidType: it.bidType || "Primary",
         winningSplitType: Number(it.winningSplitType ?? 1),
-        winningSplitValue: Number(it.winningSplitValue ?? 100)
-      }))
-    }
+        winningSplitValue: Number(it.winningSplitValue ?? 100),
+      })),
+    };
 
-    const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`
+    const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`;
     try {
-      const { data, headers } = await destPost(DEST.EVENTS, relPath, payload, { timeoutMs: HTTP_TIMEOUT_MS })
-      const correlationId = headers?.['x-correlation-id'] || headers?.['x-correlationid'] || null
-      const scenarioId = data?.scenarioId || data?.id || data?.scenarioID || null
-      LOG.infoL('[CreateScenario] OK', { scenarioId, correlationId })
-      return { success: true, scenarioId, aribaResponse: JSON.stringify(data), correlationId }
+      const { data, headers } = await destPost(DEST.EVENTS, relPath, payload, {
+        timeoutMs: HTTP_TIMEOUT_MS,
+      });
+      const correlationId =
+        headers?.["x-correlation-id"] || headers?.["x-correlationid"] || null;
+      const scenarioId =
+        data?.scenarioId || data?.id || data?.scenarioID || null;
+      LOG.infoL("[CreateScenario] OK", { scenarioId, correlationId });
+      return {
+        success: true,
+        scenarioId,
+        aribaResponse: JSON.stringify(data),
+        correlationId,
+      };
     } catch (e) {
-      const { status, correlationId, userMessage, technical } = formatAribaScenarioError(e)
-      LOG.errorL('[CreateScenario] ERROR', { status, correlationId, userMessage })
-      return req.error(status, userMessage, { correlationId, technical })
+      const { status, correlationId, userMessage, technical } =
+        formatAribaScenarioError(e);
+      LOG.errorL("[CreateScenario] ERROR", {
+        status,
+        correlationId,
+        userMessage,
+      });
+      return req.error(status, userMessage, { correlationId, technical });
     }
-  })
+  });
 
-  this.on('simularPO', async req => {
-    const { requests = [], concurrency } = req.data || {}
-    const LIMIT = Number((Number.isFinite(concurrency) ? concurrency : (process.env.CONCURRENCY || 4)))
-    LOG.infoL('[simularPO] START', { requests: requests.length, limit: LIMIT })
+  this.on("simularPO", async (req) => {
+    const { requests = [], concurrency } = req.data || {};
+    const LIMIT = Number(
+      Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
+    );
+    LOG.infoL("[simularPO] START", { requests: requests.length, limit: LIMIT });
 
     try {
-      if (!Array.isArray(requests) || requests.length === 0) return []
+      if (!Array.isArray(requests) || requests.length === 0) return [];
 
-      const client = await getBapiClient()
+      const client = await getBapiClient();
 
       const mapper = async (r, idx) => {
-        const { header = {}, items: rawItems = [], schedules = [], testRun = true } = r || {}
-        LOG.infoL('[mapper] header', {
-          idx, vendor: header.vendor, purchOrg: header.purchOrg, compCode: header.compCode,
-          items: rawItems.length, testRun
-        })
+        const {
+          header = {},
+          items: rawItems = [],
+          schedules = [],
+          testRun = true,
+        } = r || {};
+        LOG.infoL("[mapper] header", {
+          idx,
+          vendor: header.vendor,
+          purchOrg: header.purchOrg,
+          compCode: header.compCode,
+          items: rawItems.length,
+          testRun,
+        });
 
-        const items = rawItems.map(({ taxCode, ...rest }) => rest)
+        const items = rawItems.map(({ taxCode, ...rest }) => rest);
         const enrichInput = items.map((it, i) => ({
           __idx: i,
-          Supplier: padLeft(String(header.vendor || ''), 10, '0'),
-          Material: it.material || '',
+          Supplier: padLeft(String(header.vendor || ""), 10, "0"),
+          Material: it.material || "",
           PurchasingOrganization: header.purchOrg,
-          Plant: it.plant
-        }))
+          Plant: it.plant,
+        }));
 
         // força erro se faltar TaxCode (mensagem já detalhada sai do taxcode.js)
         const enriched = await enrichWithTaxCode(enrichInput, {
-          headerVendor: padLeft(String(header.vendor || ''), 10, '0'),
-          throwIfMissing: true
-        })
+          headerVendor: padLeft(String(header.vendor || ""), 10, "0"),
+          throwIfMissing: true,
+        });
 
         // aplica resultado
         for (const row of enriched) {
           if (row?.__idx != null) {
-            items[row.__idx].taxCode = row.TaxCode ?? undefined
-            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined
+            items[row.__idx].taxCode = row.TaxCode ?? undefined;
+            items[row.__idx].purchasingInfoRecord =
+              row.PurchasingInfoRecord ?? undefined;
           }
         }
-        const missing = items.filter(x => !x.taxCode).length
-        LOG.infoL('[mapper] taxcode', { idx, resolved: items.length - missing, missing })
+        const missing = items.filter((x) => !x.taxCode).length;
+        LOG.infoL("[mapper] taxcode", {
+          idx,
+          resolved: items.length - missing,
+          missing,
+        });
 
-        if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`)
+        if (missing)
+          throw new Error(
+            `Não foi possível obter TaxCode para ${missing} item(ns).`,
+          );
 
-        const payload = buildSmokePayload(header, items, schedules, testRun)
-        const resp = await client.BAPI_PO_CREATE1Async(payload)
-        const r0 = Array.isArray(resp) ? resp[0] : resp
-        const out = normalizeBapiResult(r0, !!payload.TESTRUN)
-        LOG.infoL('[mapper] SOAP OK', { idx, returnMsgs: out.returnMessages?.length || 0, itens: out.itens?.length || 0 })
-        return out
-      }
+        const payload = buildSmokePayload(header, items, schedules, testRun);
+        const resp = await client.BAPI_PO_CREATE1Async(payload);
+        const r0 = Array.isArray(resp) ? resp[0] : resp;
+        const out = normalizeBapiResult(r0, !!payload.TESTRUN);
+        LOG.infoL("[mapper] SOAP OK", {
+          idx,
+          returnMsgs: out.returnMessages?.length || 0,
+          itens: out.itens?.length || 0,
+        });
+        return out;
+      };
 
-      const results = await mapWithConcurrency(requests, LIMIT, mapper)
-      LOG.infoL('[simularPO] END', { results: results.length })
-      return results
-
+      const results = await mapWithConcurrency(requests, LIMIT, mapper);
+      LOG.infoL("[simularPO] END", { results: results.length });
+      return results;
     } catch (e) {
-      const info = safeErr(e)
-      LOG.errorL('[simularPO] ERROR', { msg: info.message || info.code || 'Erro', status: info.responseStatus })
-      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || 'Erro desconhecido'}`)
+      const info = safeErr(e);
+      LOG.errorL("[simularPO] ERROR", {
+        msg: info.message || info.code || "Erro",
+        status: info.responseStatus,
+      });
+      return req.error(
+        502,
+        `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`,
+      );
     }
-  })
-}
+  });
+};
