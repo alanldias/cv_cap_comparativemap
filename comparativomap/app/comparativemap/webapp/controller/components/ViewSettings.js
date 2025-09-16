@@ -1,6 +1,7 @@
 sap.ui.define(
   [
     "sap/m/ViewSettingsDialog",
+    "sap/ui/model/Sorter",
     "sap/m/ViewSettingsItem",
     "sap/m/ViewSettingsFilterItem",
     "sap/ui/Device",
@@ -9,6 +10,7 @@ sap.ui.define(
   ],
   function (
     ViewSettingsDialog,
+    Sorter,
     ViewSettingsItem,
     ViewSettingsFilterItem,
     Device,
@@ -20,14 +22,15 @@ sap.ui.define(
     function create(view, prefs, getDistinct, mGroupFunctions) {
       let dlgFilter = null,
         dlgSort = null,
-        dlgGroup = null,
-        groupReset = false;
+        dlgGroup = null;
+      let groupReset = false;
+      let sortReset = false;
 
       function openFilterDialog(onConfirm) {
         if (dlgFilter) {
           dlgFilter.destroy();
           dlgFilter = null;
-        }
+        };
         dlgFilter = new ViewSettingsDialog({ confirm: onConfirm });
         if (Device.system.desktop) dlgFilter.addStyleClass("sapUiSizeCompact");
         view.addDependent(dlgFilter);
@@ -63,9 +66,15 @@ sap.ui.define(
         dlgFilter.open();
       }
 
-      function openSortDialog(onConfirm) {
+      function openSortDialog(onConfirm, onReset) {
         if (!dlgSort) {
-          dlgSort = new ViewSettingsDialog({ confirm: onConfirm });
+          dlgSort = new ViewSettingsDialog({
+            confirm: onConfirm,
+            reset: () => {                
+              sortReset = true;
+              onReset && onReset();
+            }
+          });
           if (Device.system.desktop) dlgSort.addStyleClass("sapUiSizeCompact");
           view.addDependent(dlgSort);
         }
@@ -73,16 +82,13 @@ sap.ui.define(
         [
           { text: "Fornecedor", key: "supplierName" },
           { text: "Nome do item", key: "itemDescription" },
-          { text: "Tipo de pedido", key: "arb_Document_Type" },
-          { text: "Org. Compras", key: "arb_PurchasingOrganization" },
-          { text: "Grp. Compradores", key: "arb_PurchasingGroup" },
-          { text: "Empresa", key: "arb_CompanyCode" },
-        ].forEach((f) => dlgSort.addSortItem(new ViewSettingsItem(f)));
+          { text: "Preço", key: "price" }
+        ].forEach(f => dlgSort.addSortItem(new ViewSettingsItem(f)));
 
         if (prefs.sort.key) {
           dlgSort.setSelectedSortItem(prefs.sort.key);
           dlgSort.setSortDescending(!!prefs.sort.desc);
-        }
+        };
         dlgSort.open();
       }
 
@@ -92,23 +98,29 @@ sap.ui.define(
             confirm: onConfirm,
             reset: () => {
               groupReset = true;
-              onReset?.();
-            },
+              dlgGroup.setSelectedGroupItem("");   
+              dlgGroup.setGroupDescending(false); 
+              onReset && onReset();
+            }
           });
           if (Device.system.desktop) dlgGroup.addStyleClass("sapUiSizeCompact");
           view.addDependent(dlgGroup);
         }
+
         dlgGroup.destroyGroupItems();
         [
           { text: "Fornecedor", key: "supplierName" },
-          { text: "Org. Compras", key: "arb_PurchasingOrganization" },
-          { text: "Empresa", key: "arb_CompanyCode" },
-        ].forEach((g) => dlgGroup.addGroupItem(new ViewSettingsItem(g)));
+          { text: "Item", key: "itemId" }
+        ].forEach(g => dlgGroup.addGroupItem(new ViewSettingsItem(g)));
 
-        if (prefs.group.key) {
+        if (prefs.group?.key) {
           dlgGroup.setSelectedGroupItem(prefs.group.key);
           dlgGroup.setGroupDescending(!!prefs.group.desc);
+        } else {
+          dlgGroup.setSelectedGroupItem("");      
+          dlgGroup.setGroupDescending(false);    
         }
+
         dlgGroup.open();
       }
 
@@ -173,80 +185,105 @@ sap.ui.define(
         const sorters = [];
         if (prefs.group.key)
           sorters.push(
-            new sap.ui.model.Sorter(
+            new Sorter(
               prefs.group.key,
               !!prefs.group.desc,
               mGroupFunctions[prefs.group.key],
             ),
           );
-        if (prefs.sort.key)
-          sorters.push(
-            new sap.ui.model.Sorter(prefs.sort.key, !!prefs.sort.desc),
-          );
+        if (prefs.sort.key) {
+          if (prefs.sort.key === "price") {
+            const s = new Sorter("price", !!prefs.sort.desc);
+            s.fnCompare = numCompare; // ✅
+            sorters.push(s);
+          } else {
+            sorters.push(new Sorter(prefs.sort.key, !!prefs.sort.desc));
+          }
+        }
         if (sorters.length) binding.sort(sorters);
       }
-
       function handleFilterDialogConfirm(ev, onSave) {
         const selected = ev.getParameters().filterItems || [];
+
         const grouped = {};
         selected.forEach((item) => {
-          const [path, op, v1, v2] = item.getKey().split("___");
+          const [path, op, v1, v2] = String(item.getKey() || "").split("___");
           (grouped[path] ||= []).push(
-            new sap.ui.model.Filter(
-              path,
-              sap.ui.model.FilterOperator[op] || op,
-              v1,
-              v2,
-            ),
+            new Filter(path, FilterOperator[op] || op, v1, v2)
           );
         });
-        const andFilters = [];
-        Object.keys(grouped).forEach((path) => {
+
+        const andFilters = Object.keys(grouped).map((path) => {
           const arr = grouped[path];
-          andFilters.push(
-            arr.length > 1
-              ? new sap.ui.model.Filter({ filters: arr, and: false })
-              : arr[0],
-          );
+          return arr.length > 1 ? new Filter({ filters: arr, and: false }) : arr[0];
         });
+
         const tbl = view.byId("tblDocs");
-        tbl.getBinding("items").filter(andFilters);
-        // persistir
+        const binding = tbl && tbl.getBinding("items");
+        if (binding) binding.filter(andFilters);
+
         const prefsNew = Object.assign({}, prefs, {
           filter: {
-            fornecedor: (grouped.supplierName || []).map((f) =>
-              String(f.oValue1),
-            ),
-            nomeItem: (grouped.itemDescription || []).map((f) =>
-              String(f.oValue1),
-            ),
-          },
+            fornecedor: (grouped.supplierName || []).map((f) => String(f.oValue1)),
+            nomeItem: (grouped.itemDescription || []).map((f) => String(f.oValue1))
+          }
         });
-        onSave(prefsNew);
+
+        onSave && onSave(prefsNew);
+
+        prefs = prefsNew;
+      
         applyFiltersFromPrefs();
       }
 
+      function numCompare(a, b) {
+        const an = Number(a); const bn = Number(b);
+        const ax = isNaN(an) ? 0 : an;
+        const bx = isNaN(bn) ? 0 : bn;
+        return ax - bx;
+      }
+
+
       function handleSortDialogConfirm(ev, onSave) {
         const m = ev.getParameters();
+        const tbl = view.byId("tblDocs");
+        const binding = tbl.getBinding("items");
+        const sorters = [];
+
+        if (prefs.group.key) {
+          sorters.push(new Sorter(
+            prefs.group.key,
+            !!prefs.group.desc,
+            mGroupFunctions[prefs.group.key]
+          ));
+        }
+
+        if (sortReset || !m.sortItem) {
+          binding.sort(sorters.length ? sorters : null);
+
+          const prefsNew = Object.assign({}, prefs, { sort: { key: null, desc: false } });
+          onSave && onSave(prefsNew);
+          prefs = prefsNew;          
+          sortReset = false;       
+          return;
+        }
+
         const sPath = m.sortItem.getKey();
         const bDesc = m.sortDescending;
 
-        const tbl = view.byId("tblDocs");
-        const arr = [];
-        if (prefs.group.key)
-          arr.push(
-            new sap.ui.model.Sorter(
-              prefs.group.key,
-              !!prefs.group.desc,
-              mGroupFunctions[prefs.group.key],
-            ),
-          );
-        arr.push(new sap.ui.model.Sorter(sPath, bDesc));
-        tbl.getBinding("items").sort(arr);
+        if (sPath === "price") {
+          const s = new Sorter("price", bDesc);
+          s.fnCompare = numCompare; 
+          sorters.push(s);
+        } else {
+          sorters.push(new Sorter(sPath, bDesc));
+        }
 
-        onSave(
-          Object.assign({}, prefs, { sort: { key: sPath, desc: !!bDesc } }),
-        );
+        binding.sort(sorters);
+
+        const prefsNew = Object.assign({}, prefs, { sort: { key: sPath, desc: !!bDesc } });
+        onSave && onSave(prefsNew);
+        prefs = prefsNew;         
       }
 
       function handleGroupDialogConfirm(ev, onSave) {
@@ -254,32 +291,52 @@ sap.ui.define(
         const tbl = view.byId("tblDocs");
         const binding = tbl.getBinding("items");
 
-        if (m.groupItem) {
-          const sPath = m.groupItem.getKey();
-          const bDesc = m.groupDescending;
-          const vGroup = mGroupFunctions[sPath];
+        const applyOnlySort = () => {
+          const arr = [];
+          if (prefs.sort?.key) {
+            if (prefs.sort.key === "price") {
+              const s = new Sorter("price", !!prefs.sort.desc);
+              s.fnCompare = numCompare; 
+              arr.push(s);
+            } else {
+              arr.push(new Sorter(prefs.sort.key, !!prefs.sort.desc));
+            }
+          }
+          binding.sort(arr.length ? arr : null);
+        };
 
-          const arr = [new sap.ui.model.Sorter(sPath, bDesc, vGroup)];
-          if (prefs.sort.key)
-            arr.push(
-              new sap.ui.model.Sorter(prefs.sort.key, !!prefs.sort.desc),
-            );
-          binding.sort(arr);
+        if (groupReset || !m.groupItem) {
+          applyOnlySort();
 
-          onSave(
-            Object.assign({}, prefs, { group: { key: sPath, desc: !!bDesc } }),
-          );
-        } else if (groupReset) {
-          if (prefs.sort.key)
-            binding.sort([
-              new sap.ui.model.Sorter(prefs.sort.key, !!prefs.sort.desc),
-            ]);
-          else binding.sort();
+          const prefsNew = Object.assign({}, prefs, { group: { key: null, desc: false } });
+          onSave && onSave(prefsNew);
+          prefs = prefsNew;
+          dlgGroup.setSelectedGroupItem("");
+          dlgGroup.setGroupDescending(false);
+
           groupReset = false;
-          onSave(
-            Object.assign({}, prefs, { group: { key: null, desc: false } }),
-          );
+          return;
         }
+
+        const sPath = m.groupItem.getKey();
+        const bDesc = m.groupDescending;
+        const vGroup = mGroupFunctions[sPath];
+
+        const arr = [new Sorter(sPath, bDesc, vGroup)];
+        if (prefs.sort?.key) {
+          if (prefs.sort.key === "price") {
+            const s = new Sorter("price", !!prefs.sort.desc);
+            s.fnCompare = numCompare;
+            arr.push(s);
+          } else {
+            arr.push(new Sorter(prefs.sort.key, !!prefs.sort.desc));
+          }
+        }
+        binding.sort(arr);
+
+        const prefsNew = Object.assign({}, prefs, { group: { key: sPath, desc: !!bDesc } });
+        onSave && onSave(prefsNew);
+        prefs = prefsNew;
       }
 
       return {

@@ -49,19 +49,25 @@ sap.ui.define(
           this.getView().setModel(Models.createQM(), "qm");
 
           this._prefs = PrefsStore.load();
+          const allowedGroups = ["supplierName", "itemId"];
+          if (!allowedGroups.includes(this._prefs.group?.key)) {
+            this._prefs.group = { key: null, desc: false };
+            PrefsStore.save(this._prefs);
+          };
           this.mGroupFunctions = {
             supplierName: (ctx) => {
               const v = ctx.getProperty("supplierName") || "";
-              return { key: v, text: v };
+              const key = v || "__noSupplier__";
+              const text = v || "(Sem fornecedor)";
+              return { key, text };
             },
-            arb_PurchasingOrganization: (ctx) => {
-              const v = ctx.getProperty("arb_PurchasingOrganization") || "";
-              return { key: v, text: "Org. Compras " + v };
-            },
-            arb_CompanyCode: (ctx) => {
-              const v = ctx.getProperty("arb_CompanyCode") || "";
-              return { key: v, text: "Empresa " + v };
-            },
+            itemId: (ctx) => {
+              const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
+              const v = raw == null ? "" : String(raw);
+              const key = v || "__noItemId__";
+              const text = v ? `Item ${v}` : "(Sem ItemId)";
+              return { key, text };
+            }
           };
 
           this._vs = ViewSettingsCmp.create(
@@ -76,52 +82,54 @@ sap.ui.define(
 
         /* ====== BUSCAR ====== */
         async onBuscar() {
-          const oView = this.getView();
-          const oOData = oView.getModel();
-          const oVM = oView.getModel("vm");
-          const oQM = oView.getModel("qm");
-          const docId = (oView.byId("inputDoID").getValue() || "").trim();
-          const tbl = oView.byId("tblDocs");
+          const view = this.getView();
+          const odata = view.getModel();
+          const vm = view.getModel("vm");
+          const qm = view.getModel("qm");
+          const tbl = view.byId("tblDocs");
+          const docId = (view.byId("inputDoID").getValue() || "").trim();
 
           try {
-            if (!oOData) throw new Error("Modelo OData V4 não encontrado.");
-            if (!docId) {
-              sap.m.MessageToast.show("Informe o Doc ID");
-              return;
-            }
+            if (!odata) throw new Error("Modelo OData V4 não encontrado.");
+            if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
 
             // ✅ limpar seleção e caches da simulação antes de carregar novos dados
-            tbl.removeSelections(true);
-            oQM?.setProperty("/idByKey", {});
-            oQM?.setProperty("/simSourceRows", []);
+            tbl?.removeSelections(true);
+            qm?.setProperty("/idByKey", {});
+            qm?.setProperty("/simSourceRows", []);
 
-            tbl.setBusy(true);
+            tbl?.setBusy(true);
 
-            // ⬅️ aqui era 'view', troque para 'oView'
-            const res = await ODataSvc.fetchQuotes(oView, docId);
+            const res = await ODataSvc.fetchQuotes(view, docId);
 
-            const rows = (Array.isArray(res?.items) ? res.items : []).map((r) =>
-              Object.assign({}, r, { _originalQty: Number(r.quantity) || 0 }),
-            );
+            const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
+              ...r,
+              // ⚙️ normalizações p/ agrupar/ordenar
+              itemId: r.itemId ?? r.ItemId ?? null,                  // agrupamento por Item
+              price: (r.price !== undefined && r.price !== null)     // sort numérico por preço
+                ? Number(r.price) : r.price,
+              _originalQty: Number(r.quantity) || 0
+            }));
 
-            // ⬅️ aqui era 'vm', troque para 'oVM'
-            oVM.setProperty("/header", res?.header || {});
-            oVM.setProperty("/rows", rows);
-            oVM.setProperty("/headerRows", res?.header ? [res.header] : []);
+            vm.setProperty("/header", res?.header || {});
+            vm.setProperty("/rows", rows);
+            vm.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-            this.byId("tblDocs").getBinding("items")?.refresh(true);
-
-            // reforço: evitar “seleção fantasma” após rebind
+            // rebind + garantir que nada ficou selecionado
+            tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
-            tbl.removeSelections(true);
+            tbl?.removeSelections(true);
 
-            if (!rows.length)
-              MessageToast.show("Nenhum item retornado para esse Doc ID.");
+            // reaplicar preferências (usa seu ViewSettingsCmp)
+            this._vs?.applyGroupSortFromPrefs();
+            this._vs?.applyFiltersFromPrefs();
+
+            if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
           } catch (e) {
             console.error("[onBuscar] ERRO:", e);
             MessageBox.error("Falha ao buscar dados: " + (e.message || e));
           } finally {
-            tbl.setBusy(false);
+            tbl?.setBusy(false);
           }
         },
 
