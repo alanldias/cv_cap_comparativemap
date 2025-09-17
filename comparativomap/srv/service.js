@@ -192,6 +192,12 @@ module.exports = function () {
     const LIMIT = Number(
       Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
     );
+    console.log(requests + "requests")
+    console.dir(requests, { depth: null });        // 👈 expande tudo
+    console.log(JSON.stringify(requests, null, 2));
+    console.log(concurrency + "concurrency")
+
+
     LOG.infoL("[simularPO] START", { requests: requests.length, limit: LIMIT });
 
     try {

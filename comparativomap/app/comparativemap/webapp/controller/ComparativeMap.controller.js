@@ -248,6 +248,10 @@ sap.ui.define(
             // chamada
             const requests = [{ header, items, schedules, testRun: true }];
 
+            console.log(requests + "requests")
+            console.table(requests);
+            // console.log({ requests });
+
             sap.ui.core.BusyIndicator.show(0);
             const result0 = await ODataSvc.simularPO(view, requests, 4);
             Debug.dbg("Resultado bruto da BAPI (result0)", result0);
