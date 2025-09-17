@@ -188,7 +188,7 @@ module.exports = function () {
   });
 
   this.on("simularPO", async (req) => {
-    const { requests = [], concurrency } = req.data || {};
+    const { requests = [], concurrency} = req.data || {};
     const LIMIT = Number(
       Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
     );

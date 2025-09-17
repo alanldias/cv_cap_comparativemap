@@ -28,7 +28,7 @@ sap.ui.define(
     PrefsStore,
     ViewSettingsCmp,
     ODataSvc,
-    Map,
+    Mapper,
     Dialogs,
     AwardSvc,
     Keys,
@@ -173,8 +173,7 @@ sap.ui.define(
 
             // seleção atual (sem contexts “fantasma”)
             const selItems = tbl.getSelectedItems();
-            if (!selItems.length)
-              throw new Error("Selecione pelo menos 1 item para simular.");
+            if (!selItems.length) throw new Error("Selecione pelo menos 1 item para simular.");
 
             const rows = selItems
               .map(it => it.getBindingContext("vm")?.getObject?.())
@@ -182,17 +181,15 @@ sap.ui.define(
 
             if (!rows.length) {
               tbl.removeSelections(true);
-              throw new Error(
-                "Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente."
-              );
+              throw new Error("Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente.");
             }
             Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
             // índices para casar BAPI → Ariba
             qm.setProperty("/simSourceRows", rows);
-            Map.prepareQMFromSelection(rows, qm);
+            Mapper.prepareQMFromSelection(rows, qm);
 
-            // 🔁 MONTA 1 REQUEST POR FORNECEDOR (usa o helper novo)
+            // 🔁 MONTA 1 REQUEST POR FORNECEDOR
             const requests = Build.buildRequestsFromSelection(rows, vm);
 
             // Validações por request + itens
@@ -232,10 +229,25 @@ sap.ui.define(
               currency: r.header.currency
             })));
 
+            // ---------------------------
+            // Mapa local vendor -> sourceRows e payload sem sourceRows
+            // ---------------------------
+            const normVendor = v => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+
+            // guarda localmente as sourceRows por fornecedor (NÃO envie ao backend)
+            const vendorToSrc = new Map(
+              (requests || []).map(req => [normVendor(req?.header?.vendor), Array.isArray(req.sourceRows) ? req.sourceRows : []])
+            );
+
+            // payload limpo (sem sourceRows) para a action do CAP
+            const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({
+              header, items, schedules, testRun
+            }));
+
             sap.ui.core.BusyIndicator.show(0);
 
             // 🔧 chama action e trata ARRAY de resultados (1 por fornecedor)
-            const results = await ODataSvc.simularPO(view, requests, 4);
+            const results = await ODataSvc.simularPO(view, payloadRequests, 4);
             Debug.dbg("Resultados da BAPI (array)", results);
 
             // 1) erro estrutural (em algum request)
@@ -269,9 +281,28 @@ sap.ui.define(
               return;
             }
 
-            // 3) monta linhas do fragment a partir de TODOS os fornecedores
-            const resRows = (Array.isArray(results) ? results : [])
-              .flatMap(r => Map.buildResRowsFromBapiResult(r, qm));
+            // 3) monta linhas do fragment a partir de TODOS os fornecedores (com srcRows por fornecedor!)
+            const resultsArr = Array.isArray(results) ? results : [];
+            let resRows = [];
+
+            try {
+              resRows = resultsArr.flatMap(r => {
+                const v = normVendor(r?.header?.fornecedor || r?.header?.vendor || "");
+                const srcRows = vendorToSrc.get(v) || (qm.getProperty("/simSourceRows") || []);
+                return Mapper.buildResRowsFromBapiResult(r, qm, srcRows);
+              });
+            } catch (err) {
+              console.error("[SIMULAR] Erro ao montar resRows:", err);
+              // fallback robusto: usa simSourceRows completo
+              try {
+                const globalSrc = qm.getProperty("/simSourceRows") || [];
+                resRows = resultsArr.flatMap(r => Mapper.buildResRowsFromBapiResult(r, qm, globalSrc));
+              } catch (err2) {
+                console.error("[SIMULAR] Fallback também falhou ao montar resRows:", err2);
+                resRows = [];
+              }
+            }
+
             Dialogs.openResultDialog(view, resRows, this);
 
             // mensagens informativas/aviso

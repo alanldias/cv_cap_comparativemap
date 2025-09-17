@@ -133,8 +133,8 @@ sap.ui.define(
         const nameKey = Keys.normKey(r.supplierName || "");
         const lifnr = Keys.pad10(
           r.lifnr ||
-            r.supplierId ||
-            (/^\d+$/.test(r.supplierName) ? r.supplierName : ""),
+          r.supplierId ||
+          (/^\d+$/.test(r.supplierName) ? r.supplierName : ""),
         );
         const meta = {
           itemId: r.itemId ?? r.ItemId ?? null,
@@ -151,16 +151,21 @@ sap.ui.define(
       qm.setProperty("/idByKey", idByKey);
     }
 
-    function buildResRowsFromBapiResult(result, qm) {
+    function buildResRowsFromBapiResult(result, qm, srcRowsOverride) {
       const idByKey = qm.getProperty("/idByKey") || {};
-      const srcRows = qm.getProperty("/simSourceRows") || [];
-      const lifnrHeader = (result?.header?.fornecedor || "")
-        .toString()
-        .padStart(10, "0");
-      const currency = result?.header?.moeda || "BRL";
-      const itens = Array.isArray(result?.itens)
-        ? result.itens.filter(Boolean)
-        : [];
+      const norm10 = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+
+      // LIFNR vindo do resultado
+      const lifnrHeader = norm10(result?.header?.fornecedor || result?.header?.vendor || "");
+
+      const globalSrc = qm.getProperty("/simSourceRows") || [];
+      // se não vier override: filtra o global pelas linhas do mesmo fornecedor
+      const srcRows = (Array.isArray(srcRowsOverride) && srcRowsOverride.length)
+        ? srcRowsOverride
+        : globalSrc.filter(r => norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader);
+
+      const currency = (result?.header?.moeda || "BRL").toString();
+      const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
       return itens.map((it, idx) => {
         const matKey = Keys.matKeyFromBapiMaterial(it?.material);
@@ -178,30 +183,23 @@ sap.ui.define(
             const n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
             const src = srcRows[n] || {};
             const mk2 = Keys.normKey(Keys.getItemKey(src));
-            const lif2 = Keys.pad10(
-              src?.lifnr || src?.supplierId || lifnrHeader,
-            );
+            const lif2 = norm10(src?.lifnr || src?.supplierId || lifnrHeader);
             const nm2 = Keys.normKey(src?.supplierName || "");
-            meta =
-              idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${nm2}`];
+            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${nm2}`];
           }
         }
 
         const src = srcRows[idx] || {};
         const invitationId =
-          meta?.invitationId != null
-            ? meta.invitationId
-            : (src.invitationId ?? null);
+          meta?.invitationId != null ? meta.invitationId : (src.invitationId ?? null);
         const invitationEmail =
-          meta?.invitationEmail != null
-            ? meta.invitationEmail
-            : (src.invitationEmail ?? null);
+          meta?.invitationEmail != null ? meta.invitationEmail : (src.invitationEmail ?? null);
+
         const quantity = Number(it?.quantidade || 0) || 0;
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
         const originalQty = Number(meta?.masterQty ?? 0) || 0;
-        const matDisplay =
-          meta?.materialCode || it?.material || Keys.getItemKey(src) || "";
+        const matDisplay = meta?.materialCode || it?.material || Keys.getItemKey(src) || "";
 
         return {
           materialCode: matDisplay,
@@ -222,6 +220,7 @@ sap.ui.define(
           poItem: it?.poItem,
         };
       });
+
     }
 
     return {
