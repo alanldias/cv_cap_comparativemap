@@ -15,17 +15,24 @@ sap.ui.define([], function () {
     const oCtx = oOData.bindContext("/simularPO(...)");
     oCtx.setParameter("requests", requests);
     oCtx.setParameter("concurrency", Number(concurrency) || 4);
+
+    const t0 = performance.now?.() || Date.now();
     await oCtx.execute();
+    const t1 = performance.now?.() || Date.now();
 
     let opResult = oCtx.getBoundContext().getObject();
     if (typeof oCtx.getReturnValueContext === "function") {
       const rvc = oCtx.getReturnValueContext();
       if (rvc) opResult = rvc.getObject() || opResult;
     }
+
     const arr = Array.isArray(opResult)
       ? opResult
-      : opResult?.value || opResult?.results || [];
-    return Array.isArray(arr) ? arr[0] || {} : opResult || {};
+      : (opResult?.value || opResult?.results || []);
+
+    const out = Array.isArray(arr) ? arr : (opResult ? [opResult] : []);
+    console.log(`[UI] simularPO: ${requests?.length} req(s) em ${(t1 - t0).toFixed(0)} ms`);
+    return out;
   }
 
   async function createScenario(

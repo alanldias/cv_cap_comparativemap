@@ -1,21 +1,2 @@
-sap.ui.define(["sap/ui/util/Storage"], function (e) {
-  "use strict";
-  const t = "tblDocs-prefs";
-  const n = new e(e.Type.local, "comparativemap");
-  function r() {
-    try {
-      const e = n.get(t);
-      if (e) return JSON.parse(e);
-    } catch (e) {}
-    return {
-      filter: { fornecedor: [], nomeItem: [] },
-      sort: { key: null, desc: false },
-      group: { key: null, desc: false },
-    };
-  }
-  function s(e) {
-    n.put(t, JSON.stringify(e));
-  }
-  return { load: r, save: s };
-});
+sap.ui.define(["sap/ui/util/Storage"],function(e){"use strict";const t="tblDocs-prefs";const n=new e(e.Type.local,"comparativemap");function r(){try{const e=n.get(t);if(e)return JSON.parse(e)}catch(e){}return{filter:{fornecedor:[],nomeItem:[]},sort:{key:null,desc:false},group:{key:null,desc:false}}}function s(e){n.put(t,JSON.stringify(e))}return{load:r,save:s}});
 //# sourceMappingURL=PrefsStore.js.map

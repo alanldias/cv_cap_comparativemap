@@ -5,7 +5,11 @@
     "type": "application",
     "i18n": {
       "bundleUrl": "i18n/i18n.properties",
-      "supportedLocales": ["", "en", "pt"]
+      "supportedLocales": [
+        "",
+        "en",
+        "pt"
+      ]
     },
     "applicationVersion": {
       "version": "0.0.1"
@@ -67,7 +71,11 @@
         "type": "sap.ui.model.resource.ResourceModel",
         "settings": {
           "bundleName": "comparativemap.comparativemap.i18n.i18n",
-          "supportedLocales": ["", "en", "pt"]
+          "supportedLocales": [
+            "",
+            "en",
+            "pt"
+          ]
         }
       },
       "": {
@@ -105,7 +113,9 @@
         {
           "name": "RouteComparativeMap",
           "pattern": ":?query:",
-          "target": ["TargetComparativeMap"]
+          "target": [
+            "TargetComparativeMap"
+          ]
         }
       ],
       "targets": {

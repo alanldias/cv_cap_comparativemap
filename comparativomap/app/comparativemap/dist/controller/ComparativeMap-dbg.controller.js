@@ -17,6 +17,7 @@ sap.ui.define(
     "sap/m/MessageToast",
     "sap/m/MessageBox",
     "sap/ui/Device",
+    "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier"
   ],
   function (
     Controller,
@@ -36,6 +37,7 @@ sap.ui.define(
     MessageToast,
     MessageBox,
     Device,
+    Build
   ) {
     "use strict";
 
@@ -49,19 +51,25 @@ sap.ui.define(
           this.getView().setModel(Models.createQM(), "qm");
 
           this._prefs = PrefsStore.load();
+          const allowedGroups = ["supplierName", "itemId"];
+          if (!allowedGroups.includes(this._prefs.group?.key)) {
+            this._prefs.group = { key: null, desc: false };
+            PrefsStore.save(this._prefs);
+          };
           this.mGroupFunctions = {
             supplierName: (ctx) => {
               const v = ctx.getProperty("supplierName") || "";
-              return { key: v, text: v };
+              const key = v || "__noSupplier__";
+              const text = v || "(Sem fornecedor)";
+              return { key, text };
             },
-            arb_PurchasingOrganization: (ctx) => {
-              const v = ctx.getProperty("arb_PurchasingOrganization") || "";
-              return { key: v, text: "Org. Compras " + v };
-            },
-            arb_CompanyCode: (ctx) => {
-              const v = ctx.getProperty("arb_CompanyCode") || "";
-              return { key: v, text: "Empresa " + v };
-            },
+            itemId: (ctx) => {
+              const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
+              const v = raw == null ? "" : String(raw);
+              const key = v || "__noItemId__";
+              const text = v ? `Item ${v}` : "(Sem ItemId)";
+              return { key, text };
+            }
           };
 
           this._vs = ViewSettingsCmp.create(
@@ -76,52 +84,54 @@ sap.ui.define(
 
         /* ====== BUSCAR ====== */
         async onBuscar() {
-          const oView = this.getView();
-          const oOData = oView.getModel();
-          const oVM = oView.getModel("vm");
-          const oQM = oView.getModel("qm");
-          const docId = (oView.byId("inputDoID").getValue() || "").trim();
-          const tbl = oView.byId("tblDocs");
+          const view = this.getView();
+          const odata = view.getModel();
+          const vm = view.getModel("vm");
+          const qm = view.getModel("qm");
+          const tbl = view.byId("tblDocs");
+          const docId = (view.byId("inputDoID").getValue() || "").trim();
 
           try {
-            if (!oOData) throw new Error("Modelo OData V4 não encontrado.");
-            if (!docId) {
-              sap.m.MessageToast.show("Informe o Doc ID");
-              return;
-            }
+            if (!odata) throw new Error("Modelo OData V4 não encontrado.");
+            if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
 
             // ✅ limpar seleção e caches da simulação antes de carregar novos dados
-            tbl.removeSelections(true);
-            oQM?.setProperty("/idByKey", {});
-            oQM?.setProperty("/simSourceRows", []);
+            tbl?.removeSelections(true);
+            qm?.setProperty("/idByKey", {});
+            qm?.setProperty("/simSourceRows", []);
 
-            tbl.setBusy(true);
+            tbl?.setBusy(true);
 
-            // ⬅️ aqui era 'view', troque para 'oView'
-            const res = await ODataSvc.fetchQuotes(oView, docId);
+            const res = await ODataSvc.fetchQuotes(view, docId);
 
-            const rows = (Array.isArray(res?.items) ? res.items : []).map((r) =>
-              Object.assign({}, r, { _originalQty: Number(r.quantity) || 0 }),
-            );
+            const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
+              ...r,
+              // ⚙️ normalizações p/ agrupar/ordenar
+              itemId: r.itemId ?? r.ItemId ?? null,                  // agrupamento por Item
+              price: (r.price !== undefined && r.price !== null)     // sort numérico por preço
+                ? Number(r.price) : r.price,
+              _originalQty: Number(r.quantity) || 0
+            }));
 
-            // ⬅️ aqui era 'vm', troque para 'oVM'
-            oVM.setProperty("/header", res?.header || {});
-            oVM.setProperty("/rows", rows);
-            oVM.setProperty("/headerRows", res?.header ? [res.header] : []);
+            vm.setProperty("/header", res?.header || {});
+            vm.setProperty("/rows", rows);
+            vm.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-            this.byId("tblDocs").getBinding("items")?.refresh(true);
-
-            // reforço: evitar “seleção fantasma” após rebind
+            // rebind + garantir que nada ficou selecionado
+            tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
-            tbl.removeSelections(true);
+            tbl?.removeSelections(true);
 
-            if (!rows.length)
-              MessageToast.show("Nenhum item retornado para esse Doc ID.");
+            // reaplicar preferências (usa seu ViewSettingsCmp)
+            this._vs?.applyGroupSortFromPrefs();
+            this._vs?.applyFiltersFromPrefs();
+
+            if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
           } catch (e) {
             console.error("[onBuscar] ERRO:", e);
             MessageBox.error("Falha ao buscar dados: " + (e.message || e));
           } finally {
-            tbl.setBusy(false);
+            tbl?.setBusy(false);
           }
         },
 
@@ -147,7 +157,7 @@ sap.ui.define(
           const vm = view.getModel("vm");
           const qm = view.getModel("qm");
 
-          // ✅ limpar apenas o modelo "res" (nunca tocar no "vm")
+          // limpa apenas o modelo "res"
           let resModel = view.getModel("res");
           if (!resModel) {
             resModel = new sap.ui.model.json.JSONModel({ rows: [] });
@@ -158,33 +168,22 @@ sap.ui.define(
 
           console.groupCollapsed("[SIMULAR] clique");
           try {
-            const headerRaw = Map.getHeaderFromVM(vm);
-            Debug.dbg(
-              "Header bruto (vm>/headerRows[0] ou vm>/header)",
-              headerRaw,
-            );
-
             const tbl = this.byId("tblDocs");
             if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
 
-            // ✅ seleção atual da UI (sem contexts “fantasma”)
+            // seleção atual (sem contexts “fantasma”)
             const selItems = tbl.getSelectedItems();
             if (!selItems.length)
               throw new Error("Selecione pelo menos 1 item para simular.");
 
             const rows = selItems
-              .map((it) => it.getBindingContext("vm")?.getObject?.())
-              .filter(
-                (r) =>
-                  r &&
-                  (r.MaterialCode || r.materialCode || r.ItemId || r.itemId),
-              );
+              .map(it => it.getBindingContext("vm")?.getObject?.())
+              .filter(r => r && (r.MaterialCode || r.materialCode || r.ItemId || r.itemId));
 
             if (!rows.length) {
-              // evita seleção visual enganosa
               tbl.removeSelections(true);
               throw new Error(
-                "Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente.",
+                "Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente."
               );
             }
             Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
@@ -193,98 +192,90 @@ sap.ui.define(
             qm.setProperty("/simSourceRows", rows);
             Map.prepareQMFromSelection(rows, qm);
 
-            // mapear header/itens/schedules
-            const header = Map.mapHeaderFromAriba(headerRaw, rows[0]);
-            const items = rows.map((r, idx) => Map.mapRowToPOItem(r, idx));
-            const schedules = rows.map((r, i) => ({
-              poItem: items[i].poItem,
-              schedLine: 1,
-              deliveryDate: Map.getDeliveryDateFromRow(r),
-              quantity: items[i].quantity,
-            }));
+            // 🔁 MONTA 1 REQUEST POR FORNECEDOR (usa o helper novo)
+            const requests = Build.buildRequestsFromSelection(rows, vm);
 
-            // validações rápidas
-            const missing = [];
-            if (!header.docType) missing.push("Tipo de Pedido (docType)");
-            if (!header.compCode) missing.push("Empresa (compCode)");
-            if (!header.purchOrg) missing.push("Org. de Compras (purchOrg)");
-            if (!header.purchGroup)
-              missing.push("Grupo de Compras (purchGroup)");
-            if (!header.vendor) missing.push("Fornecedor (vendor/LIFNR)");
-            if (!header.currency) missing.push("Moeda (currency)");
+            // Validações por request + itens
+            const headerMissing = [];
+            const itemMissing = [];
+            requests.forEach((req, ridx) => {
+              const h = req.header || {};
+              const tag = `Req#${ridx + 1} (vendor ${h.vendor || "?"})`;
 
-            const missingItems = [];
-            items.forEach((it, i) => {
-              const tag = `Item ${String((i + 1) * 10).padStart(5, "0")}`;
-              if (!it.plant) missingItems.push(`${tag}: Centro (plant)`);
-              if (!it.unit) missingItems.push(`${tag}: Unidade (unit)`);
-              if (!it.quantity || it.quantity <= 0)
-                missingItems.push(`${tag}: Quantidade (quantity)`);
-              if (!it.material && !it.shortText)
-                missingItems.push(`${tag}: MATERIAL ou SHORT_TEXT`);
+              if (!h.docType) headerMissing.push(`${tag}: Tipo de Pedido (docType)`);
+              if (!h.compCode) headerMissing.push(`${tag}: Empresa (compCode)`);
+              if (!h.purchOrg) headerMissing.push(`${tag}: Org. de Compras (purchOrg)`);
+              if (!h.purchGroup) headerMissing.push(`${tag}: Grupo de Compras (purchGroup)`);
+              if (!h.vendor) headerMissing.push(`${tag}: Fornecedor (vendor/LIFNR)`);
+              if (!h.currency) headerMissing.push(`${tag}: Moeda (currency)`);
+
+              (req.items || []).forEach((it, i) => {
+                const itTag = `${tag} Item ${String((i + 1) * 10).padStart(5, "0")}`;
+                if (!it.plant) itemMissing.push(`${itTag}: Centro (plant)`);
+                if (!it.unit) itemMissing.push(`${itTag}: Unidade (unit)`);
+                if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Quantidade (quantity)`);
+                if (!it.material && !it.shortText) itemMissing.push(`${itTag}: MATERIAL ou SHORT_TEXT`);
+              });
             });
-            if (missing.length || missingItems.length) {
+
+            if (headerMissing.length || itemMissing.length) {
               const msg = [
-                missing.length
-                  ? "Cabeçalho faltando:\n- " + missing.join("\n- ")
-                  : "",
-                missingItems.length
-                  ? "Itens faltando:\n- " + missingItems.join("\n- ")
-                  : "",
-              ]
-                .filter(Boolean)
-                .join("\n\n");
+                headerMissing.length ? "Cabeçalho faltando:\n- " + headerMissing.join("\n- ") : "",
+                itemMissing.length ? "Itens faltando:\n- " + itemMissing.join("\n- ") : ""
+              ].filter(Boolean).join("\n\n");
               throw new Error(msg);
             }
 
-            // chamada
-            const requests = [{ header, items, schedules, testRun: true }];
+            console.table(requests.map(r => ({
+              vendor: r.header.vendor,
+              items: r.items.length,
+              currency: r.header.currency
+            })));
 
             sap.ui.core.BusyIndicator.show(0);
-            const result0 = await ODataSvc.simularPO(view, requests, 4);
-            Debug.dbg("Resultado bruto da BAPI (result0)", result0);
 
-            // 🔴 1) erro “estrutural” do backend (ex.: {error:true, message:"..."})
-            if (result0?.error || result0?.success === false) {
+            // 🔧 chama action e trata ARRAY de resultados (1 por fornecedor)
+            const results = await ODataSvc.simularPO(view, requests, 4);
+            Debug.dbg("Resultados da BAPI (array)", results);
+
+            // 1) erro estrutural (em algum request)
+            const structuralErrors = (Array.isArray(results) ? results : [])
+              .filter(r => r?.error || r?.success === false);
+            if (structuralErrors.length) {
+              const firstErr = structuralErrors[0];
               if (Dialogs.showError) {
                 Dialogs.showError(
                   "Erro na simulação",
-                  result0?.message || "Falha ao simular a compra.",
-                  result0,
+                  firstErr?.message || "Falha ao simular.",
+                  firstErr
                 );
               } else {
-                // fallback se não tiver showError
-                MessageBox.error(
-                  result0?.message || "Falha ao simular a compra.",
-                  {
-                    details: JSON.stringify(result0, null, 2),
-                    contentWidth: "640px",
-                  },
-                );
+                MessageBox.error(firstErr?.message || "Falha ao simular.", {
+                  details: JSON.stringify(firstErr, null, 2),
+                  contentWidth: "640px",
+                });
               }
               console.groupEnd();
-              return; // não abre fragment
+              return;
             }
 
-            // 🟠 2) mensagens BAPI — se tiver E/A, mostra e não abre
-            const allMsgs = result0?.returnMessages || result0?.mensagens || [];
-            const hasErrorMsg =
-              Array.isArray(allMsgs) &&
-              allMsgs.some((m) => m.type === "E" || m.type === "A");
+            // 2) mensagens BAPI agregadas (E/A interrompe)
+            const allMsgs = (Array.isArray(results) ? results : [])
+              .flatMap(r => r?.returnMessages || r?.mensagens || []);
+            const hasErrorMsg = allMsgs.some(m => m.type === "E" || m.type === "A");
             if (hasErrorMsg) {
               Dialogs.showBapiMessages(allMsgs);
               console.groupEnd();
-              return; // não abre fragment em caso de erro
+              return;
             }
 
-            // ✅ segue: montar linhas do fragment e abrir
-            const resRows = Map.buildResRowsFromBapiResult(result0, qm);
+            // 3) monta linhas do fragment a partir de TODOS os fornecedores
+            const resRows = (Array.isArray(results) ? results : [])
+              .flatMap(r => Map.buildResRowsFromBapiResult(r, qm));
             Dialogs.openResultDialog(view, resRows, this);
 
-            // Mensagens informativas/aviso (sem erro) — pode mostrar depois de abrir
-            if (Array.isArray(allMsgs) && allMsgs.length) {
-              Dialogs.showBapiMessages(allMsgs);
-            }
+            // mensagens informativas/aviso
+            if (allMsgs.length) Dialogs.showBapiMessages(allMsgs);
 
             console.groupEnd();
           } catch (err) {
@@ -294,9 +285,7 @@ sap.ui.define(
               err?.cause?.response?.body ||
               err?.cause?.message ||
               err?.stack ||
-              (typeof err === "object"
-                ? JSON.stringify(err, null, 2)
-                : String(err));
+              (typeof err === "object" ? JSON.stringify(err, null, 2) : String(err));
 
             MessageBox.error(err.message || String(err), {
               details,
@@ -305,7 +294,8 @@ sap.ui.define(
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
-        },
+        }
+        ,
 
         /* ====== PREMIAÇÃO ====== */
         onAwardQtyChangeRes(ev) {
@@ -400,7 +390,7 @@ sap.ui.define(
                 this._prefs = p;
                 PrefsStore.save(p);
               }),
-            () => {},
+            () => { },
           );
         },
 
