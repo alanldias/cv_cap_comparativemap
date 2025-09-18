@@ -3,6 +3,7 @@ const cds = require("@sap/cds");
 const { LOG } = require("./lib/util/log");
 const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
 const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require("./lib/config");
+const { createSemaphore } = require("./lib/util/throttle");
 
 const { destPost } = require("./lib/http/destination");
 const {
@@ -188,97 +189,211 @@ module.exports = function () {
   });
 
   this.on("simularPO", async (req) => {
-    const { requests = [], concurrency} = req.data || {};
-    const LIMIT = Number(
-      Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
-    );
+    const {
+      requests = [],
+      concurrency,       // concorrência entre fornecedores (mapWithConcurrency)
+      chunkSize,         // tamanhos dos lotes por fornecedor
+      vendorParallel,    // paralelo por fornecedor (quantos chunks simultâneos dentro do fornecedor)
+      globalParallel     // limite global de chamadas SOAP simultâneas
+    } = req.data || {};
 
-    console.log(concurrency + "concurrency")
+    // Defaults + ENV overrides
+    const LIMIT = Number.isFinite(+concurrency) ? +concurrency :
+      Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
+    const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
+      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
 
-    LOG.infoL("[simularPO] START", { requests: requests.length, limit: LIMIT });
+    const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel) ? +vendorParallel :
+      Number.isFinite(+process.env.VENDOR_PARALLEL) ? +process.env.VENDOR_PARALLEL : Infinity;
+
+    const GLOBAL_PARALLEL = Number.isFinite(+globalParallel) ? +globalParallel :
+      Number.isFinite(+process.env.GLOBAL_PARALLEL) ? +process.env.GLOBAL_PARALLEL : Infinity;
+
+    LOG.infoL("[simularPO] START", {
+      requests: requests.length,
+      limit: LIMIT,
+      chunk: PER_VENDOR_CHUNK,
+      vendorParallel: PER_VENDOR_PARALLEL,
+      globalParallel: GLOBAL_PARALLEL
+    });
 
     try {
       if (!Array.isArray(requests) || requests.length === 0) return [];
 
+      // cria cliente SOAP 1x
       const client = await getBapiClient();
+      // semáforo global opcional
+      const globalSem = createSemaphore(GLOBAL_PARALLEL);
 
-      const mapper = async (r, idx) => {
-        const {
-          header = {},
-          items: rawItems = [],
-          schedules = [],
-          testRun = true,
-        } = r || {};
+      // mapeia 1 fornecedor
+      const mapper = async (r, idxReq) => {
+        const { header = {}, items: rawItems = [], schedules = [], testRun = true } = r || {};
         LOG.infoL("[mapper] header", {
-          idx,
-          vendor: header.vendor,
-          purchOrg: header.purchOrg,
-          compCode: header.compCode,
-          items: rawItems.length,
-          testRun,
+          idx: idxReq,
+          vendor: header.vendor, purchOrg: header.purchOrg, compCode: header.compCode,
+          items: rawItems.length, testRun
         });
 
+        // 1) resolve TaxCode (uma vez, pro conjunto inteiro do fornecedor)
         const items = rawItems.map(({ taxCode, ...rest }) => rest);
         const enrichInput = items.map((it, i) => ({
           __idx: i,
           Supplier: padLeft(String(header.vendor || ""), 10, "0"),
           Material: it.material || "",
           PurchasingOrganization: header.purchOrg,
-          Plant: it.plant,
+          Plant: it.plant
         }));
 
-        // força erro se faltar TaxCode (mensagem já detalhada sai do taxcode.js)
         const enriched = await enrichWithTaxCode(enrichInput, {
           headerVendor: padLeft(String(header.vendor || ""), 10, "0"),
-          throwIfMissing: true,
+          throwIfMissing: true
         });
 
-        // aplica resultado
         for (const row of enriched) {
           if (row?.__idx != null) {
             items[row.__idx].taxCode = row.TaxCode ?? undefined;
-            items[row.__idx].purchasingInfoRecord =
-              row.PurchasingInfoRecord ?? undefined;
+            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
           }
         }
-        const missing = items.filter((x) => !x.taxCode).length;
-        LOG.infoL("[mapper] taxcode", {
-          idx,
-          resolved: items.length - missing,
-          missing,
+        const missing = items.filter(x => !x.taxCode).length;
+        LOG.infoL("[mapper] taxcode", { idx: idxReq, resolved: items.length - missing, missing });
+        if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`);
+
+        // 2) quebra em chunks por fornecedor
+        const chunks = chunkArray(items, PER_VENDOR_CHUNK);
+        LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
+
+        // 3) monta tarefas SOAP por chunk
+        const tasks = chunks.map((chunkItems, cidx) => async () => {
+          const t0 = Date.now();
+          try {
+            // filtra schedules APENAS dos itens do chunk (evita POSCHEDULE pra item fora do payload)
+            const schedForChunk = filterSchedulesForChunk(schedules, chunkItems);
+
+            const payload = buildSmokePayload(header, chunkItems, schedForChunk, testRun);
+
+            const resp = await globalSem.run(async () => {
+              // se quiser evitar "rajada perfeita", habilite um jitterzinho aqui:
+              // await new Promise(rs => setTimeout(rs, Math.floor(Math.random()*20)));
+              const rSoap = await client.BAPI_PO_CREATE1Async(payload);
+              return Array.isArray(rSoap) ? rSoap[0] : rSoap;
+            });
+
+            const out = normalizeBapiResult(resp, !!payload.TESTRUN);
+            LOG.infoL("[mapper] CHUNK SOAP OK", {
+              idx: `${idxReq}.${cidx + 1}`,
+              itens: out.itens?.length || 0,
+              ms: Date.now() - t0,
+              inflight: globalSem.stats().inFlight,
+              queued: globalSem.stats().queued
+            });
+            return out;
+          } catch (e) {
+            LOG.errorL("[mapper] CHUNK SOAP ERROR", {
+              idx: `${idxReq}.${cidx + 1}`,
+              ms: Date.now() - t0,
+              err: e?.message || String(e)
+            });
+            return { __chunkError: true, __chunkIndex: cidx, message: e?.message || String(e) };
+          }
         });
 
-        if (missing)
-          throw new Error(
-            `Não foi possível obter TaxCode para ${missing} item(ns).`,
-          );
+        // 4) executa os chunks com limite por fornecedor
+        const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
 
-        const payload = buildSmokePayload(header, items, schedules, testRun);
-        const resp = await client.BAPI_PO_CREATE1Async(payload);
-        const r0 = Array.isArray(resp) ? resp[0] : resp;
-        const out = normalizeBapiResult(r0, !!payload.TESTRUN);
-        LOG.infoL("[mapper] SOAP OK", {
-          idx,
-          returnMsgs: out.returnMessages?.length || 0,
-          itens: out.itens?.length || 0,
-        });
-        return out;
+        // 5) agrega para o formato que o front já entende
+        return mergeChunkResults(chunkResults, header);
       };
 
+      // concorrência entre fornecedores (mantemos seu mapWithConcurrency existente)
       const results = await mapWithConcurrency(requests, LIMIT, mapper);
       LOG.infoL("[simularPO] END", { results: results.length });
       return results;
+
     } catch (e) {
       const info = safeErr(e);
-      LOG.errorL("[simularPO] ERROR", {
-        msg: info.message || info.code || "Erro",
-        status: info.responseStatus,
-      });
-      return req.error(
-        502,
-        `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`,
-      );
+      LOG.errorL("[simularPO] ERROR", { msg: info.message || info.code || "Erro", status: info.responseStatus });
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`);
     }
   });
+
+  function chunkArray(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  // Executa uma lista de funções-async (tasks) com limite de paralelismo.
+  // Se limit for Infinity/undefined/0/negativo, roda tudo em paralelo (Promise.all).
+  async function runTasksWithLimit(tasks, limit) {
+    if (!Array.isArray(tasks) || tasks.length === 0) return [];
+    const n = Number(limit);
+    if (!Number.isFinite(n) || n <= 0 || n >= tasks.length) {
+      return Promise.all(tasks.map((t) => t()));
+    }
+    const out = new Array(tasks.length);
+    let i = 0;
+    const workers = Math.min(n, tasks.length);
+    async function worker() {
+      while (true) {
+        const idx = i++;
+        if (idx >= tasks.length) break;
+        try {
+          out[idx] = await tasks[idx]();
+        } catch (err) {
+          out[idx] = { __chunkError: true, __chunkIndex: idx, message: err?.message || String(err) };
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+    return out;
+  }
+
+  function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
+    if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
+    const poSet = new Set(
+      chunkItems.map(it => String(Number.isInteger(it.poItem) ? it.poItem : it.poItem || "").padStart(2, "0"))
+    );
+    return allSchedules.filter(s => poSet.has(String(Number.isInteger(s?.poItem) ? s.poItem : s?.poItem || "")));
+  }
+
+  function pickHeaderFallback(headerIn) {
+    return {
+      empresa: headerIn.compCode,
+      orgCompras: headerIn.purchOrg,
+      grupoCompras: headerIn.purchGroup,
+      fornecedor: padLeft(String(headerIn.vendor || ""), 10, "0"),
+      moeda: headerIn.currency,
+      incoterms1: headerIn.incoterms1,
+      incoterms2: headerIn.incoterms2,
+      criadoEm: new Date().toISOString().slice(0, 10),
+      criadoPor: "INT_MAPA",
+      poNumber: ""
+    };
+  }
+
+  function mergeChunkResults(chunksNorm = [], headerIn) {
+    const ok = chunksNorm.filter(c => !c.__chunkError);
+    const err = chunksNorm.filter(c => c.__chunkError);
+
+    // header: usa do primeiro OK; senão um fallback com dados do header de entrada
+    const header = ok[0]?.header || pickHeaderFallback(headerIn);
+
+    const itens = ok.flatMap(c => Array.isArray(c.itens) ? c.itens : []);
+    const msgsOk = ok.flatMap(c => Array.isArray(c.returnMessages) ? c.returnMessages : []);
+    const msgsErr = err.map(e => ({
+      type: "E", id: "CHUNK", number: "000",
+      message: e.message || "Falha ao processar chunk", logNo: null
+    }));
+    const mensagens = [...msgsOk, ...msgsErr];
+
+    return {
+      testRun: true, // você está usando TESTRUN
+      header,
+      itens,
+      returnMessages: mensagens,
+      mensagens
+    };
+  }
 };
