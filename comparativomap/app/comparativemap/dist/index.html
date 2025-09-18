@@ -1,36 +1,40 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
     <title>C.Vale - Mapa Comparativo</title>
     <link rel="icon" type="image/png" href="./img/image 48 (2).png" />
     <style>
-        html, body, body > div, #container, #container-uiarea {
-            height: 100%;
-        }
+      html,
+      body,
+      body > div,
+      #container,
+      #container-uiarea {
+        height: 100%;
+      }
     </style>
     <script
-        id="sap-ui-bootstrap"
-        src="https://sapui5.hana.ondemand.com/1.139.0/resources/sap-ui-core.js"
-        data-sap-ui-theme="sap_horizon"
-        data-sap-ui-resource-roots='{
+      id="sap-ui-bootstrap"
+      src="https://sapui5.hana.ondemand.com/1.139.0/resources/sap-ui-core.js"
+      data-sap-ui-theme="sap_horizon"
+      data-sap-ui-resource-roots='{
             "comparativemap.comparativemap": "./"
         }'
-        data-sap-ui-on-init="module:sap/ui/core/ComponentSupport"
-        data-sap-ui-compat-version="edge"
-        data-sap-ui-async="true"
-        data-sap-ui-frame-options="trusted"
+      data-sap-ui-on-init="module:sap/ui/core/ComponentSupport"
+      data-sap-ui-compat-version="edge"
+      data-sap-ui-async="true"
+      data-sap-ui-frame-options="trusted"
     ></script>
-</head>
-<body class="sapUiBody sapUiSizeCompact" id="content">
+  </head>
+  <body class="sapUiBody sapUiSizeCompact" id="content">
     <div
-        data-sap-ui-component
-        data-name="comparativemap.comparativemap"
-        data-id="container"
-        data-settings='{"id" : "comparativemap.comparativemap"}'
-        data-handle-validation="true"
+      data-sap-ui-component
+      data-name="comparativemap.comparativemap"
+      data-id="container"
+      data-settings='{"id" : "comparativemap.comparativemap"}'
+      data-handle-validation="true"
     ></div>
-</body>
+  </body>
 </html>

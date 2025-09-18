@@ -7,11 +7,14 @@
   "private": true,
   "dependencies": {
     "@cap-js/hana": "^2",
+    "@cap-js/sqlite": "^2.0.2",
     "@sap-cloud-sdk/connectivity": "^4.1.1",
     "@sap-cloud-sdk/http-client": "^4.1.1",
     "@sap-cloud-sdk/resilience": "^4.1.1",
     "@sap/cds": "^9",
     "@sap/xssec": "^4",
+    "axios": "^1.11.0",
+    "dotenv": "^17.2.1",
     "express": "^4",
     "soap": "^1.3.0"
   },
@@ -20,33 +23,67 @@
   },
   "devDependencies": {
     "@cap-js/cds-types": "^0.13.0",
-    "@cap-js/sqlite": "^2",
-    "@sap/cds-dk": ">=8"
+    "@sap/cds-dk": ">=8",
+    "eslint": "^9.35.0",
+    "eslint-config-prettier": "^10.1.8",
+    "eslint-plugin-prettier": "^5.5.4",
+    "prettier": "^3.6.2"
   },
   "scripts": {
     "start": "cds-serve",
-    "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false"
+    "watch-comparativemap": "cds watch --open comparativemap/webapp/index.html?sap-ui-xx-viewCache=false",
+    "build": "mbt build -t .",
+    "deploy": "cf deploy comparativomap_1.0.0.mtar",
+    "undeploy": "cf undeploy comparativomap --delete-services --delete-service-keys --delete-service-brokers",
+    "format": "prettier --write \"src/**/*.{js,ts,json,md}\"",
+    "lint": "eslint \"src/**/*.{js,ts}\"",
+    "lint:fix": "eslint \"src/**/*.{js,ts}\" --fix"
   },
   "cds": {
     "requires": {
       "db": {
         "kind": "sqlite",
         "credentials": {
-          "database": "db/dev.db"
+          "database": "dev.sqlite"
         }
       },
       "[production]": {
         "auth": "xsuaa"
       },
-      "AribaApproval": {
+      "ARIBA_Event_Management_Test": {
         "kind": "rest",
-        "credentials": {
-          "url": "${ARIBA_API_BASE}"
+        "[production]": {
+          "credentials": {
+            "destination": "ARIBA_Event_Management_Test"
+          }
         }
       },
-      "connectivity": true,
-      "destinations": true,
-      "html5-runtime": true
+      "BAPI_PO_CREATE": {
+        "credentials": {
+          "destination": "S4H_QAS_CQ5_MAPA",
+          "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300"
+        }
+      },
+      "BAPI_INFORECORD_GETLIST": {
+        "ARIBA_Sourcing_Project_Management_Test": {
+          "kind": "rest",
+          "[production]": {
+            "credentials": {
+              "destination": "ARIBA_Sourcing_Project_Management_Test"
+            }
+          }
+        },
+        "API_INFORECORD_PROCESS_SRV": {
+          "kind": "odata-v2",
+          "model": "srv/external/API_INFORECORD_PROCESS_SRV.csn.json",
+          "[production]": {
+            "credentials": {
+              "destination": "S4H_QAS_CQ5_MAPA",
+              "path": "/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV"
+            }
+          }
+        }
+      }
     }
   }
 }

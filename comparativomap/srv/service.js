@@ -1,152 +1,284 @@
-const cds  = require('@sap/cds');
-const soap = require('soap');
-const axios = require('axios');
-const { getDestination, addDestinationToRequestConfig } = require('@sap-cloud-sdk/connectivity');
+// srv/service.js
+const cds = require("@sap/cds");
+const { LOG } = require("./lib/util/log");
+const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
+const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require("./lib/config");
 
-/* =========================
- * CONFIG (editar aqui)
- * ========================= */
-//  NÃO ALTERAR: nome da action exposta pelo serviço CAP
-const ACTION_NAME = 'consultarPedidoECC';
+const { destPost } = require("./lib/http/destination");
+const {
+  fetchSupplierBids,
+  fetchParentProjectId,
+  fetchSupplierInvitationsList,
+  pickSupplierNameByInvitation,
+  pickSupplierNameFromRows,
+  extractSapOrgEntry,
+  extractSapVendorId,
+} = require("./lib/ariba/events");
+const { fetchAribaHeader } = require("./lib/ariba/pm");
+const { enrichWithTaxCode } = require("./lib/s4/taxcode");
+const {
+  getBapiClient,
+  buildSmokePayload,
+  normalizeBapiResult,
+  padLeft,
+} = require("./lib/soap/bapi-po-create");
+const { mapWithConcurrency } = require("./lib/util/concurrency");
 
-// Pode alterar à vontade ↓
-const ROLE_REQUIRED     = process.env.ROLE_REQUIRED     || 'ECCOperator';
-const DESTINATION_NAME  = process.env.DESTINATION_NAME  || 'ECC_SOAP';
-const ECC_WSDL_URL      = process.env.ECC_WSDL_URL      || 'http://<host-interno>:<port>/sap/bc/srt/rfc/sap/ZWS_PO/100?wsdl';
-const SOAP_TIMEOUT_MS   = Number(process.env.SOAP_TIMEOUT_MS || 30000);
+module.exports = function () {
+  this.on("GetQuotes", async (req) => {
+    const { docId } = req.data || {};
+    if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
+    const round = Number.isFinite(Number(ARIBA_EVENT_ROUND))
+      ? Number(ARIBA_EVENT_ROUND)
+      : 1;
 
-/* =========================
- * Helper SOAP via Destination
- * ========================= */
-async function buildSoapHttp(jwt) {
-  const destination = await getDestination({ destinationName: DESTINATION_NAME, jwt });
-  if (!destination) throw new Error(`Destination ${DESTINATION_NAME} não encontrado`);
-
-  const cfg = await addDestinationToRequestConfig({}, destination);
-
-  const http = axios.create({
-    httpAgent : cfg.httpAgent,
-    httpsAgent: cfg.httpsAgent,
-    proxy     : false,
-    timeout   : SOAP_TIMEOUT_MS
-  });
-
-  const soapRequest = (requestOptions, cb) => {
-    http({
-      method : requestOptions.method || 'POST',
-      url    : requestOptions.uri || requestOptions.url,
-      headers: { ...(cfg.headers || {}), ...(requestOptions.headers || {}) },
-      data   : requestOptions.body
-    })
-      .then(res => cb(null, res, res.data))
-      .catch(err => cb(err));
-  };
-
-  return {
-    soapRequest,
-    wsdlHeaders: cfg.headers || {},
-    wsdlOptions: { agent: cfg.httpAgent || cfg.httpsAgent }
-  };
-}
-
-/* =========================
- * Serviço CAP
- * ========================= */
-module.exports = cds.service.impl(function () {
-  const { AribaQuotes } = this.entities;
-
-  // Function import "GetQuotes" - consulta por parâmetros (docId, supplierId, lineNumber)
-  this.on('GetQuotes', async (req) => {
-    const { docId, supplierId, lineNumber } = req.data;
-
-    // Monta SELECT dinâmico com AND implícito
-    let q = SELECT.from(AribaQuotes);
-    const where = {};
-
-    if (docId) where.docId = docId;
-    if (supplierId) where.supplierId = supplierId;
-
-    if (lineNumber !== undefined && lineNumber !== null) {
-      const n = Number(lineNumber);
-      if (Number.isNaN(n)) return req.reject(400, 'lineNumber inválido');
-      where.lineNumber = n;
-    }
-
-    if (Object.keys(where).length) q = q.where(where);
-    return await cds.run(q);
-  });
-
-  // (Opcional) Hooks de boas práticas — log, validações leves, etc.
-  this.before('READ', 'AribaQuotes', (req) => {
-    // Ex.: validar formatos, aplicar defaults, auditoria, etc.
-    // console.log('READ AribaQuotes', req.query);
-  });
-  
-  this.on(ACTION_NAME, async (req) => {
-    // Reforço de autorização
-    if (!req.user?.is(ROLE_REQUIRED)) return req.error(403, `Sem permissão (${ROLE_REQUIRED})`);
-
-    // JWT encaminhado pelo AppRouter
-    const rawAuth = req.headers?.authorization || req.http?.req?.headers?.authorization;
-    const jwt = rawAuth?.replace(/^Bearer\s+/i, '');
-    if (!jwt) return req.error(401, 'JWT ausente');
-
-    const { numero } = req.data;
-    if (!numero) return req.error(400, "Parâmetro 'numero' é obrigatório");
+    LOG.infoL("[GetQuotes] START", { docId, round });
 
     try {
-      // 1) Client SOAP usando Destination
-      const { soapRequest, wsdlHeaders, wsdlOptions } = await buildSoapHttp(jwt);
-      const client = await soap.createClientAsync(ECC_WSDL_URL, {
-        request      : soapRequest,
-        wsdl_headers : wsdlHeaders,
-        wsdl_options : wsdlOptions,
-        timeout      : SOAP_TIMEOUT_MS
+      const { rows, results } = await fetchSupplierBids(docId);
+      LOG.infoL("[GetQuotes] supplierBids", {
+        rows: rows.length,
+        results: results.length,
+      });
+      if (!rows.length || !results.length) return { header: null, items: [] };
+
+      const list = await fetchSupplierInvitationsList(docId, round).catch(
+        () => [],
+      );
+      LOG.infoL("[GetQuotes] invitations", {
+        count: Array.isArray(list) ? list.length : 0,
       });
 
-      // 2) Ajuste para a operação real do  WSDL + parametro
-      // Ex.: Z_GET_PO_DETAIL(EBELN)+Async
-      const [resp] = await client.Z_GET_PO_DETAILAsync({ EBELN: String(numero) });
+      const nameByInvId = new Map(),
+        emailByInvId = new Map(),
+        vendorByInvId = new Map();
+      for (const it of list) {
+        const invId = String(
+          it?.invitationId ?? it?.userId ?? it?.uniqueName ?? "",
+        );
+        if (!invId) continue;
+        const name =
+          it?.organization?.name ||
+          it?.supplierName ||
+          it?.organizationName ||
+          it?.supplier?.name ||
+          null;
+        const email =
+          it?.emailAddress ||
+          it?.supplierEmail ||
+          it?.email ||
+          it?.mainContact?.emailAddress ||
+          it?.contact?.email ||
+          null;
+        const sapEntry = extractSapOrgEntry(it);
+        const sapId = sapEntry?.value ?? extractSapVendorId(it);
+        if (name) nameByInvId.set(invId, name);
+        if (email) emailByInvId.set(invId, email);
+        if (sapId) vendorByInvId.set(invId, sapId);
+      }
 
-      // 3) Normalização comum
-      // pega o nome da função gerada pelo node-soap com o nome do WSDL
-      // algum serviços retornam objeto dentro do response outros jogam tudo no resp
-      const payload = resp?.Z_GET_PO_DETAILResponse || resp;
-      // tenta achar e padronizar o resultado se não achar fica o nome que veio mesmo
-      const header =
-        payload?.POHEADER ||
-        payload?.PO_HEADER ||
-        payload?.E_PO_HEADER ||
-        payload?.E_HEADER ||
-        payload;
-     // helper que pega o primiero campo valido entre sinonimos
-     //Ex.: pick(header, 'DOC_TYPE', 'BSART') → retorna DOC_TYPE se existir; se não, tenta BSART.
-      const pick = (obj, ...keys) => {
-        for (const k of keys) {
-          const v = obj?.[k];
-          if (v !== undefined && v !== null && String(v).trim() !== '') return String(v);
+      for (const invId of new Set(
+        results.map((r) => r._invitationId).filter(Boolean),
+      )) {
+        if (!nameByInvId.has(invId)) {
+          const fb =
+            pickSupplierNameByInvitation(rows, invId) ||
+            pickSupplierNameFromRows(rows);
+          if (fb) nameByInvId.set(invId, fb);
         }
-        return null;
-      
-      };
+      }
 
-      // 4) Retornar APENAS os campos pedidos
-      //No fim usa pick(...) pra montar o objeto só com:
-      //DOC_TYPE, PURCH_ORG, PUR_GROUP, COMP_CODE, INCOTERMS1, INCOTERMS2, PMNTTRMS.
-      return {
-        DOC_TYPE   : pick(header, 'DOC_TYPE', 'BSART'),
-        PURCH_ORG  : pick(header, 'PURCH_ORG', 'EKORG'),
-        PUR_GROUP  : pick(header, 'PUR_GROUP', 'EKGRP'),
-        COMP_CODE  : pick(header, 'COMP_CODE', 'BUKRS'),
-        INCOTERMS1 : pick(header, 'INCOTERMS1', 'INCO1'),
-        INCOTERMS2 : pick(header, 'INCOTERMS2', 'INCO2'),
-        PMNTTRMS   : pick(header, 'PMNTTRMS', 'ZTERM')
-      };
+      let parentProjectId = null;
+      try {
+        parentProjectId = await fetchParentProjectId(docId);
+      } catch { }
+      LOG.infoL("[GetQuotes] parentProjectId", { parentProjectId });
 
-    } catch (err) {
-      console.error('[ECC SOAP] erro:', err?.response?.status, err?.message);
-      return req.error(502, `Falha na chamada SOAP ECC: ${err.message}`);
+      let header = null;
+      try {
+        if (parentProjectId) header = await fetchAribaHeader(parentProjectId);
+      } catch { }
+      LOG.infoL("[GetQuotes] header", { hasHeader: !!header });
+
+      const headerWithDoc = Object.assign({ docId }, header || {}, {
+        supplierName: null,
+      });
+      const itemsOut = results.map((r) => {
+        const { _invitationId, _itemId, ...pub } = r;
+        const invId = _invitationId || null;
+        const supplierName = invId ? nameByInvId.get(invId) || null : null;
+        const supplierIdSap = invId ? vendorByInvId.get(invId) || null : null;
+        const email = invId ? emailByInvId.get(invId) || null : null;
+        return {
+          ...pub,
+          supplierName,
+          SupplierCode: supplierIdSap,
+          invitationId: invId,
+          invitationEmail: email,
+        };
+      });
+
+      LOG.infoL("[GetQuotes] END", { items: itemsOut.length });
+      return { header: headerWithDoc, items: itemsOut };
+    } catch (e) {
+      const status = e.response?.status || 502;
+      const msg = e.response?.data?.message || e.response?.data || e.message;
+      LOG.errorL("[GetQuotes] ERROR", { status, msg });
+      return req.error(status, "Falha ao consultar supplierBids no Ariba.");
     }
   });
 
-});
+  this.on("CreateScenario", async (req) => {
+    const { eventId, title, scenarioType, supplierBids } = req.data || {};
+    if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
+    if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
+      return req.error(
+        400,
+        "'supplierBids' deve ser um array com pelo menos 1 item.",
+      );
+    }
+
+    LOG.infoL("[CreateScenario] START", {
+      eventId,
+      title,
+      scenarioType,
+      bids: supplierBids.length,
+    });
+
+    const payload = {
+      eventId,
+      title: title || "Cenário via API",
+      scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
+      supplierBids: supplierBids.map((it) => ({
+        eventId,
+        itemId: Number(it.itemId),
+        invitationId: String(it.invitationId || ""),
+        bidType: it.bidType || "Primary",
+        winningSplitType: Number(it.winningSplitType ?? 1),
+        winningSplitValue: Number(it.winningSplitValue ?? 100),
+      })),
+    };
+
+    const relPath = `/events/${encodeURIComponent(eventId)}/scenarios`;
+    try {
+      const { data, headers } = await destPost(DEST.EVENTS, relPath, payload, {
+        timeoutMs: HTTP_TIMEOUT_MS,
+      });
+      const correlationId =
+        headers?.["x-correlation-id"] || headers?.["x-correlationid"] || null;
+      const scenarioId =
+        data?.scenarioId || data?.id || data?.scenarioID || null;
+      LOG.infoL("[CreateScenario] OK", { scenarioId, correlationId });
+      return {
+        success: true,
+        scenarioId,
+        aribaResponse: JSON.stringify(data),
+        correlationId,
+      };
+    } catch (e) {
+      const { status, correlationId, userMessage, technical } =
+        formatAribaScenarioError(e);
+      LOG.errorL("[CreateScenario] ERROR", {
+        status,
+        correlationId,
+        userMessage,
+      });
+      return req.error(status, userMessage, { correlationId, technical });
+    }
+  });
+
+  this.on("simularPO", async (req) => {
+    const { requests = [], concurrency} = req.data || {};
+    const LIMIT = Number(
+      Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
+    );
+
+    console.log(concurrency + "concurrency")
+
+
+    LOG.infoL("[simularPO] START", { requests: requests.length, limit: LIMIT });
+
+    try {
+      if (!Array.isArray(requests) || requests.length === 0) return [];
+
+      const client = await getBapiClient();
+
+      const mapper = async (r, idx) => {
+        const {
+          header = {},
+          items: rawItems = [],
+          schedules = [],
+          testRun = true,
+        } = r || {};
+        LOG.infoL("[mapper] header", {
+          idx,
+          vendor: header.vendor,
+          purchOrg: header.purchOrg,
+          compCode: header.compCode,
+          items: rawItems.length,
+          testRun,
+        });
+
+        const items = rawItems.map(({ taxCode, ...rest }) => rest);
+        const enrichInput = items.map((it, i) => ({
+          __idx: i,
+          Supplier: padLeft(String(header.vendor || ""), 10, "0"),
+          Material: it.material || "",
+          PurchasingOrganization: header.purchOrg,
+          Plant: it.plant,
+        }));
+
+        // força erro se faltar TaxCode (mensagem já detalhada sai do taxcode.js)
+        const enriched = await enrichWithTaxCode(enrichInput, {
+          headerVendor: padLeft(String(header.vendor || ""), 10, "0"),
+          throwIfMissing: true,
+        });
+
+        // aplica resultado
+        for (const row of enriched) {
+          if (row?.__idx != null) {
+            items[row.__idx].taxCode = row.TaxCode ?? undefined;
+            items[row.__idx].purchasingInfoRecord =
+              row.PurchasingInfoRecord ?? undefined;
+          }
+        }
+        const missing = items.filter((x) => !x.taxCode).length;
+        LOG.infoL("[mapper] taxcode", {
+          idx,
+          resolved: items.length - missing,
+          missing,
+        });
+
+        if (missing)
+          throw new Error(
+            `Não foi possível obter TaxCode para ${missing} item(ns).`,
+          );
+
+        const payload = buildSmokePayload(header, items, schedules, testRun);
+        const resp = await client.BAPI_PO_CREATE1Async(payload);
+        const r0 = Array.isArray(resp) ? resp[0] : resp;
+        const out = normalizeBapiResult(r0, !!payload.TESTRUN);
+        LOG.infoL("[mapper] SOAP OK", {
+          idx,
+          returnMsgs: out.returnMessages?.length || 0,
+          itens: out.itens?.length || 0,
+        });
+        return out;
+      };
+
+      const results = await mapWithConcurrency(requests, LIMIT, mapper);
+      LOG.infoL("[simularPO] END", { results: results.length });
+      return results;
+    } catch (e) {
+      const info = safeErr(e);
+      LOG.errorL("[simularPO] ERROR", {
+        msg: info.message || info.code || "Erro",
+        status: info.responseStatus,
+      });
+      return req.error(
+        502,
+        `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`,
+      );
+    }
+  });
+};

@@ -1,0 +1,1579 @@
+{
+  "meta": {
+    "creator": "cds-dk 9.2.1"
+  },
+  "$version": "2.0",
+  "definitions": {
+    "API_INFORECORD_PROCESS_SRV": {
+      "kind": "service",
+      "@cds.external": true,
+      "@m.IsDefaultEntityContainer": "true",
+      "@sap.message.scope.supported": "true",
+      "@sap.supported.formats": "atom json xlsx"
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurchasingInfoRecord": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.deletable": "false",
+      "@sap.content.version": "1",
+      "@sap.label": "Registro info para compras",
+      "elements": {
+        "PurchasingInfoRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Reg. info compras",
+          "@sap.quickinfo": "Nº registro info para compras",
+          "notNull": true
+        },
+        "Supplier": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Fornecedor",
+          "@sap.quickinfo": "Nº conta do fornecedor"
+        },
+        "Material": {
+          "type": "cds.String",
+          "length": 40,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Material",
+          "@sap.quickinfo": "Nº do material"
+        },
+        "MaterialGroup": {
+          "type": "cds.String",
+          "length": 9,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grupo de mercadorias"
+        },
+        "CreationDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Criado em",
+          "@sap.quickinfo": "Data de criação do registro"
+        },
+        "IsDeleted": {
+          "type": "cds.Boolean",
+          "@sap.label": "Regist.info completo",
+          "@sap.quickinfo": "Info de compra: dados gerais marcados para eliminação"
+        },
+        "PurchasingInfoRecordDesc": {
+          "type": "cds.String",
+          "length": 40,
+          "@sap.label": "Texto breve - info",
+          "@sap.quickinfo": "Texto breve sobre informação de compras"
+        },
+        "PurgInfoRecNonStockItmSortTerm": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Critério ordenação",
+          "@sap.quickinfo": "Critério de ordenação p/registros info p/itens n/estocados"
+        },
+        "PurgDocOrderQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM pedido",
+          "@sap.quickinfo": "Unidade de medida do pedido",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "OrderItemQtyToBaseQtyNmrtr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "Corresponde a",
+          "@sap.quickinfo": "Numerador para a conversão de UM de pedido em UM de base"
+        },
+        "OrderItemQtyToBaseQtyDnmntr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "Denominador",
+          "@sap.quickinfo": "Denominador para a conversão de UM de pedido em UM base"
+        },
+        "SupplierMaterialNumber": {
+          "type": "cds.String",
+          "length": 35,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº material forn.",
+          "@sap.quickinfo": "Número de material utilizado por fornecedor"
+        },
+        "SupplierRespSalesPersonName": {
+          "type": "cds.String",
+          "length": 30,
+          "@sap.label": "Vendedor",
+          "@sap.quickinfo": "Vendedor responsável para responder a dúvidas:"
+        },
+        "SupplierPhoneNumber": {
+          "type": "cds.String",
+          "length": 16,
+          "@sap.label": "Telefone",
+          "@sap.quickinfo": "Nº de telefone do fornecedor"
+        },
+        "BaseUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UMB",
+          "@sap.quickinfo": "Unidade de medida básica",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "SupplierMaterialGroup": {
+          "type": "cds.String",
+          "length": 18,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grp.mercs.forn.",
+          "@sap.quickinfo": "Grupo de mercadorias do fornecedor"
+        },
+        "PriorSupplier": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Forn.precedente",
+          "@sap.quickinfo": "Fornecedor precedente"
+        },
+        "AvailabilityStartDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Fornm.a.part.de",
+          "@sap.quickinfo": "Fornecimento a partir de"
+        },
+        "AvailabilityEndDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Fornecimento até"
+        },
+        "VarblPurOrdUnitIsActive": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "UMP variável",
+          "@sap.quickinfo": "UM pedido variável ativa"
+        },
+        "Manufacturer": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Fabricante"
+        },
+        "IsRegularSupplier": {
+          "type": "cds.Boolean",
+          "@sap.label": "Fornecedor regular"
+        },
+        "SupplierSubrange": {
+          "type": "cds.String",
+          "length": 6,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Subsortim.forn.",
+          "@sap.quickinfo": "Subsortimento do fornecedor"
+        },
+        "NoDaysReminder1": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 0,
+          "@sap.label": "1º aviso",
+          "@sap.quickinfo": "Nº de dias para 1º aviso"
+        },
+        "NoDaysReminder2": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 0,
+          "@sap.label": "2º aviso",
+          "@sap.quickinfo": "Nº de dias para 2º aviso"
+        },
+        "NoDaysReminder3": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 0,
+          "@sap.label": "3º aviso",
+          "@sap.quickinfo": "Nº de dias para 3º aviso"
+        },
+        "ProductPurchasePointsQty": {
+          "type": "cds.Decimal",
+          "precision": 13,
+          "scale": 3,
+          "@sap.unit": "ProductPurchasePointsQtyUnit",
+          "@sap.label": "Pontos",
+          "@sap.quickinfo": "Número de pontos"
+        },
+        "ProductPurchasePointsQtyUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de pontos",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "SupplierSubrangeSortNumber": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "SSR nº seq.ordenação",
+          "@sap.quickinfo": "Nº seq.ordenação"
+        },
+        "LastChangeDateTime": {
+          "type": "cds.Timestamp",
+          "@odata.Type": "Edm.DateTimeOffset",
+          "@odata.Precision": 7,
+          "@sap.label": "Registro da hora",
+          "@sap.quickinfo": "Registro hora UTC forma descritiva (AAAAMMDDhhmmssmmmuuun)"
+        },
+        "IsEndOfPurposeBlocked": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Finaldd.negóc.concl.",
+          "@sap.quickinfo": "Objetivo comercial concluído"
+        },
+        "to_PurgInfoRecdOrgPlantData": {
+          "type": "cds.Composition",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurgInfoRecdOrgPlantData",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurgInfoRecdOrgPlantData": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.deletable": "false",
+      "@sap.content.version": "1",
+      "@sap.label": "Dados organização compras e registro info para compras",
+      "elements": {
+        "PurchasingInfoRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Reg. info compras",
+          "@sap.quickinfo": "Nº registro info para compras",
+          "notNull": true
+        },
+        "PurchasingInfoRecordCategory": {
+          "key": true,
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Ctg.reg.info",
+          "@sap.quickinfo": "Ctg.do reg.info para compras",
+          "notNull": true
+        },
+        "PurchasingOrganization": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Organização compras",
+          "@sap.quickinfo": "Organização de compras",
+          "notNull": true
+        },
+        "Plant": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Centro",
+          "notNull": true
+        },
+        "CreatedByUser": {
+          "type": "cds.String",
+          "length": 12,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Criado por",
+          "@sap.quickinfo": "Nome do responsável que criou o objeto"
+        },
+        "IsMarkedForDeletion": {
+          "type": "cds.Boolean",
+          "@sap.label": "Dados org.compras",
+          "@sap.quickinfo": "Info compra: dados org.compras marcados para eliminação"
+        },
+        "PurchasingGroup": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grupo de compradores"
+        },
+        "Currency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda",
+          "@sap.quickinfo": "Código da moeda",
+          "@sap.semantics": "currency-code"
+        },
+        "MinimumPurchaseOrderQuantity": {
+          "type": "cds.Decimal",
+          "precision": 13,
+          "scale": 3,
+          "@sap.unit": "PurchaseOrderPriceUnit",
+          "@sap.label": "Qtd.mínima",
+          "@sap.quickinfo": "Quantidade mínima de pedido"
+        },
+        "StandardPurchaseOrderQuantity": {
+          "type": "cds.Decimal",
+          "precision": 13,
+          "scale": 3,
+          "@sap.unit": "PurchaseOrderPriceUnit",
+          "@sap.label": "Qtd.pedido normal"
+        },
+        "MaterialPlannedDeliveryDurn": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 0,
+          "@sap.label": "Prz.entrg.prev.",
+          "@sap.quickinfo": "Prazo de entrega previsto em dias"
+        },
+        "OverdelivTolrtdLmtRatioInPct": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 1,
+          "@sap.label": "Tol.fornec.excessivo",
+          "@sap.quickinfo": "Limite de tolerância para fornecimento excessivo"
+        },
+        "UnderdelivTolrtdLmtRatioInPct": {
+          "type": "cds.Decimal",
+          "precision": 3,
+          "scale": 1,
+          "@sap.label": "Tol.fornmto.incompl.",
+          "@sap.quickinfo": "Limite de tolerância para fornecimento incompleto"
+        },
+        "UnlimitedOverdeliveryIsAllowed": {
+          "type": "cds.Boolean",
+          "@sap.label": "Forn.exces.s/limites",
+          "@sap.quickinfo": "Fornec.excess.não limit.permitido"
+        },
+        "LastReferencingPurchaseOrder": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Documento de compras",
+          "@sap.quickinfo": "Nº do documento de compras"
+        },
+        "LastReferencingPurOrderItem": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Item",
+          "@sap.quickinfo": "Número do item do documento de compras"
+        },
+        "Material": {
+          "type": "cds.String",
+          "length": 40,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Material",
+          "@sap.quickinfo": "Nº do material"
+        },
+        "Supplier": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Fornecedor",
+          "@sap.quickinfo": "Nº conta do fornecedor"
+        },
+        "MaterialGroup": {
+          "type": "cds.String",
+          "length": 9,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grupo de mercadorias"
+        },
+        "PurgDocOrderQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM pedido",
+          "@sap.quickinfo": "Unidade de medida do pedido",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "NetPriceQuantityUnit": {
+          "type": "cds.String",
+          "length": 50,
+          "@sap.creatable": "false",
+          "@sap.updatable": "false",
+          "@sap.sortable": "false",
+          "@sap.filterable": "false"
+        },
+        "NetPriceAmount": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "Currency",
+          "@sap.label": "Preço líquido",
+          "@sap.quickinfo": "Preço líquido no info compras"
+        },
+        "MaterialPriceUnitQty": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.unit": "PurchaseOrderPriceUnit",
+          "@sap.label": "Unidade preço"
+        },
+        "PurchaseOrderPriceUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unid.prç.pedido",
+          "@sap.quickinfo": "Unidade do preço do pedido",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "PriceValidityEndDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Válido até",
+          "@sap.quickinfo": "Preço válido até"
+        },
+        "ShippingInstruction": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Normas de expedição"
+        },
+        "InvoiceIsGoodsReceiptBased": {
+          "type": "cds.Boolean",
+          "@sap.label": "Rev.fatur.baseado EM",
+          "@sap.quickinfo": "Código: revisão de faturas baseada em entrada de mercadorias"
+        },
+        "TaxCode": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Código de imposto",
+          "@sap.quickinfo": "Código do IVA"
+        },
+        "IncotermsClassification": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Incoterms",
+          "@sap.quickinfo": "Incoterms parte 1"
+        },
+        "IncotermsTransferLocation": {
+          "type": "cds.String",
+          "length": 28,
+          "@sap.label": "Incoterms (parte 2)"
+        },
+        "IncotermsLocation1": {
+          "type": "cds.String",
+          "length": 70,
+          "@sap.label": "Local incoterms 1"
+        },
+        "MaximumOrderQuantity": {
+          "type": "cds.Decimal",
+          "precision": 13,
+          "scale": 3,
+          "@sap.unit": "PurchaseOrderPriceUnit",
+          "@sap.label": "Qtd.máxima do pedido"
+        },
+        "IsRelevantForAutomSrcg": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Determ.aut.fte.supr.",
+          "@sap.quickinfo": "Relevante p/determinação automática da fonte de suprimento"
+        },
+        "SupplierQuotation": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Cotação",
+          "@sap.quickinfo": "Nº cotação"
+        },
+        "SupplierQuotationDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Cotação vál.desde",
+          "@sap.quickinfo": "Data validade da cotação"
+        },
+        "MinRemainingShelfLife": {
+          "type": "cds.Decimal",
+          "precision": 4,
+          "scale": 0,
+          "@sap.label": "Tmp.valid.restante",
+          "@sap.quickinfo": "Tempo de validade restante"
+        },
+        "IsEvaluatedRcptSettlmtAllowed": {
+          "type": "cds.Boolean",
+          "@sap.label": "Sem faturam.aut.EM",
+          "@sap.quickinfo": "Sem faturamento automático de entradas de mercadorias"
+        },
+        "IsPurOrderAllwdForInbDeliv": {
+          "type": "cds.Boolean",
+          "@sap.label": "NvPedidoP/FornEntr.",
+          "@sap.quickinfo": "Criar pedido para fornecimento sem referência"
+        },
+        "IsOrderAcknRqd": {
+          "type": "cds.Boolean",
+          "@sap.label": "Obrig.confirmação",
+          "@sap.quickinfo": "Confirmação de ordem obrigatória"
+        },
+        "IsRetMatlAuthznRqdBySupplier": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "RMA forn.necessário",
+          "@sap.quickinfo": "Nº RMA de fornecedor necessário"
+        },
+        "IsCashDiscountGranted": {
+          "type": "cds.Boolean",
+          "@sap.label": "Sem desconto",
+          "@sap.quickinfo": "Item sem direito a desconto"
+        },
+        "MaterialConditionGroup": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grupo de condições",
+          "@sap.quickinfo": "Grupo de condições com fornecedor"
+        },
+        "PurchasingDocumentDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Data do documento",
+          "@sap.quickinfo": "Data do último doc.pedido ou doc.prog.remessas no reg.info"
+        },
+        "ShelfLifeExpirationDatePeriod": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Cód.período DV",
+          "@sap.quickinfo": "Código de período para DV"
+        },
+        "IsEndOfPurposeBlocked": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Finaldd.negóc.concl.",
+          "@sap.quickinfo": "Objetivo comercial concluído"
+        },
+        "SupplierConfirmationControlKey": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Ctrl.confirmação",
+          "@sap.quickinfo": "Chave de controle de confirmação"
+        },
+        "PricingDateControl": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Controle data preço",
+          "@sap.quickinfo": "Controle da data de determinação de preço"
+        },
+        "TimeDependentTaxValidFromDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Início valid.tx.imp.",
+          "@sap.quickinfo": "Data de início da validade da taxa de imposto"
+        },
+        "TaxCountry": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "País/reg.imp.",
+          "@sap.quickinfo": "País/região da declaração fiscal"
+        },
+        "MaterialRoundingProfile": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Perf.arredond.",
+          "@sap.quickinfo": "Perfil de arredondamento"
+        },
+        "MatlMstrTxtIsNotRlvtForPOItm": {
+          "type": "cds.Boolean",
+          "@sap.label": "Sem texto-material",
+          "@sap.quickinfo": "Texto do pedido de material irrelevante"
+        },
+        "to_PurgInfoRecd": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurchasingInfoRecord",
+          "keys": []
+        },
+        "to_PurInfoRecdPrcgCndnValidity": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnValidity",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        },
+        "to_PurInfoRecdPurOrgText": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurgInfoRecdOrgPOText",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurgInfoRecdOrgPOText": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.content.version": "1",
+      "@sap.label": "Texto pedido registro info p/compras",
+      "elements": {
+        "Language": {
+          "key": true,
+          "type": "cds.String",
+          "length": 2,
+          "@sap.label": "Código de idioma",
+          "notNull": true
+        },
+        "DocumentText": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "ID de texto",
+          "notNull": true
+        },
+        "TechnicalObjectType": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Objeto de texto",
+          "@sap.quickinfo": "Textos: objeto de aplicação",
+          "notNull": true
+        },
+        "ArchObjectNumber": {
+          "key": true,
+          "type": "cds.String",
+          "length": 70,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nome do texto",
+          "@sap.quickinfo": "Nome",
+          "notNull": true
+        },
+        "PurchasingInfoRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Reg. info compras",
+          "@sap.quickinfo": "Nº registro info para compras",
+          "notNull": true
+        },
+        "PurchasingOrganization": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Organização compras",
+          "@sap.quickinfo": "Organização de compras",
+          "notNull": true
+        },
+        "PurchasingInfoRecordCategory": {
+          "key": true,
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Ctg.reg.info",
+          "@sap.quickinfo": "Ctg.do reg.info para compras",
+          "notNull": true
+        },
+        "Plant": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Centro",
+          "notNull": true
+        },
+        "NoteDescription": {
+          "type": "cds.LargeString",
+          "@sap.label": "Txt.descritivo",
+          "@sap.quickinfo": "Texto descritivo"
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndn": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.creatable": "false",
+      "@sap.deletable": "false",
+      "@sap.content.version": "1",
+      "@sap.label": "Condições p/determinação preços",
+      "elements": {
+        "ConditionRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº registro condição",
+          "@sap.quickinfo": "Nº de registro de condição",
+          "notNull": true
+        },
+        "ConditionSequentialNumber": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Nº seq.condição",
+          "@sap.quickinfo": "Número sequencial da condição"
+        },
+        "ConditionApplication": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Aplicação"
+        },
+        "ConditionType": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Tipo de condição"
+        },
+        "ConditionValidityEndDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Válido até",
+          "@sap.quickinfo": "Data de validade final"
+        },
+        "ConditionValidityStartDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Válido desde",
+          "@sap.quickinfo": "Data de início da validade"
+        },
+        "CreatedByUser": {
+          "type": "cds.String",
+          "length": 12,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Criado por",
+          "@sap.quickinfo": "Nome do responsável que criou o objeto"
+        },
+        "CreationDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Criado em",
+          "@sap.quickinfo": "Data de criação do registro"
+        },
+        "ConditionTextID": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº textos"
+        },
+        "PricingScaleType": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Tipo de escala"
+        },
+        "PricingScaleBasis": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Base de cálculo"
+        },
+        "ConditionScaleQuantity": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "ConditionScaleQuantityUnit",
+          "@sap.label": "Quantidade da escala",
+          "@sap.quickinfo": "Quantidade da escala de condição"
+        },
+        "ConditionScaleQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM escala",
+          "@sap.quickinfo": "UM escala de condições",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionScaleAmount": {
+          "type": "cds.Decimal",
+          "precision": 16,
+          "scale": 3,
+          "@sap.unit": "ConditionScaleAmountCurrency",
+          "@sap.label": "Valor escala"
+        },
+        "ConditionScaleAmountCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda da escala",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionCalculationType": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Regra de cálculo",
+          "@sap.quickinfo": "Regra de cálculo de condição"
+        },
+        "ConditionRateValue": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Montante de condição",
+          "@sap.quickinfo": "Montante/porcentagem de condição no caso de não haver escala"
+        },
+        "ConditionRateValueUnit": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateRatioUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de medida",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionRateRatio": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionRateRatioUnit",
+          "@sap.label": "Quota",
+          "@sap.quickinfo": "Índice de condição (em porcentagem ou por mil)"
+        },
+        "ConditionCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateAmount": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionCurrency",
+          "@sap.label": "Montante",
+          "@sap.quickinfo": "Montante ou porcentagem da condição"
+        },
+        "ConditionQuantity": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.unit": "ConditionQuantityUnit",
+          "@sap.label": "Unidade de preço",
+          "@sap.quickinfo": "Unidade de preço da condição"
+        },
+        "ConditionQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de medida",
+          "@sap.quickinfo": "Unidade de medida da condição",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionToBaseQtyNmrtr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "NumeradorConvrsConds",
+          "@sap.quickinfo": "Conversão condições - numerador (fator) UMCondição em UMB"
+        },
+        "ConditionToBaseQtyDnmntr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "Denomin.p/conversão",
+          "@sap.quickinfo": "Conversão condições - denominador (divisor) UMCond.em UMB"
+        },
+        "BaseUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UMB",
+          "@sap.quickinfo": "Unidade de medida básica",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionLowerLimit": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionAlternativeCurrency",
+          "@sap.label": "Limite inferior",
+          "@sap.quickinfo": "Limite inferior do montante da condição"
+        },
+        "ConditionUpperLimit": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionAlternativeCurrency",
+          "@sap.label": "Limite superior",
+          "@sap.quickinfo": "Limite superior do montante de condição"
+        },
+        "ConditionAlternativeCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda cond.(estat.)",
+          "@sap.quickinfo": "Moeda da condição (para campos de acumulação)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionExclusion": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Exclusão",
+          "@sap.quickinfo": "Código: exclusão de condição"
+        },
+        "ConditionIsDeleted": {
+          "type": "cds.Boolean",
+          "@sap.label": "Código de eliminação",
+          "@sap.quickinfo": "Código de eliminação para registro de condições"
+        },
+        "AdditionalValueDays": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Dias val.adicionais",
+          "@sap.quickinfo": "Dias valor adicionais"
+        },
+        "FixedValueDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Data efetiva"
+        },
+        "PaymentTerms": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Condições pgto.",
+          "@sap.quickinfo": "Chave de condições de pagamento"
+        },
+        "CndnMaxNumberOfSalesOrders": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Número máximo ordens",
+          "@sap.quickinfo": "Número máximo de ordens por registro de condição"
+        },
+        "MinimumConditionBasisValue": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "ConditionQuantityUnit",
+          "@sap.label": "Base mínima condição",
+          "@sap.quickinfo": "Base mínima de condição"
+        },
+        "MaximumConditionBasisValue": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "ConditionQuantityUnit",
+          "@sap.label": "Base máxima condição",
+          "@sap.quickinfo": "Base máxima de condição"
+        },
+        "MaximumConditionAmount": {
+          "type": "cds.Decimal",
+          "precision": 14,
+          "scale": 3,
+          "@sap.unit": "ConditionAlternativeCurrency",
+          "@sap.label": "Valor máximo cond.",
+          "@sap.quickinfo": "Valor máximo da condição"
+        },
+        "IncrementalScale": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Escala de incremento",
+          "@sap.quickinfo": "Nº escala de incremento"
+        },
+        "PricingScaleLine": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Escala de cálculo",
+          "@sap.quickinfo": "Nº de escala para cálculo de preço"
+        },
+        "ConditionReleaseStatus": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Status de liberação"
+        },
+        "to_PurgInfoPricingCndnRecdScale": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnScale",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        },
+        "to_PurInfoRecdPrcgCndnValidity": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnValidity",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        },
+        "to_PurInfoRecdSuplmntPrcgCndn": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdSuplmntPrcgCndn",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnScale": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.content.version": "1",
+      "@sap.label": "Escalas de condição para determinação de preços",
+      "elements": {
+        "ConditionRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº registro condição",
+          "@sap.quickinfo": "Nº de registro de condição",
+          "notNull": true
+        },
+        "ConditionSequentialNumber": {
+          "key": true,
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Nº seq.condição",
+          "@sap.quickinfo": "Número sequencial da condição",
+          "notNull": true
+        },
+        "ConditionScaleLine": {
+          "key": true,
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Nº linha",
+          "@sap.quickinfo": "Nº sequencial - escalonamento da linha",
+          "notNull": true
+        },
+        "ConditionScaleQuantity": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "ConditionScaleQuantityUnit",
+          "@sap.label": "Quantidade da escala",
+          "@sap.quickinfo": "Quantidade da escala de condição"
+        },
+        "ConditionScaleQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM escala",
+          "@sap.quickinfo": "UM escala de condições",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionScaleAmount": {
+          "type": "cds.Decimal",
+          "precision": 16,
+          "scale": 3,
+          "@sap.unit": "ConditionScaleAmountCurrency",
+          "@sap.label": "Valor escala"
+        },
+        "ConditionScaleAmountCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda da escala",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateValue": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Montante",
+          "@sap.quickinfo": "Montante ou porcentagem da condição"
+        },
+        "ConditionRateValueUnit": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateRatioUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de medida",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionRateRatio": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionRateRatioUnit",
+          "@sap.label": "Quota",
+          "@sap.quickinfo": "Índice de condição (em porcentagem ou por mil)"
+        },
+        "ConditionCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateAmount": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionCurrency",
+          "@sap.label": "Montante",
+          "@sap.quickinfo": "Montante ou porcentagem da condição"
+        },
+        "ConditionScaleIsDeleted": {
+          "type": "cds.Boolean",
+          "@sap.label": "Código de eliminação",
+          "@sap.quickinfo": "Código de eliminação para registro de condições"
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnValidity": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.deletable": "false",
+      "@sap.content.version": "1",
+      "@sap.label": "Validade de condição de determinação de preço",
+      "elements": {
+        "ConditionRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº registro condição",
+          "@sap.quickinfo": "Nº de registro de condição",
+          "notNull": true
+        },
+        "ConditionValidityEndDate": {
+          "key": true,
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Fim da validade",
+          "@sap.quickinfo": "Fim da validade do registro de condição",
+          "notNull": true
+        },
+        "ConditionValidityStartDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Início da validade",
+          "@sap.quickinfo": "Início da validade do registro de condição"
+        },
+        "ConditionApplication": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Aplicação"
+        },
+        "ConditionType": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Tipo de condição"
+        },
+        "PurgDocOrderQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM pedido",
+          "@sap.quickinfo": "Unidade de medida do pedido",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "PurchasingOrganization": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Organização compras",
+          "@sap.quickinfo": "Organização de compras"
+        },
+        "PurchasingInfoRecordCategory": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Ctg.reg.info",
+          "@sap.quickinfo": "Ctg.do reg.info para compras"
+        },
+        "PurchasingInfoRecord": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Reg. info compras",
+          "@sap.quickinfo": "Nº registro info para compras"
+        },
+        "Supplier": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Fornecedor",
+          "@sap.quickinfo": "Nº conta do fornecedor"
+        },
+        "MaterialGroup": {
+          "type": "cds.String",
+          "length": 9,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Grupo de mercadorias"
+        },
+        "Material": {
+          "type": "cds.String",
+          "length": 40,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Material",
+          "@sap.quickinfo": "Nº do material"
+        },
+        "Plant": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Centro"
+        },
+        "to_PurgInfoRecd": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurchasingInfoRecord",
+          "keys": []
+        },
+        "to_PurgInfoRecdOrgPlantData": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurgInfoRecdOrgPlantData",
+          "keys": []
+        },
+        "to_PurInfoRecdPrcgCndn": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndn",
+          "keys": []
+        }
+      }
+    },
+    "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdSuplmntPrcgCndn": {
+      "kind": "entity",
+      "@cds.external": true,
+      "@cds.persistence.skip": true,
+      "@sap.content.version": "1",
+      "@sap.label": "Condições de determinação de preço suplementares",
+      "elements": {
+        "ConditionRecord": {
+          "key": true,
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº registro condição",
+          "@sap.quickinfo": "Nº de registro de condição",
+          "notNull": true
+        },
+        "ConditionSequentialNumber": {
+          "key": true,
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Nº seq.condição",
+          "@sap.quickinfo": "Número sequencial da condição",
+          "notNull": true
+        },
+        "ConditionApplication": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Aplicação"
+        },
+        "ConditionType": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Tipo de condição"
+        },
+        "ConditionValidityEndDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Válido até",
+          "@sap.quickinfo": "Data de validade final"
+        },
+        "ConditionValidityStartDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Válido desde",
+          "@sap.quickinfo": "Data de início da validade"
+        },
+        "CreatedByUser": {
+          "type": "cds.String",
+          "length": 12,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Criado por",
+          "@sap.quickinfo": "Nome do responsável que criou o objeto"
+        },
+        "CreationDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Criado em",
+          "@sap.quickinfo": "Data de criação do registro"
+        },
+        "ConditionTextID": {
+          "type": "cds.String",
+          "length": 10,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Nº textos"
+        },
+        "PricingScaleType": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Tipo de escala"
+        },
+        "PricingScaleBasis": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Base de cálculo"
+        },
+        "ConditionScaleQuantity": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "BaseUnit",
+          "@sap.label": "Quantidade da escala",
+          "@sap.quickinfo": "Quantidade da escala de condição"
+        },
+        "ConditionScaleQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UM escala",
+          "@sap.quickinfo": "UM escala de condições",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionScaleAmount": {
+          "type": "cds.Decimal",
+          "precision": 16,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Valor escala"
+        },
+        "ConditionScaleAmountCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda da escala",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionCalculationType": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Regra de cálculo",
+          "@sap.quickinfo": "Regra de cálculo de condição"
+        },
+        "ConditionRateValue": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Montante de condição",
+          "@sap.quickinfo": "Montante/porcentagem de condição no caso de não haver escala"
+        },
+        "ConditionRateValueUnit": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateRatioUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de medida",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionRateRatio": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionRateRatioUnit",
+          "@sap.label": "Quota",
+          "@sap.quickinfo": "Índice de condição (em porcentagem ou por mil)"
+        },
+        "ConditionCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda de condição",
+          "@sap.quickinfo": "Unidade condição (moeda ou porcentagem)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionRateAmount": {
+          "type": "cds.Decimal",
+          "precision": 24,
+          "scale": 9,
+          "@sap.unit": "ConditionCurrency",
+          "@sap.label": "Montante",
+          "@sap.quickinfo": "Montante ou porcentagem da condição"
+        },
+        "ConditionQuantity": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.unit": "ConditionQuantityUnit",
+          "@sap.label": "Unidade de preço",
+          "@sap.quickinfo": "Unidade de preço da condição"
+        },
+        "ConditionQuantityUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "Unidade de medida",
+          "@sap.quickinfo": "Unidade de medida da condição",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionToBaseQtyNmrtr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "NumeradorConvrsConds",
+          "@sap.quickinfo": "Conversão condições - numerador (fator) UMCondição em UMB"
+        },
+        "ConditionToBaseQtyDnmntr": {
+          "type": "cds.Decimal",
+          "precision": 5,
+          "scale": 0,
+          "@sap.label": "Denomin.p/conversão",
+          "@sap.quickinfo": "Conversão condições - denominador (divisor) UMCond.em UMB"
+        },
+        "BaseUnit": {
+          "type": "cds.String",
+          "length": 3,
+          "@sap.label": "UMB",
+          "@sap.quickinfo": "Unidade de medida básica",
+          "@sap.semantics": "unit-of-measure"
+        },
+        "ConditionLowerLimit": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Limite inferior",
+          "@sap.quickinfo": "Limite inferior do montante da condição"
+        },
+        "ConditionUpperLimit": {
+          "type": "cds.Decimal",
+          "precision": 12,
+          "scale": 3,
+          "@sap.unit": "ConditionRateValueUnit",
+          "@sap.label": "Limite superior",
+          "@sap.quickinfo": "Limite superior do montante de condição"
+        },
+        "ConditionAlternativeCurrency": {
+          "type": "cds.String",
+          "length": 5,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Moeda cond.(estat.)",
+          "@sap.quickinfo": "Moeda da condição (para campos de acumulação)",
+          "@sap.semantics": "currency-code"
+        },
+        "ConditionExclusion": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Exclusão",
+          "@sap.quickinfo": "Código: exclusão de condição"
+        },
+        "ConditionIsDeleted": {
+          "type": "cds.Boolean",
+          "@sap.label": "Código de eliminação",
+          "@sap.quickinfo": "Código de eliminação para registro de condições"
+        },
+        "AdditionalValueDays": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Dias val.adicionais",
+          "@sap.quickinfo": "Dias valor adicionais"
+        },
+        "FixedValueDate": {
+          "type": "cds.Date",
+          "@sap.display.format": "Date",
+          "@sap.label": "Data efetiva"
+        },
+        "PaymentTerms": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Condições pgto.",
+          "@sap.quickinfo": "Chave de condições de pagamento"
+        },
+        "CndnMaxNumberOfSalesOrders": {
+          "type": "cds.String",
+          "length": 2,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Número máximo ordens",
+          "@sap.quickinfo": "Número máximo de ordens por registro de condição"
+        },
+        "MinimumConditionBasisValue": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "BaseUnit",
+          "@sap.label": "Base mínima condição",
+          "@sap.quickinfo": "Base mínima de condição"
+        },
+        "MaximumConditionBasisValue": {
+          "type": "cds.Decimal",
+          "precision": 15,
+          "scale": 3,
+          "@sap.unit": "BaseUnit",
+          "@sap.label": "Base máxima condição",
+          "@sap.quickinfo": "Base máxima de condição"
+        },
+        "MaximumConditionAmount": {
+          "type": "cds.Decimal",
+          "precision": 14,
+          "scale": 3,
+          "@sap.unit": "ConditionAlternativeCurrency",
+          "@sap.label": "Valor máximo cond.",
+          "@sap.quickinfo": "Valor máximo da condição"
+        },
+        "IncrementalScale": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Escala de incremento",
+          "@sap.quickinfo": "Nº escala de incremento"
+        },
+        "PricingScaleLine": {
+          "type": "cds.String",
+          "length": 4,
+          "@sap.display.format": "NonNegative",
+          "@sap.label": "Escala de cálculo",
+          "@sap.quickinfo": "Nº de escala para cálculo de preço"
+        },
+        "ConditionReleaseStatus": {
+          "type": "cds.String",
+          "length": 1,
+          "@sap.display.format": "UpperCase",
+          "@sap.label": "Status de liberação"
+        },
+        "to_PurgInfoPricingCndnRecdScale": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnScale",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        },
+        "to_PurInfoRecdPrcgCndn": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndn",
+          "keys": []
+        },
+        "to_PurInfoRecdPrcgCndnValidity": {
+          "type": "cds.Association",
+          "target": "API_INFORECORD_PROCESS_SRV.A_PurInfoRecdPrcgCndnValidity",
+          "cardinality": {
+            "max": "*"
+          },
+          "keys": []
+        }
+      }
+    }
+  }
+}

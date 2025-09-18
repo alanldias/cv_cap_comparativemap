@@ -24,7 +24,7 @@
     },
     "dataSources": {
       "mainService": {
-        "uri": "/odata/v4/main/",
+        "uri": "odata/v4/service/",
         "type": "OData",
         "settings": {
           "annotations": [],
@@ -48,6 +48,10 @@
       "tablet": true,
       "phone": true
     }
+  },
+  "sap.cloud": {
+    "public": true,
+    "service": "comparativomap.service"
   },
   "sap.ui5": {
     "flexEnabled": true,

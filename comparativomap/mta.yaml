@@ -1,17 +1,7 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 1.0.0
+version: 1.1.5
 description: "A simple CAP project."
-parameters:
-  enable-parallel-deployments: true
-  deploy_mode: html5-repo
-
-build-parameters:
-  before-all:
-    - builder: custom
-      commands:
-        - npm ci
-        - npx cds build --production
 
 modules:
   - name: comparativomap-srv
@@ -38,7 +28,7 @@ modules:
       builder: custom
       commands:
         - npm install
-        - npm run build
+        - npm run build:cf
       build-result: dist
       supported-platforms: []
 
@@ -53,40 +43,64 @@ modules:
     build-parameters:
       build-result: resources
       requires:
-        - name: comparativomap-ui
-          artifacts:
-            - comparativomap-ui.zip
+        - artifacts:
+            - comparativemapcomparativemap.zip
+          name: comparativomap-ui
           target-path: resources/
+
+  - name: comparativemap
+    type: html5
+    path: app/comparativemap
+    build-parameters:
+      build-result: dist
+      builder: custom
+      commands:
+        - npm install
+        - npm run build:cf
+      supported-platforms: []
+
+  - name: comparativomap-destinations
+    type: com.sap.application.content
+    requires:
+      - name: comparativomap-auth
+        parameters:
+          service-key:
+            name: comparativomap-auth-key
+      - name: comparativomap-html5-repo-host
+        parameters:
+          service-key:
+            name: comparativomap-html5-repo-host-key
+      - name: srv-api
+      - name: comparativomap-destination
+        parameters:
+          content-target: true
+    build-parameters:
+      no-source: true
     parameters:
-      config:
-        HTML5Runtime_enabled: true
-        init_data:
-          instance:
-            existing_destinations_policy: update
-            destinations:
-              - Name: srv-api
-                URL: ~{srv-api/srv-url}
-                Authentication: NoAuthentication
-                Type: HTTP
-                ProxyType: Internet
-                HTML5.ForwardAuthToken: true
-                HTML5.DynamicDestination: true
-              - Name: ui5
-                URL: https://ui5.sap.com
-                Authentication: NoAuthentication
-                Type: HTTP
-                ProxyType: Internet
+      content:
+        instance:
+          existing_destinations_policy: update
+          destinations:
+            - Name: comparativomap-html5-repository
+              ServiceInstanceName: comparativomap-html5-repo-host
+              ServiceKeyName: comparativomap-html5-repo-host-key
+              sap.cloud.service: comparativomap.service
+            - Name: comparativomap-auth
+              Authentication: OAuth2UserTokenExchange
+              ServiceInstanceName: comparativomap-auth
+              ServiceKeyName: comparativomap-auth-key
+              sap.cloud.service: comparativomap.service
 
 resources:
   - name: comparativomap-auth
     type: org.cloudfoundry.managed-service
     parameters:
+      config:
+        tenant-mode: dedicated
+        xsappname: "comparativomap-cvale-qas"
       service: xsuaa
       service-plan: application
       path: ./xs-security.json
-      config:
-        xsappname: comparativomap-${org}-${space}
-        tenant-mode: dedicated
 
   - name: comparativomap-connectivity
     type: org.cloudfoundry.managed-service
@@ -97,11 +111,50 @@ resources:
   - name: comparativomap-destination
     type: org.cloudfoundry.managed-service
     parameters:
+      config:
+        HTML5Runtime_enabled: true
+        init_data:
+          instance:
+            destinations:
+              - Authentication: NoAuthentication
+                HTML5.DynamicDestination: true
+                HTML5.ForwardAuthToken: true
+                Name: comparativomap-srv
+                ProxyType: Internet
+                Type: HTTP
+                URL: ~{srv-api/srv-url}
+              - Authentication: NoAuthentication
+                Name: ui5
+                ProxyType: Internet
+                Type: HTTP
+                URL: https://ui5.sap.com
+            existing_destinations_policy: update
       service: destination
       service-plan: lite
+    requires:
+      - name: srv-api
+        group: destinations
+        properties:
+          forwardAuthToken: true
+          name: srv-api
+          url: ~{srv-url}
+          timeout: 180000
 
   - name: comparativomap-html5-repo-host
     type: org.cloudfoundry.managed-service
     parameters:
       service: html5-apps-repo
       service-plan: app-host
+
+parameters:
+  deploy_mode: html5-repo
+  enable-parallel-deployments: true
+build-parameters:
+  before-all:
+    - builder: custom
+      commands:
+        - npm ci
+        - npx cds build --production
+        - npx cds deploy
+        - cp -r dev.sqlite gen/srv
+        - mkdir -p resources
