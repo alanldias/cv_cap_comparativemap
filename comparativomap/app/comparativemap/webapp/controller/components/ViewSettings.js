@@ -70,8 +70,10 @@ sap.ui.define(
         if (!dlgSort) {
           dlgSort = new ViewSettingsDialog({
             confirm: onConfirm,
-            reset: () => {                
+            reset: () => {
               sortReset = true;
+              dlgSort.setSelectedSortItem(null);
+              dlgSort.setSortDescending(false);
               onReset && onReset();
             }
           });
@@ -88,7 +90,10 @@ sap.ui.define(
         if (prefs.sort.key) {
           dlgSort.setSelectedSortItem(prefs.sort.key);
           dlgSort.setSortDescending(!!prefs.sort.desc);
-        };
+        } else {
+          dlgSort.setSelectedSortItem(null);
+          dlgSort.setSortDescending(false);
+        }
         dlgSort.open();
       }
 
@@ -98,8 +103,8 @@ sap.ui.define(
             confirm: onConfirm,
             reset: () => {
               groupReset = true;
-              dlgGroup.setSelectedGroupItem("");   
-              dlgGroup.setGroupDescending(false); 
+              dlgGroup.setSelectedGroupItem("");
+              dlgGroup.setGroupDescending(false);
               onReset && onReset();
             }
           });
@@ -117,8 +122,8 @@ sap.ui.define(
           dlgGroup.setSelectedGroupItem(prefs.group.key);
           dlgGroup.setGroupDescending(!!prefs.group.desc);
         } else {
-          dlgGroup.setSelectedGroupItem("");      
-          dlgGroup.setGroupDescending(false);    
+          dlgGroup.setSelectedGroupItem("");
+          dlgGroup.setGroupDescending(false);
         }
 
         dlgGroup.open();
@@ -232,7 +237,7 @@ sap.ui.define(
         onSave && onSave(prefsNew);
 
         prefs = prefsNew;
-      
+
         applyFiltersFromPrefs();
       }
 
@@ -263,8 +268,10 @@ sap.ui.define(
 
           const prefsNew = Object.assign({}, prefs, { sort: { key: null, desc: false } });
           onSave && onSave(prefsNew);
-          prefs = prefsNew;          
-          sortReset = false;       
+          prefs = prefsNew;
+          dlgSort.setSelectedSortItem(null);
+          dlgSort.setSortDescending(false);
+          sortReset = false;
           return;
         }
 
@@ -273,7 +280,7 @@ sap.ui.define(
 
         if (sPath === "price") {
           const s = new Sorter("price", bDesc);
-          s.fnCompare = numCompare; 
+          s.fnCompare = numCompare;
           sorters.push(s);
         } else {
           sorters.push(new Sorter(sPath, bDesc));
@@ -283,7 +290,7 @@ sap.ui.define(
 
         const prefsNew = Object.assign({}, prefs, { sort: { key: sPath, desc: !!bDesc } });
         onSave && onSave(prefsNew);
-        prefs = prefsNew;         
+        prefs = prefsNew;
       }
 
       function handleGroupDialogConfirm(ev, onSave) {
@@ -296,7 +303,7 @@ sap.ui.define(
           if (prefs.sort?.key) {
             if (prefs.sort.key === "price") {
               const s = new Sorter("price", !!prefs.sort.desc);
-              s.fnCompare = numCompare; 
+              s.fnCompare = numCompare;
               arr.push(s);
             } else {
               arr.push(new Sorter(prefs.sort.key, !!prefs.sort.desc));
@@ -339,6 +346,8 @@ sap.ui.define(
         prefs = prefsNew;
       }
 
+      function setPrefs(newPrefs) { prefs = newPrefs; }
+
       return {
         openFilterDialog,
         openSortDialog,
@@ -348,6 +357,7 @@ sap.ui.define(
         handleGroupDialogConfirm,
         applyFiltersFromPrefs,
         applyGroupSortFromPrefs,
+        setPrefs
       };
     }
     return { create };

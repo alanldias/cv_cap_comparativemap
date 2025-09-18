@@ -95,21 +95,42 @@ sap.ui.define(
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
             if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
 
-            // ✅ limpar seleção e caches da simulação antes de carregar novos dados
+            // 🔄 RESET TOTAL de filtros/sort/agrupamento ANTES de buscar outro DocID
+            const binding = tbl?.getBinding("items");
+            if (binding) {
+              // limpa filtros aplicados por código e por UI
+              binding.filter([], sap.ui.model.FilterType.Application);
+              binding.filter([], sap.ui.model.FilterType.Control);
+              // limpa ordenação
+              binding.sort(null);
+            }
+            // limpa estado visual da barra de filtro (se existir)
+            view.byId("vsdFilterBar")?.setVisible(false);
+            view.byId("vsdFilterLabel")?.setText("");
+
+            // zera preferências salvas (evita re-aplicar filtros antigos no novo dataset)
+            this._prefs = Object.assign({}, this._prefs, {
+              filter: { fornecedor: [], nomeItem: [] },
+              sort: { key: null, desc: false },
+              group: { key: null, desc: false }
+            });
+            this._vs.setPrefs(this._prefs);
+            PrefsStore.save(this._prefs);
+
+            // também limpe seleções e caches
             tbl?.removeSelections(true);
             qm?.setProperty("/idByKey", {});
             qm?.setProperty("/simSourceRows", []);
 
             tbl?.setBusy(true);
 
+            // ===== segue seu fluxo normal =====
             const res = await ODataSvc.fetchQuotes(view, docId);
 
             const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
               ...r,
-              // ⚙️ normalizações p/ agrupar/ordenar
-              itemId: r.itemId ?? r.ItemId ?? null,                  // agrupamento por Item
-              price: (r.price !== undefined && r.price !== null)     // sort numérico por preço
-                ? Number(r.price) : r.price,
+              itemId: r.itemId ?? r.ItemId ?? null,
+              price: (r.price !== undefined && r.price !== null) ? Number(r.price) : r.price,
               _originalQty: Number(r.quantity) || 0
             }));
 
@@ -117,14 +138,9 @@ sap.ui.define(
             vm.setProperty("/rows", rows);
             vm.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-            // rebind + garantir que nada ficou selecionado
             tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
             tbl?.removeSelections(true);
-
-            // reaplicar preferências (usa seu ViewSettingsCmp)
-            this._vs?.applyGroupSortFromPrefs();
-            this._vs?.applyFiltersFromPrefs();
 
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
           } catch (e) {

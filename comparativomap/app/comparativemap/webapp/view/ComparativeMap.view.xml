@@ -89,7 +89,7 @@
                            inset="false"
                            mode="MultiSelect"
                            rememberSelections="false"
-                           growing="true"
+                           growing="false"
                            noDataText="{i18n>instrucaoTabela}"
                            items="{vm>/rows}">
                         
