@@ -17,7 +17,9 @@ sap.ui.define(
     "sap/m/MessageToast",
     "sap/m/MessageBox",
     "sap/ui/Device",
-    "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier"
+    "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
+    "sap/ui/export/Spreadsheet",
+    "sap/ui/export/library"
   ],
   function (
     Controller,
@@ -37,10 +39,12 @@ sap.ui.define(
     MessageToast,
     MessageBox,
     Device,
-    Build
+    Build,
+    Spreadsheet, 
+    exportLibrary
   ) {
     "use strict";
-
+    const EdmType = exportLibrary.EdmType;
     return Controller.extend(
       "comparativemap.comparativemap.controller.ComparativeMap",
       {
@@ -532,7 +536,172 @@ sap.ui.define(
             this._dlgRes = null;
           }
         },
-      }
+        onExportExcel() {
+          const view = this.getView();
+          const vm = view.getModel("vm");
+          const tbl = view.byId("tblDocs");
+
+          // 1) linhas: se tiver seleção, exporta só a seleção; senão, exporta todas
+          const selected = tbl?.getSelectedContexts("vm").map(c => c.getObject()) || [];
+          const all = vm?.getProperty("/rows") || [];
+          const rows = selected.length ? selected : all;
+
+          if (!rows.length) {
+            sap.m.MessageToast.show("Nada para exportar.");
+            return;
+          }
+
+          // 2) normaliza campos numéricos principais (caso venham como string)
+          const NUMERIC = [
+            "quantity","price","mva",
+            "Extrinsic_Aliquota_ICMS","Extrinsic_ICMS_Apurado",
+            "Extrinsic_Aliquota_IPI","Extrinsic_IPI_Apurado",
+            "Extrinsic_Aliquota_PIS","Extrinsic_PIS_Apurado",
+            "Extrinsic_Aliquota_Cofins","Extrinsic_Cofins_apurado",
+            "Extrinsic_Aliquota_ICMS_Interna","EXTENDEDPRICE"
+          ];
+          const toNum = (v) => {
+            if (v == null || v === "") return null;
+            const n = Number(String(v).replace(/\./g,"").replace(",","."));
+            return Number.isFinite(n) ? n : null;
+            // (se seus valores já estão como Number, isso só mantém)
+          };
+          const data = rows.map(r => {
+            const out = { ...r };
+            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
+            return out;
+          });
+
+          // 3) colunas do Excel (ajuste a gosto)
+          const columns = [
+            { label: "Doc ID",            property: "docId",             type: EdmType.String, width: 12 },
+            { label: "Fornecedor",        property: "supplierName",      type: EdmType.String, width: 30 },
+            { label: "Nome do Item",      property: "itemDescription",   type: EdmType.String, width: 40 },
+            { label: "Quantidade",        property: "quantity",          type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Preço do Item",     property: "price",             type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Preço Estendido",   property: "EXTENDEDPRICE",     type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Moeda",             property: "currency",          type: EdmType.String, width: 10 },
+            { label: "NCM",               property: "ncm",               type: EdmType.String, width: 14 },
+            { label: "MVA (%)",           property: "mva",               type: EdmType.Number, width: 12, scale: 2 },
+            { label: "Alíquota ICMS (%)", property: "Extrinsic_Aliquota_ICMS",         type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Apurado",      property: "Extrinsic_ICMS_Apurado",          type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Alíquota IPI (%)",  property: "Extrinsic_Aliquota_IPI",          type: EdmType.Number, width: 16, scale: 2 },
+            { label: "IPI Apurado",       property: "Extrinsic_IPI_Apurado",           type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota PIS (%)",  property: "Extrinsic_Aliquota_PIS",          type: EdmType.Number, width: 16, scale: 2 },
+            { label: "PIS Apurado",       property: "Extrinsic_PIS_Apurado",           type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota COFINS (%)", property: "Extrinsic_Aliquota_Cofins",     type: EdmType.Number, width: 20, scale: 2 },
+            { label: "COFINS Apurado",    property: "Extrinsic_Cofins_apurado",        type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Interna (%)",  property: "Extrinsic_Aliquota_ICMS_Interna", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "Origem Material",   property: "Extrinsic_Origem_do_Material",    type: EdmType.String, width: 18 },
+            { label: "Centro",            property: "PLANT",             type: EdmType.String, width: 14 },
+            { label: "Categoria Item",    property: "ItemCategory",      type: EdmType.String, width: 16 },
+            { label: "Req",               property: "CodigoRequisicao",  type: EdmType.String, width: 16 },
+            { label: "Grupo Materiais",   property: "grupo_de_materias", type: EdmType.String, width: 24 },
+            { label: "Código Material",   property: "MaterialCode",      type: EdmType.String, width: 20 }
+          ];
+
+          // 4) nome do arquivo
+          const docId = (vm?.getProperty("/header/docId")) || "MapaComparativo";
+          const fileName = `Comparativo_${docId}.xlsx`;
+
+          // 5) monta e gera
+          const sheet = new Spreadsheet({
+            workbook: { columns },
+            dataSource: data,
+            fileName,
+            worker: true
+          });
+
+          sheet.build()
+            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
+            .finally(() => sheet.destroy());
+        },
+        onExportExcelRes() {
+          const view = this.getView();
+
+          // 1) tenta achar a tabela do dialog de resultados
+          //    (pelo seu código, o dialog está em this._dlgRes e o 1º content é uma tabela)
+          const tbl = this._dlgRes?.getContent?.()[0];
+          const resModel = view.getModel("res");
+
+          if (!tbl || !resModel) {
+            sap.m.MessageToast.show("Janela de resultados não está aberta.");
+            return;
+          }
+
+          // 2) dados: se tiver seleção na tabela do dialog, exporta só a seleção;
+          //           senão, exporta todas as linhas do resultado
+          const selected = tbl.getSelectedContexts("res").map(c => c.getObject()) || [];
+          const all = resModel.getProperty("/rows") || [];
+          const rows = selected.length ? selected : all;
+
+          if (!rows.length) {
+            sap.m.MessageToast.show("Nada para exportar.");
+            return;
+          }
+
+          // 3) montar colunas dinamicamente, inferindo numéricos
+          const { EdmType } = sap.ui.require("sap/ui/export/library");
+          const Spreadsheet = sap.ui.require("sap/ui/export/Spreadsheet");
+
+          // Heurística: coluna é numérica se todos os valores (não nulos) são números válidos
+          const toNum = (v) => {
+            if (v == null || v === "") return null;
+            const n = Number(String(v).replace(/\./g,"").replace(",","."));
+            return Number.isFinite(n) ? n : null;
+          };
+          const keys = Object.keys(rows[0] || {});
+          const isNumericCol = (k) => {
+            let any = false;
+            for (const r of rows) {
+              const val = r[k];
+              if (val == null || val === "") continue;
+              const n = toNum(val);
+              if (n == null) return false; // encontrou string não numérica
+              any = true;
+            }
+            return any; // tem pelo menos um número e nenhum inválido
+          };
+
+          // 4) normaliza dados numéricos para Number (Excel entender como número)
+          const numericCols = keys.filter(isNumericCol);
+          const data = rows.map(r => {
+            const out = { ...r };
+            numericCols.forEach(k => { out[k] = toNum(out[k]); });
+            return out;
+          });
+
+          // 5) definição das colunas do XLSX
+          const columns = keys.map(k => {
+            const isNum = numericCols.includes(k);
+            const col = {
+              label: k,           // rótulo = nome do campo (ajuste se quiser nomes amigáveis)
+              property: k,
+              type: isNum ? EdmType.Number : EdmType.String
+            };
+            if (isNum) col.scale = 2; // casas decimais padrão; ajuste se quiser
+            return col;
+          });
+
+          // 6) nome do arquivo
+          const docId = (view.getModel("vm")?.getProperty("/header/docId")) || "Simulacao";
+          const fileName = `Resultado_${docId}.xlsx`;
+
+          // 7) gera planilha
+          const sheet = new Spreadsheet({
+            workbook: { columns },
+            dataSource: data,
+            fileName,
+            worker: true
+          });
+
+          sheet.build()
+            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
+            .finally(() => sheet.destroy());
+        }
+
+
+      },
     );
   }
 );
