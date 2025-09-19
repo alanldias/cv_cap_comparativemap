@@ -51,7 +51,10 @@ sap.ui.define(
           this.getView().setModel(Models.createQM(), "qm");
 
           this._prefs = PrefsStore.load();
-          const allowedGroups = ["supplierName", "itemId"];
+          const allowedGroups = [
+            "supplierName", "itemId",
+            "PLANT", "currency", "grupo_de_materias", "MaterialCode", "ItemCategory"
+          ];
           if (!allowedGroups.includes(this._prefs.group?.key)) {
             this._prefs.group = { key: null, desc: false };
             PrefsStore.save(this._prefs);
@@ -69,6 +72,26 @@ sap.ui.define(
               const key = v || "__noItemId__";
               const text = v ? `Item ${v}` : "(Sem ItemId)";
               return { key, text };
+            },
+            PLANT: (ctx) => {
+              const v = ctx.getProperty("PLANT") || "";
+              return { key: v || "__noPlant__", text: v || "(Sem Centro)" };
+            },
+            currency: (ctx) => {
+              const v = ctx.getProperty("currency") || "";
+              return { key: v || "__noCurr__", text: v || "(Sem Moeda)" };
+            },
+            grupo_de_materias: (ctx) => {
+              const v = ctx.getProperty("grupo_de_materias") || "";
+              return { key: v || "__noGrpMat__", text: v || "(Sem Grupo Mat.)" };
+            },
+            MaterialCode: (ctx) => {
+              const v = ctx.getProperty("MaterialCode") || "";
+              return { key: v || "__noMatCode__", text: v || "(Sem Código Mat.)" };
+            },
+            ItemCategory: (ctx) => {
+              const v = ctx.getProperty("ItemCategory") || "";
+              return { key: v || "__noItemCat__", text: v || "(Sem Categoria)" };
             }
           };
 
@@ -80,7 +103,58 @@ sap.ui.define(
           );
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
+
+          const vm = this.getView().getModel("vm"); // Para teste em DEV
+          vm.setProperty("/devMode", true);         // Para teste em DEV
         },
+
+        // Para teste em DEV
+        onDevOpenResultado: function () {
+      const view = this.getView();
+
+      // MOCK mínimo compatível com os bindings do fragment
+      const rows = [
+        {
+          supplierName: "Fornecedor andolaodaoskdoasdkoak A",
+          materialCode: "MAT-0001",
+          originalQty: 120,
+          quantity: 50,
+          qtyAward: 10,
+          price: "15.90",
+          currency: "BRL",
+          icms: "3.45",
+          ipi: null,             // vai cair no "–"
+          total: "795.00",
+          ncm: "1234.56.78",
+          poItem: "10",
+          taxCode: "T1",
+          itemId: "IT-001",
+          invitationId: "INV-AAA"
+        },
+        {
+          supplierName: "Fornecedor B",
+          materialCode: "MAT-0002",
+          originalQty: 80,
+          quantity: 80,
+          qtyAward: 20,
+          price: "7.30",
+          currency: "BRL",
+          icms: "",
+          ipi: "0.00",
+          total: "584.00",
+          ncm: "8765.43.21",
+          poItem: "20",
+          taxCode: "T2",
+          itemId: "IT-002",
+          invitationId: "INV-BBB"
+        }
+      ];
+
+      // abre o fragment usando seu helper
+      Dialogs.openResultDialog(view, rows, this);
+    },
+
+    // ======Fim Teste em DEV=========
 
         /* ====== BUSCAR ====== */
         async onBuscar() {
@@ -95,21 +169,46 @@ sap.ui.define(
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
             if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
 
-            // ✅ limpar seleção e caches da simulação antes de carregar novos dados
+            // 🔄 RESET TOTAL de filtros/sort/agrupamento ANTES de buscar outro DocID
+            const binding = tbl?.getBinding("items");
+            if (binding) {
+              // limpa filtros aplicados por código e por UI
+              binding.filter([], sap.ui.model.FilterType.Application);
+              binding.filter([], sap.ui.model.FilterType.Control);
+              // limpa ordenação
+              binding.sort(null);
+            }
+            // limpa estado visual da barra de filtro (se existir)
+            view.byId("vsdFilterBar")?.setVisible(false);
+            view.byId("vsdFilterLabel")?.setText("");
+
+            // zera preferências salvas (evita re-aplicar filtros antigos no novo dataset)
+            this._prefs = Object.assign({}, this._prefs, {
+              filter: {
+                fornecedor: [], moeda: [], centro: [], grupoMat: [], ncm: [],
+                onlyTax: false, precoMin: null, precoMax: null, qtdMin: null, qtdMax: null
+              },
+              sort: { key: null, desc: false },
+              group: { key: null, desc: false }
+            });
+            this._vs.setPrefs(this._prefs);
+            PrefsStore.save(this._prefs);
+
+
+            // também limpe seleções e caches
             tbl?.removeSelections(true);
             qm?.setProperty("/idByKey", {});
             qm?.setProperty("/simSourceRows", []);
 
             tbl?.setBusy(true);
 
+            // ===== segue seu fluxo normal =====
             const res = await ODataSvc.fetchQuotes(view, docId);
 
             const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
               ...r,
-              // ⚙️ normalizações p/ agrupar/ordenar
-              itemId: r.itemId ?? r.ItemId ?? null,                  // agrupamento por Item
-              price: (r.price !== undefined && r.price !== null)     // sort numérico por preço
-                ? Number(r.price) : r.price,
+              itemId: r.itemId ?? r.ItemId ?? null,
+              price: (r.price !== undefined && r.price !== null) ? Number(r.price) : r.price,
               _originalQty: Number(r.quantity) || 0
             }));
 
@@ -117,14 +216,18 @@ sap.ui.define(
             vm.setProperty("/rows", rows);
             vm.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-            // rebind + garantir que nada ficou selecionado
+            const distinct = {
+              supplierName: this._distinct(rows, "supplierName"),
+              currency:     this._distinct(rows, "currency"),
+              PLANT:        this._distinct(rows, "PLANT"),
+              grupo_de_materias: this._distinct(rows, "grupo_de_materias"),
+              ncm:          this._distinct(rows, "ncm"),
+            };
+            vm.setProperty("/distinct", distinct);
+
             tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
             tbl?.removeSelections(true);
-
-            // reaplicar preferências (usa seu ViewSettingsCmp)
-            this._vs?.applyGroupSortFromPrefs();
-            this._vs?.applyFiltersFromPrefs();
 
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
           } catch (e) {
@@ -456,6 +559,14 @@ sap.ui.define(
           const set = new Set();
           rows.forEach((r) => {
             const v = r[path];
+            if (v !== undefined && v !== null && v !== "") set.add(String(v));
+          });
+          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        },
+        _distinct(list, prop) {
+          const set = new Set();
+          (list || []).forEach(r => {
+            const v = r?.[prop];
             if (v !== undefined && v !== null && v !== "") set.add(String(v));
           });
           return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));

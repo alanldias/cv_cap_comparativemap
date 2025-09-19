@@ -202,7 +202,7 @@ module.exports = function () {
       Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
     const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
-      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
+      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 12;
 
     const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel) ? +vendorParallel :
       Number.isFinite(+process.env.VENDOR_PARALLEL) ? +process.env.VENDOR_PARALLEL : Infinity;
