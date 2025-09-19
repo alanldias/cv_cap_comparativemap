@@ -167,60 +167,117 @@ sap.ui.define(
       const currency = (result?.header?.moeda || "BRL").toString();
       const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
-      return itens.map((it, idx) => {
+      return itens.map((it) => {
         const matKey = Keys.matKeyFromBapiMaterial(it?.material);
-        let meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
 
-        if (!meta) {
-          const srcByIdx = srcRows[idx] || {};
-          const nameKey = Keys.normKey(srcByIdx?.supplierName || "");
-          meta = idByKey[`${matKey}|NAME:${nameKey}`];
+        // 1) Casa PELO ÍNDICE do PO_ITEM
+        let src = {};
+        let n = null;
+        const po = String(it?.poItem || "");
+        if (/^\d+$/.test(po)) {
+          n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
+          src = srcRows[n] || {};
         }
 
-        if (!meta) {
-          const po = String(it?.poItem || "");
-          if (/^\d+$/.test(po)) {
-            const n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
-            const src = srcRows[n] || {};
-            const mk2 = Keys.normKey(Keys.getItemKey(src));
-            const lif2 = norm10(src?.lifnr || src?.supplierId || lifnrHeader);
-            const nm2 = Keys.normKey(src?.supplierName || "");
-            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${nm2}`];
+        // 2) Fallback pelo dicionário (LIFNR/MATERIAL → NAME)
+        let meta = null;
+        if (!src || Object.keys(src).length === 0) {
+          meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
+          if (!meta) {
+            const srcByIdx = (n != null ? srcRows[n] : srcRows[0]) || {};
+            const nameKey = Keys.normKey(srcByIdx?.supplierName || "");
+            meta = idByKey[`${matKey}|NAME:${nameKey}`];
           }
+        } else {
+          // preferimos informações vindas da linha fonte
+          meta = {
+            itemId: src.itemId ?? src.ItemId ?? null,
+            invitationId: src.invitationId ?? src._invitationId ?? null,
+            invitationEmail: src.invitationEmail ?? null,
+            masterQty: Number(src._originalQty || src.quantity) || 0,
+            supplierName: src.supplierName || "",
+            lifnr: norm10(src.lifnr || src.supplierId || lifnrHeader),
+            materialCode: src.MaterialCode || src.materialCode || "",
+          };
         }
 
-        const src = srcRows[idx] || {};
+        // 3) Campos de identificação
         const invitationId =
-          meta?.invitationId != null ? meta.invitationId : (src.invitationId ?? null);
-        const invitationEmail =
-          meta?.invitationEmail != null ? meta.invitationEmail : (src.invitationEmail ?? null);
+          (src && (src.invitationId ?? src._invitationId)) != null
+            ? (src.invitationId ?? src._invitationId)
+            : (meta?.invitationId ?? null);
 
+        const invitationEmail =
+          (src && src.invitationEmail != null)
+            ? src.invitationEmail
+            : (meta?.invitationEmail ?? null);
+
+        const originalQty =
+          (src && Number(src._originalQty || src.quantity))
+            ? Number(src._originalQty || src.quantity)
+            : (Number(meta?.masterQty ?? 0) || 0);
+
+        const matDisplay =
+          (src && (src.MaterialCode || src.materialCode))
+            ? (src.MaterialCode || src.materialCode)
+            : (meta?.materialCode || it?.material || Keys.getItemKey(src) || "");
+
+        const supplierName =
+          (src && src.supplierName) ? src.supplierName :
+            (meta?.supplierName || lifnrHeader);
+
+        const itemId =
+          (src && (src.itemId ?? src.ItemId) != null)
+            ? (src.itemId ?? src.ItemId)
+            : (meta?.itemId ?? null);
+
+        // 4) Valores e totais
         const quantity = Number(it?.quantidade || 0) || 0;
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
-        const originalQty = Number(meta?.masterQty ?? 0) || 0;
-        const matDisplay = meta?.materialCode || it?.material || Keys.getItemKey(src) || "";
+
+        // 5) Pass-through dos campos da BAPI (o que você pediu)
+        const descricao = it?.descricao ?? "";
+        const ncm = it?.ncm ?? null;
+        const taxCode = it?.taxCode ?? null;
+        const taxJurCode = it?.taxJurCode ?? null;
+        const unidade = it?.unidade ?? it?.poUnit ?? null;
+        const priceUnit = Number(it?.priceUnit ?? 1) || 1;
+        const priceDate = it?.priceDate ?? null;
+        const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
 
         return {
+          // chaves e mapeamentos já existentes
           materialCode: matDisplay,
           MaterialCode: matDisplay,
-          supplierName: meta?.supplierName || src?.supplierName || lifnrHeader,
+          supplierName,
           originalQty,
           quantity,
           qtyAward: 0,
-          price,
+          price,           // mantido (fragment já usa "price")
+          netPrice: price, // alias, caso algum binding espere "netPrice"
           currency,
           icms: null,
           ipi: null,
           total,
-          itemId: meta?.itemId ?? null,
+          itemId,
           invitationId,
           invitationEmail,
           lifnr: lifnrHeader,
           poItem: it?.poItem,
+
+          // <<< novos/ajustados do retorno da BAPI >>>
+          descricao,
+          ncm,
+          taxCode,
+          taxJurCode,
+          unidade,
+          unit: unidade,   // alias comum
+          priceUnit,
+          priceDate,
+          schedules,
         };
       });
-
     }
 
     return {

@@ -9,13 +9,21 @@
         <Column id="_IDGenColumn16" width="6rem" hAlign="End"><header><Text id="_IDGenText26" text="Qtd Simulada"/></header></Column>
         <Column id="_IDGenColumn29" width="9rem" hAlign="Center"><header><Text id="_IDGenText46" text="Qtd p/ premiar"/></header></Column>
         <Column id="_IDGenColumn17" width="8rem" hAlign="End"><header><Text id="_IDGenText27" text="Preço"/></header></Column>
+
         <Column id="_IDGenColumn18" width="8rem" hAlign="End"><header><Text id="_IDGenText28" text="ICMS"/></header></Column>
         <Column id="_IDGenColumn19" width="8rem" hAlign="End"><header><Text id="_IDGenText29" text="IPI"/></header></Column>
+
         <Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column>
+        <Column id="_IDGenColumn23" width="8rem" hAlign="End"><header><Text id="_IDGenText38" text="ncm"/></header></Column>
+        <Column id="_IDGenColumn24" width="8rem" hAlign="End"><header><Text id="_IDGenText39" text="poItem"/></header></Column>
+        <Column id="_IDGenColumn25" width="8rem" hAlign="End"><header><Text id="_IDGenText40" text="taxCode"/></header></Column>
+
+
+
 
         <!-- DEBUG: IDs que serão levados para o diálogo de premiação -->
-        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId (dbg)"/></header></Column>
-        <Column id="_IDGenColumn22" visible="true" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
+        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId"/></header></Column>
+        <Column id="_IDGenColumn22" visible="false" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
         
       </columns>
 
@@ -31,9 +39,15 @@
                    liveChange=".onAwardQtyChangeRes"
                    width="7rem"/>
             <ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/>
-            <ObjectNumber id="_IDGenObjectNumber6" number="{res>icms}"/>
-            <ObjectNumber id="_IDGenObjectNumber7" number="{res>ipi}"/>
+
+            <ObjectNumber id="_IDGenObjectNumber6" number="{= ${res>icms} === null || ${res>icms} === undefined || ${res>icms} === '' ? '–' : ${res>icms} }"/>
+            <ObjectNumber id="_IDGenObjectNumber7" number="{= ${res>ipi}  === null || ${res>ipi}  === undefined || ${res>ipi}  === '' ? '–' : ${res>ipi}  }"/>
+
             <ObjectNumber id="_IDGenObjectNumber8" number="{res>total}" unit="{res>currency}"/>
+            <ObjectNumber id="_IDGenObjectNumber9" number="{res>ncm}"/>
+            <ObjectNumber id="_IDGenObjectNumber10" number="{res>poItem}"/>
+            <ObjectNumber id="_IDGenObjectNumber11" number="{res>taxCode}"/> 
+
 
             <!-- DEBUG cells -->
             <Text id="_IDGenText35" text="{res>itemId}"/>
