@@ -51,7 +51,10 @@ sap.ui.define(
           this.getView().setModel(Models.createQM(), "qm");
 
           this._prefs = PrefsStore.load();
-          const allowedGroups = ["supplierName", "itemId"];
+          const allowedGroups = [
+            "supplierName", "itemId",
+            "PLANT", "currency", "grupo_de_materias", "MaterialCode", "ItemCategory"
+          ];
           if (!allowedGroups.includes(this._prefs.group?.key)) {
             this._prefs.group = { key: null, desc: false };
             PrefsStore.save(this._prefs);
@@ -69,6 +72,26 @@ sap.ui.define(
               const key = v || "__noItemId__";
               const text = v ? `Item ${v}` : "(Sem ItemId)";
               return { key, text };
+            },
+            PLANT: (ctx) => {
+              const v = ctx.getProperty("PLANT") || "";
+              return { key: v || "__noPlant__", text: v || "(Sem Centro)" };
+            },
+            currency: (ctx) => {
+              const v = ctx.getProperty("currency") || "";
+              return { key: v || "__noCurr__", text: v || "(Sem Moeda)" };
+            },
+            grupo_de_materias: (ctx) => {
+              const v = ctx.getProperty("grupo_de_materias") || "";
+              return { key: v || "__noGrpMat__", text: v || "(Sem Grupo Mat.)" };
+            },
+            MaterialCode: (ctx) => {
+              const v = ctx.getProperty("MaterialCode") || "";
+              return { key: v || "__noMatCode__", text: v || "(Sem Código Mat.)" };
+            },
+            ItemCategory: (ctx) => {
+              const v = ctx.getProperty("ItemCategory") || "";
+              return { key: v || "__noItemCat__", text: v || "(Sem Categoria)" };
             }
           };
 
@@ -161,12 +184,16 @@ sap.ui.define(
 
             // zera preferências salvas (evita re-aplicar filtros antigos no novo dataset)
             this._prefs = Object.assign({}, this._prefs, {
-              filter: { fornecedor: [], nomeItem: [] },
+              filter: {
+                fornecedor: [], moeda: [], centro: [], grupoMat: [], ncm: [],
+                onlyTax: false, precoMin: null, precoMax: null, qtdMin: null, qtdMax: null
+              },
               sort: { key: null, desc: false },
               group: { key: null, desc: false }
             });
             this._vs.setPrefs(this._prefs);
             PrefsStore.save(this._prefs);
+
 
             // também limpe seleções e caches
             tbl?.removeSelections(true);
@@ -188,6 +215,15 @@ sap.ui.define(
             vm.setProperty("/header", res?.header || {});
             vm.setProperty("/rows", rows);
             vm.setProperty("/headerRows", res?.header ? [res.header] : []);
+
+            const distinct = {
+              supplierName: this._distinct(rows, "supplierName"),
+              currency:     this._distinct(rows, "currency"),
+              PLANT:        this._distinct(rows, "PLANT"),
+              grupo_de_materias: this._distinct(rows, "grupo_de_materias"),
+              ncm:          this._distinct(rows, "ncm"),
+            };
+            vm.setProperty("/distinct", distinct);
 
             tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
@@ -523,6 +559,14 @@ sap.ui.define(
           const set = new Set();
           rows.forEach((r) => {
             const v = r[path];
+            if (v !== undefined && v !== null && v !== "") set.add(String(v));
+          });
+          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        },
+        _distinct(list, prop) {
+          const set = new Set();
+          (list || []).forEach(r => {
+            const v = r?.[prop];
             if (v !== undefined && v !== null && v !== "") set.add(String(v));
           });
           return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
