@@ -65,19 +65,20 @@ sap.ui.define(
       };
     }
 
-    function mapRowToPOItem(r, idx) {
+    function mapRowToPOItem(r, idx, poItemOverride) {
       if (!r || typeof r !== "object") {
         throw new Error(
           `Linha selecionada inválida na posição ${idx + 1}. Refaça a seleção.`,
         );
       }
 
-      const poItem = (idx + 1) * 10;
-      const matRaw = (r?.MaterialCode || r?.materialCode || "")
-        .toString()
-        .trim();
+      // ⚠️ Mantemos numero (Integer) para casar com CDS (POItem.poItem é Integer)
+      const poItem = Number.isFinite(poItemOverride) ? poItemOverride : (idx + 1) * 10;
+
+      const matRaw = (r?.MaterialCode || r?.materialCode || "").toString().trim();
       const m = matRaw.match(/^(\d{4,})\b/);
       const material = m ? Keys.zpad(m[1], 18) : "";
+
       const desc = (
         r.itemDEscription ||
         r.itemDescription ||
@@ -86,9 +87,8 @@ sap.ui.define(
         ""
       ).toString();
       const shortText = desc.slice(0, 40);
-      const unit = Keys.mapUoM(
-        (r.unitOfMeasure || "").toString().toUpperCase(),
-      );
+
+      const unit = Keys.mapUoM((r.unitOfMeasure || "").toString().toUpperCase());
       const plant = Keys.mapPlant((r.PLANT || "").toString());
       const itemCat = Keys.mapItemCategory((r.ItemCategory || "").toString());
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
@@ -98,7 +98,7 @@ sap.ui.define(
         : undefined;
 
       const it = {
-        poItem,
+        poItem,       // 👈 vem do front (override) ou idx
         plant,
         material,
         shortText,
@@ -111,17 +111,11 @@ sap.ui.define(
       };
 
       if (!it.material && !it.shortText)
-        console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`,
-        );
-      if (!it.unit)
-        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Unidade vazia`);
-      if (!it.plant)
-        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Centro vazio`);
+        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`);
+      if (!it.unit) console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Unidade vazia`);
+      if (!it.plant) console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Centro vazio`);
       if (!it.quantity)
-        console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Quantidade vazia/zero`,
-        );
+        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Quantidade vazia/zero`);
 
       return it;
     }

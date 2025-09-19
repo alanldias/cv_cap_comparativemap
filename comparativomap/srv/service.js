@@ -201,6 +201,7 @@ module.exports = function () {
     const LIMIT = Number.isFinite(+concurrency) ? +concurrency :
       Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
+    // Garante que o chunk seja 5, como você pediu
     const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
       Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
 
@@ -265,17 +266,19 @@ module.exports = function () {
         LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
 
         // 3) monta tarefas SOAP por chunk
+        // ==================== INÍCIO DA MUDANÇA ====================
         const tasks = chunks.map((chunkItems, cidx) => async () => {
           const t0 = Date.now();
           try {
-            // filtra schedules APENAS dos itens do chunk (evita POSCHEDULE pra item fora do payload)
+            // schedules APENAS dos itens do chunk (casando com poItem vindo do FRONT)
             const schedForChunk = filterSchedulesForChunk(schedules, chunkItems);
 
             const payload = buildSmokePayload(header, chunkItems, schedForChunk, testRun);
 
+            // (opcional) debug: veja os PO_ITEM do chunk
+            // console.log("[mapper] CHUNK PO_ITEMs:", chunkItems.map(x => x.poItem));
+
             const resp = await globalSem.run(async () => {
-              // se quiser evitar "rajada perfeita", habilite um jitterzinho aqui:
-              // await new Promise(rs => setTimeout(rs, Math.floor(Math.random()*20)));
               const rSoap = await client.BAPI_PO_CREATE1Async(payload);
               return Array.isArray(rSoap) ? rSoap[0] : rSoap;
             });
@@ -352,10 +355,9 @@ module.exports = function () {
 
   function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
     if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
-    const poSet = new Set(
-      chunkItems.map(it => String(Number.isInteger(it.poItem) ? it.poItem : it.poItem || "").padStart(2, "0"))
-    );
-    return allSchedules.filter(s => poSet.has(String(Number.isInteger(s?.poItem) ? s.poItem : s?.poItem || "")));
+    const norm5 = v => String(v ?? "").replace(/\D/g, "").padStart(5, "0");
+    const poSet = new Set(chunkItems.map(it => norm5(it.poItem)));
+    return allSchedules.filter(s => poSet.has(norm5(s?.poItem)));
   }
 
   function pickHeaderFallback(headerIn) {

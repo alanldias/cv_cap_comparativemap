@@ -71,7 +71,6 @@ sap.ui.define([
   }
 
   function buildRequestsFromSelection(rows, vm) {
-    // obtém header bruto do VM (se disponível) via Map.getHeaderFromVM
     const headerRaw = (Map.getHeaderFromVM && typeof Map.getHeaderFromVM === "function")
       ? Map.getHeaderFromVM(vm)
       : (vm && vm.getProperty ? vm.getProperty("/header") : {});
@@ -80,26 +79,26 @@ sap.ui.define([
     const requests = [];
 
     Object.entries(groups).forEach(([lifnr, arr]) => {
-      // monta header baseado no headerRaw e na primeira linha do grupo
       const h0 = (Map.mapHeaderFromAriba && typeof Map.mapHeaderFromAriba === "function")
         ? Map.mapHeaderFromAriba(headerRaw, arr[0])
         : (headerRaw || {});
 
       const header = {
         ...h0,
-        // override garantido com o lifnr encontrado
         vendor: normalizeToPad10(lifnr) || Keys.pad10(String(lifnr || "").replace(/\D/g, "")),
         currency: (arr[0]?.currency || h0?.currency || "BRL").toString().toUpperCase().slice(0, 3)
       };
 
-      // mapear itens usando teu SimulationMapper (idx recomeça no grupo)
+      // 👇 Gera poItem sequencial (10,20,30...) por FORNECEDOR e envia ao mapper
       const items = (arr || []).map((r, idx) => {
+        const poItemNum = (idx + 1) * 10; // Integer (CDS espera Integer)
         if (Map.mapRowToPOItem && typeof Map.mapRowToPOItem === "function") {
-          return Map.mapRowToPOItem(r, idx);
+          const it = Map.mapRowToPOItem(r, idx, poItemNum);
+          return { ...it, poItem: poItemNum }; // redundância explícita
         }
         // fallback mínimo
         return {
-          poItem: (idx + 1) * 10,
+          poItem: poItemNum,
           plant: r.PLANT || r.plant || "",
           shortText: r.itemDescription || r.ItemDescription || r.description || "",
           quantity: Number(r.quantity || 0),
@@ -107,9 +106,9 @@ sap.ui.define([
         };
       });
 
-      // schedules paralelos aos itens (um schedule por item)
+      // schedules casadas pelo MESMO poItem
       const schedules = items.map((it, i) => ({
-        poItem: it.poItem,
+        poItem: it.poItem,  // 👈 mesmo número
         schedLine: 1,
         deliveryDate: (Map.getDeliveryDateFromRow && typeof Map.getDeliveryDateFromRow === "function")
           ? Map.getDeliveryDateFromRow(arr[i])
@@ -120,17 +119,13 @@ sap.ui.define([
       requests.push({ header, items, schedules, testRun: true });
     });
 
-    // DEBUG: mostra resumo fácil
-    /* eslint-disable no-console */
     console.table(requests.map(r => ({
       vendor: r.header.vendor,
       items: r.items.length,
       currency: r.header.currency
     })));
-    /* eslint-enable no-console */
 
     return requests;
   }
-
   return { buildRequestsFromSelection };
 });

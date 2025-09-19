@@ -5,7 +5,7 @@
     xmlns:core="sap.ui.core">
     <Page id="page" showHeader="false">
 
-        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo sapUiSmallMarginBottom">
+        <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo">
             <HBox id="hboxCabecalhoNf" width="100%" alignItems="Center" justifyContent="SpaceBetween">
                 <HBox id="hboxEsquerdaNf" alignItems="Center" class="fundologo">
                     <Image id="logoTopoNf"
@@ -41,7 +41,7 @@
             </Toolbar>
 
             <Table id="tblHeader"
-                   class="wideTable sapUiSmallMarginBottom"
+                   class="wideTable"
                    inset="false"
                    mode="SingleSelectMaster"
                    includeItemInSelection="true"
@@ -76,6 +76,19 @@
             
             <VBox id="detailsVBox" class="sapUiSmallMarginTop">
                 <Toolbar id="detailsToolbar">
+
+                <!-- Para teste em DEV -->
+
+                <Button id="btnDevRes"
+                        text="DEV: Resultado"
+                        type="Transparent"
+                        icon="sap-icon://inspect"
+                        visible="{vm>/devMode}"
+                        press=".onDevOpenResultado"/>
+
+                <!-- Para teste em DEV -->
+
+
                     <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
                             icon="sap-icon://simulate"
                             press=".onSimularPress" />
@@ -84,12 +97,12 @@
                     <Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
                     <Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/>
                 </Toolbar>
-                <ScrollContainer id="tableScrollContainer" width="100%" height="auto" horizontal="true" vertical="false">
+                <ScrollContainer id="tableScrollContainer" width="100%" height="35rem" horizontal="true" vertical="true">
                     <Table id="tblDocs"
                            inset="false"
                            mode="MultiSelect"
                            rememberSelections="false"
-                           growing="true"
+                           growing="false"
                            noDataText="{i18n>instrucaoTabela}"
                            items="{vm>/rows}">
                         

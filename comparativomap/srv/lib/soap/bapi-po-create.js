@@ -58,26 +58,27 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-          {
-            poItem: 10,
-            plant: "BR01",
-            shortText: "Teste chamada BAPI",
-            quantity: 1,
-            unit: "PC",
-            taxCode: "I1",
-          },
-        ];
+        {
+          poItem: 10,
+          plant: "BR01",
+          shortText: "Teste chamada BAPI",
+          quantity: 1,
+          unit: "PC",
+          taxCode: "I1",
+        },
+      ];
 
   const poitem = [],
     poitemx = [];
+
+  // ==================== INÍCIO DA MUDANÇA ====================
+  console.log(`[buildSmokePayload] Montando payload para ${itemList.length} itens do chunk.`);
   itemList.forEach((it, i) => {
-    const PO_ITEM = padLeft(
-      String(Number.isInteger(it.poItem) ? it.poItem : (i + 1) * 10),
-      5,
-      "0",
-    );
+    const poItemValue = it.poItem ?? (i + 1) * 10; // 👈 front tem prioridade
+    const PO_ITEM = padLeft(String(poItemValue), 5, "0");
+
     const rec = {
-      PO_ITEM,
+      PO_ITEM, // Usando o valor correto!
       PLANT: it.plant,
       QUANTITY: String(it.quantity),
       PO_UNIT: it.unit,
@@ -95,26 +96,26 @@ function buildSmokePayload(header, items, schedules, testRun) {
   });
 
   const today = isoDate(new Date());
+
+  // A lógica das schedules também deve respeitar o poItem que veio do frontend
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-          PO_ITEM: padLeft(
-            String(Number.isInteger(s.poItem) ? s.poItem : (idx + 1) * 10),
-            5,
-            "0",
-          ),
-          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          DELIVERY_DATE: s.deliveryDate
-            ? isoDate(new Date(s.deliveryDate))
-            : today,
-          QUANTITY: String(s.quantity ?? "0"),
-        }))
+        // Usamos o s.poItem que já veio no payload de schedules
+        PO_ITEM: padLeft(String(s.poItem ?? (idx + 1) * 10), 5, "0"),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+        DELIVERY_DATE: s.deliveryDate
+          ? isoDate(new Date(s.deliveryDate))
+          : today,
+        QUANTITY: String(s.quantity ?? "0"),
+      }))
       : poitem.map((p) => ({
-          PO_ITEM: p.PO_ITEM,
-          SCHED_LINE: "0001",
-          DELIVERY_DATE: today,
-          QUANTITY: p.QUANTITY,
-        }));
+        PO_ITEM: p.PO_ITEM, // O fallback agora usa o poItem correto que acabamos de definir
+        SCHED_LINE: "0001",
+        DELIVERY_DATE: today,
+        QUANTITY: p.QUANTITY,
+      }));
+  // ===================== FIM DA MUDANÇA ======================
 
   const posched = [],
     poschedx = [];

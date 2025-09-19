@@ -1,28 +1,37 @@
 <core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
-  <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="1000px" draggable="true" resizable="true">
+  <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="100%" draggable="true" resizable="true">
+  <customHeader>
+    <Toolbar id="_IDGenToolbar1">
+      <Title id="_IDGenTitle1" text="Resultado da Simulação"/>
+      <ToolbarSpacer id="_IDGenToolbarSpacer1"/>
+      <Button id="_IDGenButton1" icon="sap-icon://sort"   press=".onResSort"/>
+      <Button id="_IDGenButton2" icon="sap-icon://filter" press=".onResFilter"/>
+      <Button id="_IDGenButton3" icon="sap-icon://group-2" press=".onResGroup"/>
+    </Toolbar>
+  </customHeader>
     <Table id="_IDGenTable2" items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect"
-           autoPopinMode="true" growing="true">
+           autoPopinMode="true" growing="true"> 
       <columns>
-        <Column id="_IDGenColumn14" width="12rem"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column>
-        <Column id="_IDGenColumn15" width="10rem"><header><Text id="_IDGenText25" text="Item"/></header></Column>
-        <Column id="_IDGenColumn30" width="6rem"  hAlign="End"><header><Text id="_IDGenText47" text="Quantidade"/></header></Column>
-        <Column id="_IDGenColumn16" width="6rem" hAlign="End"><header><Text id="_IDGenText26" text="Qtd Simulada"/></header></Column>
-        <Column id="_IDGenColumn29" width="9rem" hAlign="Center"><header><Text id="_IDGenText46" text="Qtd p/ premiar"/></header></Column>
-        <Column id="_IDGenColumn17" width="8rem" hAlign="End"><header><Text id="_IDGenText27" text="Preço"/></header></Column>
-
-        <Column id="_IDGenColumn18" width="8rem" hAlign="End"><header><Text id="_IDGenText28" text="ICMS"/></header></Column>
-        <Column id="_IDGenColumn19" width="8rem" hAlign="End"><header><Text id="_IDGenText29" text="IPI"/></header></Column>
-
-        <Column id="_IDGenColumn20" width="8rem" hAlign="End"><header><Text id="_IDGenText30" text="Total"/></header></Column>
-        <Column id="_IDGenColumn23" width="8rem" hAlign="End"><header><Text id="_IDGenText38" text="ncm"/></header></Column>
-        <Column id="_IDGenColumn24" width="8rem" hAlign="End"><header><Text id="_IDGenText39" text="poItem"/></header></Column>
-        <Column id="_IDGenColumn25" width="8rem" hAlign="End"><header><Text id="_IDGenText40" text="taxCode"/></header></Column>
+        <Column id="_IDGenColumn14" width="10rem" hAlign="Center"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column>
+        <Column id="_IDGenColumn15" width="12rem" hAlign="Center"><header><Text id="_IDGenText25" text="Item"/></header></Column>
+        <Column id="_IDGenColumn30" width="6rem"  hAlign="Center"><header><Text id="_IDGenText47" text="Quantidade Inicial"/></header></Column>
+        <Column id="_IDGenColumn16" width="6rem"  hAlign="Center"><header><Text id="_IDGenText26" text="Quantidade Simulada"/></header></Column>
+        <Column id="_IDGenColumn29" width="7rem"  hAlign="Center"><header><Text id="_IDGenText46" text="Quantidade para premiar"/></header></Column>
+        <Column id="_IDGenColumn17" width="8rem"  hAlign="Center"><header><Text id="_IDGenText27" text="Preço"/></header></Column>
+ 
+        <Column id="_IDGenColumn18" width="8rem"  hAlign="Center"><header><Text id="_IDGenText28" text="ICMS"/></header></Column>
+        <Column id="_IDGenColumn19" width="8rem"  hAlign="Center"><header><Text id="_IDGenText29" text="IPI"/></header></Column>
+ 
+        <Column id="_IDGenColumn20" width="8rem"  hAlign="Center"><header><Text id="_IDGenText30" text="Total"/></header></Column>
+        <Column id="_IDGenColumn23" width="8rem"  hAlign="Center"><header><Text id="_IDGenText38" text="NCM"/></header></Column>
+        <Column id="_IDGenColumn24" width="5rem"  hAlign="Center"><header><Text id="_IDGenText39" text="PO Item"/></header></Column>
+        <Column id="_IDGenColumn25" width="8rem"  hAlign="Center"><header><Text id="_IDGenText40" text="Iva"/></header></Column>
 
 
 
 
         <!-- DEBUG: IDs que serão levados para o diálogo de premiação -->
-        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="ItemId"/></header></Column>
+        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="Item Id"/></header></Column>
         <Column id="_IDGenColumn22" visible="false" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
         
       </columns>
@@ -37,7 +46,7 @@
             <Input id="_IDGenInput3" type="Number"
                    value="{path:'res>qtyAward', type:'sap.ui.model.type.Integer'}"
                    liveChange=".onAwardQtyChangeRes"
-                   width="7rem"/>
+                   width="4rem"/>
             <ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/>
 
             <ObjectNumber id="_IDGenObjectNumber6" number="{= ${res>icms} === null || ${res>icms} === undefined || ${res>icms} === '' ? '–' : ${res>icms} }"/>
