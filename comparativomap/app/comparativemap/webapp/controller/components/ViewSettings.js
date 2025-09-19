@@ -7,10 +7,12 @@ sap.ui.define(
     "sap/ui/Device",
     "sap/ui/model/Filter",
     "sap/ui/model/FilterOperator",
+    // custom tab (faixas)
     "sap/m/ViewSettingsCustomTab",
     "sap/ui/layout/form/SimpleForm",
     "sap/m/Label",
     "sap/m/Input",
+    "sap/ui/core/format/NumberFormat",
   ],
   function (
     ViewSettingsDialog,
@@ -23,7 +25,8 @@ sap.ui.define(
     ViewSettingsCustomTab,
     SimpleForm,
     Label,
-    Input
+    Input,
+    NumberFormat
   ) {
     "use strict";
 
@@ -33,53 +36,75 @@ sap.ui.define(
         dlgGroup = null;
       let groupReset = false;
       let sortReset = false;
+
+      // ids locais do dialog
       const idBase = view.createId("vsd");
       const _id = (suf) => `${idBase}-${suf}`;
 
+      // garante estrutura padrão no prefs.filter (sem quantidade)
       function _ensureFilterDefaults() {
         prefs.filter = prefs.filter || {};
-        prefs.filter.fornecedor ||= [];
-        prefs.filter.nomeItem   ||= [];
-        prefs.filter.moeda      ||= [];
-        prefs.filter.centro     ||= [];
-        prefs.filter.grupoMat   ||= [];
-        prefs.filter.ncm        ||= [];
+        prefs.filter.fornecedor      ||= [];
+        prefs.filter.nomeItem        ||= [];
+        prefs.filter.moeda           ||= [];
+        prefs.filter.centro          ||= [];
+        prefs.filter.grupoMat        ||= [];
+        prefs.filter.ncm             ||= [];
         if (prefs.filter.precoMin === undefined) prefs.filter.precoMin = null;
         if (prefs.filter.precoMax === undefined) prefs.filter.precoMax = null;
       }
       _ensureFilterDefaults();
 
+      // parse numérico respeitando locale (ex.: "10,50")
+      const nf = NumberFormat.getFloatInstance(); // usa locale atual
+      function parseNumLocalized(v) {
+        if (v == null || v === "") return null;
+        const n = nf.parse(String(v));
+        return Number.isFinite(n) ? n : null;
+      }
+
+      /* ==========================
+       *   FILTER DIALOG
+       * ========================== */
       function openFilterDialog(onConfirm) {
         _ensureFilterDefaults();
 
+        // recria para repopular distincts a cada abertura
         if (dlgFilter) {
           dlgFilter.destroy();
           dlgFilter = null;
         }
-
         dlgFilter = new ViewSettingsDialog({
           confirm: onConfirm,
           reset: () => {
-            prefs.filter = {
-              fornecedor: [],
-              nomeItem:   [],
-              moeda:      [],
-              centro:     [],
-              grupoMat:   [],
-              ncm:        [],
-              precoMin:   null,
-              precoMax:   null
-            };
-            const core = sap.ui.getCore();
-            core.byId(_id("preco-min"))?.setValue("");
-            core.byId(_id("preco-max"))?.setValue("");
+            // limpa seleção de todos os grupos
+            dlgFilter.getFilterItems().forEach(fi => {
+              fi.getItems().forEach(it => it.setSelected(false));
+            });
+            // limpa inputs de preço
+            sap.ui.getCore().byId(_id("preco-min"))?.setValue("");
+            sap.ui.getCore().byId(_id("preco-max"))?.setValue("");
+            // zera prefs + aplica
+            const prefsNew = Object.assign({}, prefs, {
+              filter: {
+                fornecedor: [],
+                nomeItem:   [],
+                moeda:      [],
+                centro:     [],
+                grupoMat:   [],
+                ncm:        [],
+                precoMin:   null,
+                precoMax:   null
+              }
+            });
+            prefs = prefsNew;
             applyFiltersFromPrefs();
           }
         });
-
         if (Device.system.desktop) dlgFilter.addStyleClass("sapUiSizeCompact");
         view.addDependent(dlgFilter);
 
+        // helper p/ grupos multi-select baseados em distincts
         function addFilterGroup({ title, groupKey, distinctKey, selectedValues = [] }) {
           const fi = new ViewSettingsFilterItem({ text: title, key: groupKey, multiSelect: true });
           (getDistinct(distinctKey) || []).forEach((val) => {
@@ -91,7 +116,9 @@ sap.ui.define(
             fi.addItem(it);
           });
           dlgFilter.addFilterItem(fi);
-        };
+        }
+
+        // filtros de listas
         addFilterGroup({
           title: "Fornecedor",
           groupKey: "supplierName",
@@ -129,14 +156,15 @@ sap.ui.define(
           selectedValues: prefs.filter.ncm
         });
 
+        // Aba custom "Faixas" (Preço)
         const tabFaixas = new ViewSettingsCustomTab({ key: "faixas", title: "Faixas" });
         const form = new SimpleForm({
           editable: true,
           content: [
-            new Label({ text: "Preço (min)" }),
+            new Label({ text: "Preço (mín)" }),
             new Input(_id("preco-min"), { type: "Number", width: "10rem", value: prefs.filter.precoMin ?? "" }),
-            new Label({ text: "Preço (max)" }),
-            new Input(_id("preco-max"), { type: "Number", width: "10rem", value: prefs.filter.precoMax ?? "" })
+            new Label({ text: "Preço (máx)" }),
+            new Input(_id("preco-max"), { type: "Number", width: "10rem", value: prefs.filter.precoMax ?? "" }),
           ]
         });
         tabFaixas.addContent(form);
@@ -158,16 +186,12 @@ sap.ui.define(
           );
         });
 
+        // ranges (aba custom)
         const core = sap.ui.getCore();
-        const n = (id) => {
-          const raw = core.byId(id)?.getValue?.();
-          if (raw === "" || raw == null) return null;
-          const num = Number(raw);
-          return Number.isFinite(num) ? num : null;
-        };
-        const precoMin = n(_id("preco-min"));
-        const precoMax = n(_id("preco-max"));
+        const precoMin = parseNumLocalized(core.byId(_id("preco-min"))?.getValue?.());
+        const precoMax = parseNumLocalized(core.byId(_id("preco-max"))?.getValue?.());
 
+        // monta Filter[] (AND entre grupos; OR dentro do grupo)
         const andFilters = [];
         const pushOrGroup = (list, field) => {
           if (!list || !list.length) return;
@@ -193,13 +217,20 @@ sap.ui.define(
         pushOrGroup(arrGrpMat,   "grupo_de_materias");
         pushOrGroup(arrNcm,      "ncm");
 
-        if (precoMin != null) andFilters.push(new Filter("price", FilterOperator.GE, precoMin));
-        if (precoMax != null) andFilters.push(new Filter("price", FilterOperator.LE, precoMax));
+        // faixa de preço (usa BT quando min e max válidos)
+        if (precoMin != null && precoMax != null && precoMin <= precoMax) {
+          andFilters.push(new Filter("price", FilterOperator.BT, precoMin, precoMax));
+        } else {
+          if (precoMin != null) andFilters.push(new Filter("price", FilterOperator.GE, precoMin));
+          if (precoMax != null) andFilters.push(new Filter("price", FilterOperator.LE, precoMax));
+        }
 
+        // aplica na tabela
         const tbl = view.byId("tblDocs");
         const binding = tbl && tbl.getBinding("items");
         if (binding) binding.filter(andFilters, sap.ui.model.FilterType.Application);
 
+        // salva prefs
         const prefsNew = Object.assign({}, prefs, {
           filter: {
             fornecedor: arrSupplier,
@@ -245,13 +276,19 @@ sap.ui.define(
         pushOr(prefs.filter.grupoMat,   "grupo_de_materias");
         pushOr(prefs.filter.ncm,        "ncm");
 
-        if (prefs.filter.precoMin != null)
-          groups.push(new Filter("price", FilterOperator.GE, prefs.filter.precoMin));
-        if (prefs.filter.precoMax != null)
-          groups.push(new Filter("price", FilterOperator.LE, prefs.filter.precoMax));
+        // preço
+        const hasMin = prefs.filter.precoMin != null;
+        const hasMax = prefs.filter.precoMax != null;
+        if (hasMin && hasMax && prefs.filter.precoMin <= prefs.filter.precoMax) {
+          groups.push(new Filter("price", FilterOperator.BT, prefs.filter.precoMin, prefs.filter.precoMax));
+        } else {
+          if (hasMin) groups.push(new Filter("price", FilterOperator.GE, prefs.filter.precoMin));
+          if (hasMax) groups.push(new Filter("price", FilterOperator.LE, prefs.filter.precoMax));
+        }
 
         binding.filter(groups, sap.ui.model.FilterType.Application);
 
+        // InfoToolbar (resumo)
         const bar = view.byId("vsdFilterBar");
         const label = view.byId("vsdFilterLabel");
         if (bar && label) {
@@ -262,8 +299,8 @@ sap.ui.define(
           if (prefs.filter.centro?.length)     pieces.push(`Centro (${prefs.filter.centro.length})`);
           if (prefs.filter.grupoMat?.length)   pieces.push(`Grupo Mat. (${prefs.filter.grupoMat.length})`);
           if (prefs.filter.ncm?.length)        pieces.push(`NCM (${prefs.filter.ncm.length})`);
-          if (prefs.filter.precoMin != null || prefs.filter.precoMax != null)
-            pieces.push(`Preço ${prefs.filter.precoMin ?? "-"}..${prefs.filter.precoMax ?? "-"}`);
+          if (hasMin || hasMax)
+            pieces.push(`Preço ${hasMin ? prefs.filter.precoMin : "-"}..${hasMax ? prefs.filter.precoMax : "-"}`);
 
           const has = pieces.length > 0;
           bar.setVisible(has);
@@ -271,6 +308,9 @@ sap.ui.define(
         }
       }
 
+      /* ==========================
+       *   SORT / GROUP
+       * ========================== */
       function numCompare(a, b) {
         const an = Number(a); const bn = Number(b);
         const ax = isNaN(an) ? 0 : an;
@@ -328,7 +368,7 @@ sap.ui.define(
           sorters.push(new Sorter(
             prefs.group.key,
             !!prefs.group.desc,
-            mGroupFunctions?.[prefs.group.key] || true // fallback: agrupamento simples
+            mGroupFunctions[prefs.group.key]
           ));
         }
 
@@ -346,8 +386,8 @@ sap.ui.define(
 
         const sPath = m.sortItem.getKey();
         const bDesc = m.sortDescending;
-        const numericKeys = ["price", "EXTENDEDPRICE", "quantity", "mva"];
-        if (numericKeys.includes(sPath)) {
+
+        if (sPath === "price" || sPath === "EXTENDEDPRICE" || sPath === "quantity" || sPath === "mva") {
           const s = new Sorter(sPath, bDesc);
           s.fnCompare = numCompare;
           sorters.push(s);
@@ -380,12 +420,7 @@ sap.ui.define(
         dlgGroup.destroyGroupItems();
         [
           { text: "Fornecedor", key: "supplierName" },
-          { text: "Item", key: "itemId" },
-          { text: "Centro", key: "PLANT" },
-          { text: "Moeda", key: "currency" },
-          { text: "Grupo Mat.", key: "grupo_de_materias" },
-          { text: "Código Material", key: "MaterialCode" },
-          { text: "Categoria Item", key: "ItemCategory" }
+          { text: "Item", key: "itemId" }
         ].forEach(g => dlgGroup.addGroupItem(new ViewSettingsItem(g)));
 
         if (prefs.group?.key) {
@@ -407,8 +442,7 @@ sap.ui.define(
         const applyOnlySort = () => {
           const arr = [];
           if (prefs.sort?.key) {
-            const numericKeys = ["price", "EXTENDEDPRICE", "quantity", "mva"];
-            if (numericKeys.includes(prefs.sort.key)) {
+            if (["price","EXTENDEDPRICE","quantity","mva"].includes(prefs.sort.key)) {
               const s = new Sorter(prefs.sort.key, !!prefs.sort.desc);
               s.fnCompare = numCompare;
               arr.push(s);
@@ -434,13 +468,11 @@ sap.ui.define(
 
         const sPath = m.groupItem.getKey();
         const bDesc = m.groupDescending;
-        const vGroup = mGroupFunctions?.[sPath] || true;
+        const vGroup = mGroupFunctions[sPath];
 
         const arr = [new Sorter(sPath, bDesc, vGroup)];
-
         if (prefs.sort?.key) {
-          const numericKeys = ["price", "EXTENDEDPRICE", "quantity", "mva"];
-          if (numericKeys.includes(prefs.sort.key)) {
+          if (["price","EXTENDEDPRICE","quantity","mva"].includes(prefs.sort.key)) {
             const s = new Sorter(prefs.sort.key, !!prefs.sort.desc);
             s.fnCompare = numCompare;
             arr.push(s);
@@ -467,12 +499,11 @@ sap.ui.define(
             new Sorter(
               prefs.group.key,
               !!prefs.group.desc,
-              mGroupFunctions?.[prefs.group.key] || true
+              mGroupFunctions[prefs.group.key],
             ),
           );
         if (prefs.sort?.key) {
-          const numericKeys = ["price", "EXTENDEDPRICE", "quantity", "mva"];
-          if (numericKeys.includes(prefs.sort.key)) {
+          if (["price","EXTENDEDPRICE","quantity","mva"].includes(prefs.sort.key)) {
             const s = new Sorter(prefs.sort.key, !!prefs.sort.desc);
             s.fnCompare = numCompare;
             sorters.push(s);
