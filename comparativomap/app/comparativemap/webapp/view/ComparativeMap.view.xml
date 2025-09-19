@@ -79,12 +79,12 @@
 
                 <!-- Para teste em DEV -->
 
-                <Button id="btnDevRes"
+                <!-- <Button id="btnDevRes"
                         text="DEV: Resultado"
                         type="Transparent"
                         icon="sap-icon://inspect"
                         visible="{vm>/devMode}"
-                        press=".onDevOpenResultado"/>
+                        press=".onDevOpenResultado"/> -->
 
                 <!-- Para teste em DEV -->
 

@@ -21,7 +21,11 @@ sap.ui.define(
     async function openResultDialog(view, rows, controller) {
       // 1) Modelo "res"
       const resModel = view.getModel("res") || new JSONModel({ rows: [] });
-      resModel.setData({ rows: rows || [] });
+      const safeRows = (rows || []).map(r => ({
+        ...r,
+        qtyAward: (r.qtyAward != null ? r.qtyAward : Number(r.quantity) || 0)
+      }));
+      resModel.setData({ rows: safeRows });
       view.setModel(resModel, "res");
 
       // 2) Dialog antigo?
