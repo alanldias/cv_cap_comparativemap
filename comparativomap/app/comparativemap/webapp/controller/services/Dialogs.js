@@ -20,28 +20,32 @@ sap.ui.define(
 
     async function openResultDialog(view, rows, controller) {
       // 1) Modelo "res"
-      let resModel = view.getModel("res") || new JSONModel({ rows: [] });
-
+      let resModel = view.getModel("res");
+      if (!(resModel instanceof sap.ui.model.json.JSONModel)) {
+        resModel = new JSONModel({ header: {}, rows: [], totals: {} });
+        view.setModel(resModel, "res");
+      }
       if (typeof resModel.setSizeLimit === "function") {
-        resModel.setSizeLimit(5000);
+        resModel.setSizeLimit(5000); // idempotente
       }
 
+      // 2) Prepara linhas (mantém sua regra do qtyAward)
       const safeRows = (rows || []).map(r => ({
         ...r,
         qtyAward: (r.qtyAward != null ? r.qtyAward : Number(r.quantity) || 0)
       }));
-      resModel.setData({ rows: safeRows });
-      view.setModel(resModel, "res");
+      // Atualiza só o path necessário (mantém instância + configs)
+      resModel.setProperty("/rows", safeRows);
 
-      // 2) Dialog antigo?
+      // 3) Fecha dialog antigo (mantido)
       if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
         try { controller._dlgRes.destroy(); } catch (e) { }
         controller._dlgRes = null;
       }
 
-      // 3) Carrega fragment (escopo único)
+      // 4) Carrega fragment (mantido)
       const scopeId = view.createId("resDlg-" + Date.now());
-      const root = await Fragment.load({
+      const root = await sap.ui.core.Fragment.load({
         id: scopeId,
         name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
         controller,
@@ -54,10 +58,8 @@ sap.ui.define(
       view.addDependent(dlg);
       controller._dlgRes = dlg;
 
-      // 4) ViewSettings no FRAGMENT
-      // 4) ViewSettings no FRAGMENT
+      // 5) ViewSettings no FRAGMENT (mantida sua lógica)
       try {
-        // prefs isoladas do fragment
         controller._prefsRes = {
           filter: { fornecedor: [], nomeItem: [], moeda: [], centro: [], grupoMat: [], ncm: [], precoMin: null, precoMax: null },
           sort: { key: null, desc: false },
@@ -65,8 +67,7 @@ sap.ui.define(
         };
 
         function getDistinctRes(path) {
-          const data = view.getModel("res")?.getData() || {};
-          const rows = Array.isArray(data.rows) ? data.rows : [];
+          const rows = view.getModel("res")?.getProperty("/rows") || [];
           const set = new Set();
           rows.forEach(r => {
             const v = r?.[path];
@@ -76,8 +77,7 @@ sap.ui.define(
         }
 
         function findTableInFragment() {
-          // usa o MESMO scopeId gerado pro fragment
-          return sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2");
+          return sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2"); // mesmo id do seu XML
         }
 
         const mGroup = controller.mGroupFunctions || {
@@ -93,7 +93,7 @@ sap.ui.define(
         };
 
         controller._vsRes = ViewSettingsCmp.create(
-          dlg,                         // owner (Dialog)
+          dlg,
           controller._prefsRes,
           getDistinctRes,
           mGroup,
@@ -101,7 +101,7 @@ sap.ui.define(
           {
             filterBarId: "resVsdFilterBar",
             filterLabelId: "resVsdFilterLabel",
-            fragmentScopeId: scopeId   // <<< chave para resolver ids no fragment
+            fragmentScopeId: scopeId
           }
         );
 
@@ -109,6 +109,13 @@ sap.ui.define(
         controller._vsRes.applyGroupSortFromPrefs();
       } catch (e) {
         console.warn("[Dialogs] ViewSettings (fragment) não inicializado:", e);
+      }
+
+      // (Opcional) se sua <Table> usar growing="true", ajuste o threshold aqui:
+      const tbl = sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2");
+      if (tbl?.getGrowing && tbl.getGrowing() && tbl.setGrowingThreshold) {
+        const desired = Math.max(5000, safeRows.length);
+        tbl.setGrowingThreshold(desired);
       }
 
       dlg.attachAfterClose(() => {
@@ -119,6 +126,7 @@ sap.ui.define(
 
       dlg.open();
     }
+
 
     function closeAny(controller, evt) {
       try {
