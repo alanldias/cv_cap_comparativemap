@@ -20,7 +20,12 @@ sap.ui.define(
 
     async function openResultDialog(view, rows, controller) {
       // 1) Modelo "res"
-      const resModel = view.getModel("res") || new JSONModel({ rows: [] });
+      let resModel = view.getModel("res") || new JSONModel({ rows: [] });
+
+      if (typeof resModel.setSizeLimit === "function") {
+        resModel.setSizeLimit(5000);
+      }
+
       const safeRows = (rows || []).map(r => ({
         ...r,
         qtyAward: (r.qtyAward != null ? r.qtyAward : Number(r.quantity) || 0)

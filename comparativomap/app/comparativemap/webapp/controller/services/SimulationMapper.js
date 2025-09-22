@@ -154,42 +154,59 @@ sap.ui.define(
     function buildResRowsFromBapiResult(result, qm, srcRowsOverride) {
       const idByKey = qm.getProperty("/idByKey") || {};
       const norm10 = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+      const normPo = (v) => {
+        const s = String(v ?? "").trim();
+        if (!s) return null;
+        const n = Number(s.replace(/\D/g, ""));
+        return Number.isFinite(n) ? n : null;
+      };
 
-      // LIFNR vindo do resultado
+      // LIFNR vindo do resultado (header)
       const lifnrHeader = norm10(result?.header?.fornecedor || result?.header?.vendor || "");
 
+      // Escolhe as linhas fonte (do mesmo fornecedor)
       const globalSrc = qm.getProperty("/simSourceRows") || [];
-      // se não vier override: filtra o global pelas linhas do mesmo fornecedor
       const srcRows = (Array.isArray(srcRowsOverride) && srcRowsOverride.length)
         ? srcRowsOverride
         : globalSrc.filter(r => norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader);
+
+      // Índice determinístico: poItem (numérico) -> linha fonte
+      const srcByPo = new Map();
+      for (const r of srcRows) {
+        const n = normPo(r?.poItem ?? r?.PO_ITEM ?? r?.poitem);
+        if (n == null) continue;
+        if (srcByPo.has(n)) {
+          // não falha, mas alerta que há duplicata de poItem na seleção
+          console.warn("[MAP] poItem duplicado em srcRows p/ vendor", lifnrHeader, "poItem=", n);
+        } else {
+          srcByPo.set(n, r);
+        }
+      }
 
       const currency = (result?.header?.moeda || "BRL").toString();
       const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
       return itens.map((it) => {
-        const matKey = Keys.matKeyFromBapiMaterial(it?.material);
+        // poItem do retorno da BAPI (vem "00010", "01000"...)
+        const poPadded = String(it?.poItem || "").padStart(5, "0");
+        const poNum = normPo(it?.poItem);
 
-        // 1) Casa PELO ÍNDICE do PO_ITEM
-        let src = {};
-        let n = null;
-        const po = String(it?.poItem || "");
-        if (/^\d+$/.test(po)) {
-          n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
-          src = srcRows[n] || {};
-        }
+        // 1) match determinístico por poItem
+        let src = (poNum != null) ? srcByPo.get(poNum) : undefined;
 
-        // 2) Fallback pelo dicionário (LIFNR/MATERIAL → NAME)
+        // 2) Fallback sem “adivinhar por índice”: tenta dicionário LIFNR/MATERIAL/NAME
         let meta = null;
-        if (!src || Object.keys(src).length === 0) {
+        const matKey = Keys.matKeyFromBapiMaterial(it?.material);
+        if (!src) {
           meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
           if (!meta) {
-            const srcByIdx = (n != null ? srcRows[n] : srcRows[0]) || {};
-            const nameKey = Keys.normKey(srcByIdx?.supplierName || "");
+            // tenta por NAME com base na primeira fonte do mesmo fornecedor (quando há)
+            const src0 = srcRows[0] || {};
+            const nameKey = Keys.normKey(src0?.supplierName || "");
             meta = idByKey[`${matKey}|NAME:${nameKey}`];
           }
         } else {
-          // preferimos informações vindas da linha fonte
+          // preferimos informações da própria linha fonte
           meta = {
             itemId: src.itemId ?? src.ItemId ?? null,
             invitationId: src.invitationId ?? src._invitationId ?? null,
@@ -201,7 +218,7 @@ sap.ui.define(
           };
         }
 
-        // 3) Campos de identificação
+        // 3) Campos de identificação vindos da fonte/meta
         const invitationId =
           (src && (src.invitationId ?? src._invitationId)) != null
             ? (src.invitationId ?? src._invitationId)
@@ -220,7 +237,7 @@ sap.ui.define(
         const matDisplay =
           (src && (src.MaterialCode || src.materialCode))
             ? (src.MaterialCode || src.materialCode)
-            : (meta?.materialCode || it?.material || Keys.getItemKey(src) || "");
+            : (meta?.materialCode || it?.material || Keys.getItemKey(src || {}) || "");
 
         const supplierName =
           (src && src.supplierName) ? src.supplierName :
@@ -236,7 +253,7 @@ sap.ui.define(
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
 
-        // 5) Pass-through dos campos da BAPI (o que você pediu)
+        // 5) Pass-through da BAPI
         const descricao = it?.descricao ?? "";
         const ncm = it?.ncm ?? null;
         const taxCode = it?.taxCode ?? null;
@@ -246,16 +263,21 @@ sap.ui.define(
         const priceDate = it?.priceDate ?? null;
         const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
 
+        // Se não achou src por poItem, loga 1x para visibilidade
+        if (!src) {
+          console.warn("[MAP] Sem match por poItem no retorno", { vendor: lifnrHeader, poItem: poPadded, matKey });
+        }
+
         return {
-          // chaves e mapeamentos já existentes
+          // Dados de exibição/ligação
           materialCode: matDisplay,
           MaterialCode: matDisplay,
           supplierName,
           originalQty,
           quantity,
           qtyAward: quantity,
-          price,           // mantido (fragment já usa "price")
-          netPrice: price, // alias, caso algum binding espere "netPrice"
+          price,
+          netPrice: price,
           currency,
           icms: null,
           ipi: null,
@@ -264,15 +286,17 @@ sap.ui.define(
           invitationId,
           invitationEmail,
           lifnr: lifnrHeader,
-          poItem: it?.poItem,
 
-          // <<< novos/ajustados do retorno da BAPI >>>
+          // >>> mantém o poItem de volta (padded da BAPI)
+          poItem: poPadded,
+
+          // Extras vindos da BAPI
           descricao,
           ncm,
           taxCode,
           taxJurCode,
           unidade,
-          unit: unidade,   // alias comum
+          unit: unidade,
           priceUnit,
           priceDate,
           schedules,

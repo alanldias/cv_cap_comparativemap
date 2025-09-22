@@ -58,35 +58,33 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-          {
-            poItem: 10,
-            plant: "BR01",
-            shortText: "Teste chamada BAPI",
-            quantity: 1,
-            unit: "PC",
-            taxCode: "I1",
-          },
-        ];
+        {
+          poItem: 10,
+          plant: "BR01",
+          shortText: "Teste chamada BAPI",
+          quantity: 1,
+          unit: "PC",
+          taxCode: "I1",
+        },
+      ];
 
   const poitem = [],
     poitemx = [];
   itemList.forEach((it, i) => {
-    const PO_ITEM = padLeft(
-      String(Number.isInteger(it.poItem) ? it.poItem : (i + 1) * 10),
-      5,
-      "0",
-    );
+    const _po = Number(String(it.poItem ?? "").replace(/\D/g, ""));
+    if (!Number.isFinite(_po)) {
+      throw new Error(`buildSmokePayload: item sem poItem válido (idx=${i + 1}).`);
+    }
+    const PO_ITEM = padLeft(String(_po), 5, "0");
     const rec = {
       PO_ITEM,
       PLANT: it.plant,
-      QUANTITY: String(it.quantity),
+      QUANTITY: String(Number(it.quantity ?? 0)),
       PO_UNIT: it.unit,
       ...(it.material
-        ? { MATERIAL: padLeft(String(it.material).trim(), 18, "0") }
+        ? { MATERIAL: padLeft(String(it.material).trim(), 18, "0").slice(-18) }
         : {}),
-      ...(it.shortText
-        ? { SHORT_TEXT: String(it.shortText).slice(0, 40) }
-        : {}),
+      ...(it.shortText ? { SHORT_TEXT: String(it.shortText).slice(0, 40) } : {}),
       ...(it.taxCode ? { TAX_CODE: String(it.taxCode).slice(0, 2) } : {}),
       ...(it.netPrice != null ? { NET_PRICE: String(it.netPrice) } : {}),
     };
@@ -98,23 +96,25 @@ function buildSmokePayload(header, items, schedules, testRun) {
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-          PO_ITEM: padLeft(
-            String(Number.isInteger(s.poItem) ? s.poItem : (idx + 1) * 10),
-            5,
-            "0",
-          ),
-          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          DELIVERY_DATE: s.deliveryDate
-            ? isoDate(new Date(s.deliveryDate))
-            : today,
-          QUANTITY: String(s.quantity ?? "0"),
-        }))
+        PO_ITEM: (() => {
+          const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+          if (!Number.isFinite(_po)) {
+            throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
+          }
+          return padLeft(String(_po), 5, "0");
+        })(),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+        DELIVERY_DATE: s.deliveryDate
+          ? isoDate(new Date(s.deliveryDate))
+          : today,
+        QUANTITY: String(s.quantity ?? "0"),
+      }))
       : poitem.map((p) => ({
-          PO_ITEM: p.PO_ITEM,
-          SCHED_LINE: "0001",
-          DELIVERY_DATE: today,
-          QUANTITY: p.QUANTITY,
-        }));
+        PO_ITEM: p.PO_ITEM,
+        SCHED_LINE: "0001",
+        DELIVERY_DATE: today,
+        QUANTITY: p.QUANTITY,
+      }));
 
   const posched = [],
     poschedx = [];

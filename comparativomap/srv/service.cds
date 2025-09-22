@@ -6,6 +6,7 @@ service service {
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
   type QuoteRow       : {
+    poItem                         : String(5);     // ex.: 01000, 01010, 01020...
     ItemId                          : String(30);
     itemDescription                 : String(255); // mantido como está
     quantity                        : Decimal(15, 3);

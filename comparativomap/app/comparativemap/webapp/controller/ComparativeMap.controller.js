@@ -40,7 +40,7 @@ sap.ui.define(
     MessageBox,
     Device,
     Build,
-    Spreadsheet, 
+    Spreadsheet,
     exportLibrary
   ) {
     "use strict";
@@ -53,6 +53,11 @@ sap.ui.define(
         onInit() {
           this.getView().setModel(Models.createVM(), "vm");
           this.getView().setModel(Models.createQM(), "qm");
+
+          const vm = this.getView().getModel("vm");
+          const qm = this.getView().getModel("qm");
+          if (vm && typeof vm.setSizeLimit === "function") vm.setSizeLimit(5000);
+          if (qm && typeof qm.setSizeLimit === "function") qm.setSizeLimit(5000);
 
           this._prefs = PrefsStore.load();
           const allowedGroups = [
@@ -193,10 +198,10 @@ sap.ui.define(
 
             const distinct = {
               supplierName: this._distinct(rows, "supplierName"),
-              currency:     this._distinct(rows, "currency"),
-              PLANT:        this._distinct(rows, "PLANT"),
+              currency: this._distinct(rows, "currency"),
+              PLANT: this._distinct(rows, "PLANT"),
               grupo_de_materias: this._distinct(rows, "grupo_de_materias"),
-              ncm:          this._distinct(rows, "ncm"),
+              ncm: this._distinct(rows, "ncm"),
             };
             vm.setProperty("/distinct", distinct);
 
@@ -232,6 +237,7 @@ sap.ui.define(
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
+          console.log("botão chamado e atualizado")
           // (código exatamente como você enviou; mantive sem alterações)
           // -- para brevidade aqui no arquivo, mantive o conteúdo idêntico --
           // >>> COLAR O MESMO CÓDIGO que você já tem em onSimularPress <<<
@@ -313,6 +319,15 @@ sap.ui.define(
               (requests || []).map(req => [normVendor(req?.header?.vendor), Array.isArray(req.sourceRows) ? req.sourceRows : []])
             );
             const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({ header, items, schedules, testRun }));
+
+            function replacer(key, value) {
+              if (key === 'items' && Array.isArray(value) && value.length > 5) {
+                return value.slice(0, 5).concat('... [mais itens ocultos]');
+              }
+              return value;
+            }
+
+            console.log(JSON.stringify(payloadRequests, replacer, 2) + "payload");
 
             sap.ui.core.BusyIndicator.show(0);
 
@@ -493,14 +508,14 @@ sap.ui.define(
           if (!this._vsRes) return;
           this._vsRes.openSortDialog(
             ev => this._vsRes.handleSortDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
-            ()  => this._vsRes.applyGroupSortFromPrefs()
+            () => this._vsRes.applyGroupSortFromPrefs()
           );
         },
         onResGroup() {
           if (!this._vsRes) return;
           this._vsRes.openGroupDialog(
             ev => this._vsRes.handleGroupDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
-            ()  => this._vsRes.applyGroupSortFromPrefs()
+            () => this._vsRes.applyGroupSortFromPrefs()
           );
         },
 
@@ -553,16 +568,16 @@ sap.ui.define(
 
           // 2) normaliza campos numéricos principais (caso venham como string)
           const NUMERIC = [
-            "quantity","price","mva",
-            "Extrinsic_Aliquota_ICMS","Extrinsic_ICMS_Apurado",
-            "Extrinsic_Aliquota_IPI","Extrinsic_IPI_Apurado",
-            "Extrinsic_Aliquota_PIS","Extrinsic_PIS_Apurado",
-            "Extrinsic_Aliquota_Cofins","Extrinsic_Cofins_apurado",
-            "Extrinsic_Aliquota_ICMS_Interna","EXTENDEDPRICE"
+            "quantity", "price", "mva",
+            "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
+            "Extrinsic_Aliquota_IPI", "Extrinsic_IPI_Apurado",
+            "Extrinsic_Aliquota_PIS", "Extrinsic_PIS_Apurado",
+            "Extrinsic_Aliquota_Cofins", "Extrinsic_Cofins_apurado",
+            "Extrinsic_Aliquota_ICMS_Interna", "EXTENDEDPRICE"
           ];
           const toNum = (v) => {
             if (v == null || v === "") return null;
-            const n = Number(String(v).replace(/\./g,"").replace(",","."));
+            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
             return Number.isFinite(n) ? n : null;
             // (se seus valores já estão como Number, isso só mantém)
           };
@@ -574,30 +589,30 @@ sap.ui.define(
 
           // 3) colunas do Excel (ajuste a gosto)
           const columns = [
-            { label: "Doc ID",            property: "docId",             type: EdmType.String, width: 12 },
-            { label: "Fornecedor",        property: "supplierName",      type: EdmType.String, width: 30 },
-            { label: "Nome do Item",      property: "itemDescription",   type: EdmType.String, width: 40 },
-            { label: "Quantidade",        property: "quantity",          type: EdmType.Number, width: 12, scale: 0 },
-            { label: "Preço do Item",     property: "price",             type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Preço Estendido",   property: "EXTENDEDPRICE",     type: EdmType.Number, width: 16, scale: 2 },
-            { label: "Moeda",             property: "currency",          type: EdmType.String, width: 10 },
-            { label: "NCM",               property: "ncm",               type: EdmType.String, width: 14 },
-            { label: "MVA (%)",           property: "mva",               type: EdmType.Number, width: 12, scale: 2 },
-            { label: "Alíquota ICMS (%)", property: "Extrinsic_Aliquota_ICMS",         type: EdmType.Number, width: 18, scale: 2 },
-            { label: "ICMS Apurado",      property: "Extrinsic_ICMS_Apurado",          type: EdmType.Number, width: 16, scale: 2 },
-            { label: "Alíquota IPI (%)",  property: "Extrinsic_Aliquota_IPI",          type: EdmType.Number, width: 16, scale: 2 },
-            { label: "IPI Apurado",       property: "Extrinsic_IPI_Apurado",           type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Alíquota PIS (%)",  property: "Extrinsic_Aliquota_PIS",          type: EdmType.Number, width: 16, scale: 2 },
-            { label: "PIS Apurado",       property: "Extrinsic_PIS_Apurado",           type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Alíquota COFINS (%)", property: "Extrinsic_Aliquota_Cofins",     type: EdmType.Number, width: 20, scale: 2 },
-            { label: "COFINS Apurado",    property: "Extrinsic_Cofins_apurado",        type: EdmType.Number, width: 18, scale: 2 },
-            { label: "ICMS Interna (%)",  property: "Extrinsic_Aliquota_ICMS_Interna", type: EdmType.Number, width: 18, scale: 2 },
-            { label: "Origem Material",   property: "Extrinsic_Origem_do_Material",    type: EdmType.String, width: 18 },
-            { label: "Centro",            property: "PLANT",             type: EdmType.String, width: 14 },
-            { label: "Categoria Item",    property: "ItemCategory",      type: EdmType.String, width: 16 },
-            { label: "Req",               property: "CodigoRequisicao",  type: EdmType.String, width: 16 },
-            { label: "Grupo Materiais",   property: "grupo_de_materias", type: EdmType.String, width: 24 },
-            { label: "Código Material",   property: "MaterialCode",      type: EdmType.String, width: 20 }
+            { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
+            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
+            { label: "Nome do Item", property: "itemDescription", type: EdmType.String, width: 40 },
+            { label: "Quantidade", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Preço do Item", property: "price", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Preço Estendido", property: "EXTENDEDPRICE", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Moeda", property: "currency", type: EdmType.String, width: 10 },
+            { label: "NCM", property: "ncm", type: EdmType.String, width: 14 },
+            { label: "MVA (%)", property: "mva", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "Alíquota ICMS (%)", property: "Extrinsic_Aliquota_ICMS", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Apurado", property: "Extrinsic_ICMS_Apurado", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Alíquota IPI (%)", property: "Extrinsic_Aliquota_IPI", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "IPI Apurado", property: "Extrinsic_IPI_Apurado", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota PIS (%)", property: "Extrinsic_Aliquota_PIS", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "PIS Apurado", property: "Extrinsic_PIS_Apurado", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota COFINS (%)", property: "Extrinsic_Aliquota_Cofins", type: EdmType.Number, width: 20, scale: 2 },
+            { label: "COFINS Apurado", property: "Extrinsic_Cofins_apurado", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Interna (%)", property: "Extrinsic_Aliquota_ICMS_Interna", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "Origem Material", property: "Extrinsic_Origem_do_Material", type: EdmType.String, width: 18 },
+            { label: "Centro", property: "PLANT", type: EdmType.String, width: 14 },
+            { label: "Categoria Item", property: "ItemCategory", type: EdmType.String, width: 16 },
+            { label: "Req", property: "CodigoRequisicao", type: EdmType.String, width: 16 },
+            { label: "Grupo Materiais", property: "grupo_de_materias", type: EdmType.String, width: 24 },
+            { label: "Código Material", property: "MaterialCode", type: EdmType.String, width: 20 }
           ];
 
           // 4) nome do arquivo
@@ -647,7 +662,7 @@ sap.ui.define(
           // Heurística: coluna é numérica se todos os valores (não nulos) são números válidos
           const toNum = (v) => {
             if (v == null || v === "") return null;
-            const n = Number(String(v).replace(/\./g,"").replace(",","."));
+            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
             return Number.isFinite(n) ? n : null;
           };
           const keys = Object.keys(rows[0] || {});

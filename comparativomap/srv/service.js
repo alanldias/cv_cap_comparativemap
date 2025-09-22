@@ -25,6 +25,12 @@ const {
 } = require("./lib/soap/bapi-po-create");
 const { mapWithConcurrency } = require("./lib/util/concurrency");
 
+const POITEM_START = 1000;  // 01000
+const POITEM_STEP = 10;    // de 10 em 10
+const POITEM_WIDTH = 5;     // 5 dígitos com zero à esquerda
+const makePoItem = (idx) =>
+  String(POITEM_START + idx * POITEM_STEP).padStart(POITEM_WIDTH, "0");
+
 module.exports = function () {
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
@@ -104,13 +110,15 @@ module.exports = function () {
       const headerWithDoc = Object.assign({ docId }, header || {}, {
         supplierName: null,
       });
-      const itemsOut = results.map((r) => {
+      const itemsOut = results.map((r, idx) => {
         const { _invitationId, _itemId, ...pub } = r;
         const invId = _invitationId || null;
         const supplierName = invId ? nameByInvId.get(invId) || null : null;
         const supplierIdSap = invId ? vendorByInvId.get(invId) || null : null;
         const email = invId ? emailByInvId.get(invId) || null : null;
+
         return {
+          poItem: makePoItem(idx),           // 👈 novo campo gerado no backend
           ...pub,
           supplierName,
           SupplierCode: supplierIdSap,
@@ -202,7 +210,7 @@ module.exports = function () {
       Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
     const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
-      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 12;
+      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
 
     const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel) ? +vendorParallel :
       Number.isFinite(+process.env.VENDOR_PARALLEL) ? +process.env.VENDOR_PARALLEL : Infinity;
@@ -250,6 +258,37 @@ module.exports = function () {
           throwIfMissing: true
         });
 
+        const normPo = v => {
+          const s = String(v ?? "").trim();
+          if (!s) return null;
+          const n = Number(s.replace(/\D/g, "")); // aceita "01000" -> 1000
+          return Number.isFinite(n) ? n : null;
+        };
+
+        // 1.1) normaliza e valida poItem dos itens vindos do front
+        for (const [i, it] of items.entries()) {
+          const n = normPo(it.poItem);
+          if (n == null) {
+            throw new Error(`Item sem poItem no request #${idxReq + 1} (idx=${i + 1}). Envie poItem a partir do front.`);
+          }
+          it.poItem = n; // garante número
+        }
+
+        // 1.2) checa duplicados dentro do mesmo fornecedor
+        const seen = new Set();
+        const dups = [];
+        for (const it of items) {
+          if (seen.has(it.poItem)) dups.push(it.poItem);
+          seen.add(it.poItem);
+        }
+        if (dups.length) {
+          throw new Error(
+            `poItem duplicado no request do fornecedor ${header.vendor}: ${Array.from(new Set(dups)).join(", ")}`
+          );
+        }
+
+        items.sort((a, b) => a.poItem - b.poItem);
+
         for (const row of enriched) {
           if (row?.__idx != null) {
             items[row.__idx].taxCode = row.TaxCode ?? undefined;
@@ -264,23 +303,34 @@ module.exports = function () {
         const chunks = chunkArray(items, PER_VENDOR_CHUNK);
         LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
 
-        // 3) monta tarefas SOAP por chunk
         const tasks = chunks.map((chunkItems, cidx) => async () => {
           const t0 = Date.now();
           try {
-            // filtra schedules APENAS dos itens do chunk (evita POSCHEDULE pra item fora do payload)
             const schedForChunk = filterSchedulesForChunk(schedules, chunkItems);
+
+            const inputPoPad = chunkItems.map(it => padLeft(String(it.poItem), 5, '0'));
 
             const payload = buildSmokePayload(header, chunkItems, schedForChunk, testRun);
 
+            LOG.infoL("[mapper] chunk IN", { idx: `${idxReq}.${cidx + 1}`, poItems: inputPoPad });
+
             const resp = await globalSem.run(async () => {
-              // se quiser evitar "rajada perfeita", habilite um jitterzinho aqui:
-              // await new Promise(rs => setTimeout(rs, Math.floor(Math.random()*20)));
               const rSoap = await client.BAPI_PO_CREATE1Async(payload);
               return Array.isArray(rSoap) ? rSoap[0] : rSoap;
             });
 
             const out = normalizeBapiResult(resp, !!payload.TESTRUN);
+
+            // >>> REMAPEIA: substitui o poItem retornado pela BAPI pelo que veio do front (mesma ordem)
+            const before = (out.itens || []).map(i => i.poItem);
+            out.itens = (out.itens || []).map((i, k) => ({ ...i, poItem: inputPoPad[k] || i.poItem }));
+
+            LOG.infoL("[mapper] chunk OUT remap", {
+              idx: `${idxReq}.${cidx + 1}`,
+              from: before,
+              to: out.itens.map(i => i.poItem)
+            });
+
             LOG.infoL("[mapper] CHUNK SOAP OK", {
               idx: `${idxReq}.${cidx + 1}`,
               itens: out.itens?.length || 0,
@@ -302,11 +352,10 @@ module.exports = function () {
         // 4) executa os chunks com limite por fornecedor
         const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
 
-        // 5) agrega para o formato que o front já entende
         return mergeChunkResults(chunkResults, header);
       };
 
-      // concorrência entre fornecedores (mantemos seu mapWithConcurrency existente)
+      // concorrência entre fornecedores 
       const results = await mapWithConcurrency(requests, LIMIT, mapper);
       LOG.infoL("[simularPO] END", { results: results.length });
       return results;
@@ -352,10 +401,14 @@ module.exports = function () {
 
   function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
     if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
-    const poSet = new Set(
-      chunkItems.map(it => String(Number.isInteger(it.poItem) ? it.poItem : it.poItem || "").padStart(2, "0"))
-    );
-    return allSchedules.filter(s => poSet.has(String(Number.isInteger(s?.poItem) ? s.poItem : s?.poItem || "")));
+    const norm = v => {
+      const s = String(v ?? "").trim();
+      if (!s) return null;
+      const n = Number(s.replace(/\D/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const poSet = new Set(chunkItems.map(it => norm(it.poItem)).filter(v => v != null));
+    return allSchedules.filter(s => poSet.has(norm(s?.poItem)));
   }
 
   function pickHeaderFallback(headerIn) {
@@ -389,7 +442,7 @@ module.exports = function () {
     const mensagens = [...msgsOk, ...msgsErr];
 
     return {
-      testRun: true, // você está usando TESTRUN
+      testRun: true,
       header,
       itens,
       returnMessages: mensagens,
