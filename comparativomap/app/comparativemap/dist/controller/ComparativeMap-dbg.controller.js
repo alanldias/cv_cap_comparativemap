@@ -54,33 +54,40 @@ sap.ui.define(
           this.getView().setModel(Models.createVM(), "vm");
           this.getView().setModel(Models.createQM(), "qm");
 
-          const vm = this.getView().getModel("vm");
-          const qm = this.getView().getModel("qm");
-          if (vm && typeof vm.setSizeLimit === "function") vm.setSizeLimit(5000);
-          if (qm && typeof qm.setSizeLimit === "function") qm.setSizeLimit(5000);
+          const view = this.getView();
+          const vm = view.getModel("vm");
+          const qm = view.getModel("qm");
+
+          if (vm?.setSizeLimit) vm.setSizeLimit(10000);
+          if (qm?.setSizeLimit) qm.setSizeLimit(10000);
+
+          let res = view.getModel("res");
+          if (!res) {
+            res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
+            view.setModel(res, "res");
+          }
+          if (res.getSizeLimit() < 5000) res.setSizeLimit(5000);
+
 
           this._prefs = PrefsStore.load();
           const allowedGroups = [
-            "supplierName", "itemId",
-            "PLANT", "currency", "grupo_de_materias", "MaterialCode", "ItemCategory"
+            "supplierName", "itemId", "PLANT", "currency",
+            "grupo_de_materias", "MaterialCode", "ItemCategory"
           ];
           if (!allowedGroups.includes(this._prefs.group?.key)) {
             this._prefs.group = { key: null, desc: false };
             PrefsStore.save(this._prefs);
           }
+
           this.mGroupFunctions = {
             supplierName: (ctx) => {
               const v = ctx.getProperty("supplierName") || "";
-              const key = v || "__noSupplier__";
-              const text = v || "(Sem fornecedor)";
-              return { key, text };
+              return { key: v || "__noSupplier__", text: v || "(Sem fornecedor)" };
             },
             itemId: (ctx) => {
               const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
               const v = raw == null ? "" : String(raw);
-              const key = v || "__noItemId__";
-              const text = v ? `Item ${v}` : "(Sem ItemId)";
-              return { key, text };
+              return { key: v || "__noItemId__", text: v ? `Item ${v}` : "(Sem ItemId)" };
             },
             PLANT: (ctx) => {
               const v = ctx.getProperty("PLANT") || "";
@@ -105,7 +112,7 @@ sap.ui.define(
           };
 
           this._vs = ViewSettingsCmp.create(
-            this.getView(),
+            view,
             this._prefs,
             this._getDistinct.bind(this),
             this.mGroupFunctions
@@ -113,9 +120,8 @@ sap.ui.define(
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
 
-          // DEV
-          // const vm = this.getView().getModel("vm");
-          // vm.setProperty("/devMode", true);
+          // // DEV
+          // // vm.setProperty("/devMode", true);
         },
 
         // ===== DEV: abrir fragment com mock =====
@@ -237,23 +243,17 @@ sap.ui.define(
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
-          console.log("botão chamado e atualizado")
-          // (código exatamente como você enviou; mantive sem alterações)
-          // -- para brevidade aqui no arquivo, mantive o conteúdo idêntico --
-          // >>> COLAR O MESMO CÓDIGO que você já tem em onSimularPress <<<
-          // (Se quiser, eu re-envio esta função inteira expandida.)
-          // ---------------------- INÍCIO DO SEU CÓDIGO ----------------------
+          console.log("botão chamado e atualizado");
+
           const view = this.getView();
           const vm = view.getModel("vm");
           const qm = view.getModel("qm");
 
-          let resModel = view.getModel("res");
-          if (!resModel) {
-            resModel = new sap.ui.model.json.JSONModel({ rows: [] });
-            view.setModel(resModel, "res");
-          } else {
-            resModel.setData({ rows: [] });
-          }
+          const resModel = this.getView().getModel("res");
+          if (resModel.getSizeLimit() < 5000) resModel.setSizeLimit(5000);
+          resModel.setProperty("/header", {});
+          resModel.setProperty("/rows", []);
+          resModel.setProperty("/totals", {});
 
           console.groupCollapsed("[SIMULAR] clique");
           try {
@@ -326,7 +326,6 @@ sap.ui.define(
               }
               return value;
             }
-
             console.log(JSON.stringify(payloadRequests, replacer, 2) + "payload");
 
             sap.ui.core.BusyIndicator.show(0);
@@ -400,7 +399,6 @@ sap.ui.define(
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
-          // ---------------------- FIM DO SEU CÓDIGO ----------------------
         },
 
         /* ====== PREMIAÇÃO ====== */
