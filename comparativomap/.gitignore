@@ -14,9 +14,11 @@ target/
 .gen/
 
 # MTA
+app/*dist
 *_mta_build_tmp
 *.mtar
 mta_archives/
+resoruces/
 
 # Other
 .DS_Store

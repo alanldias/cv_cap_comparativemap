@@ -253,7 +253,7 @@ sap.ui.define(
           supplierName,
           originalQty,
           quantity,
-          qtyAward: 0,
+          qtyAward: quantity,
           price,           // mantido (fragment já usa "price")
           netPrice: price, // alias, caso algum binding espere "netPrice"
           currency,

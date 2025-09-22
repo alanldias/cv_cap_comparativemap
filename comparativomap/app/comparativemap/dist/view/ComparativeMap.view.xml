@@ -79,12 +79,12 @@
 
                 <!-- Para teste em DEV -->
 
-                <Button id="btnDevRes"
+                <!-- <Button id="btnDevRes"
                         text="DEV: Resultado"
                         type="Transparent"
                         icon="sap-icon://inspect"
                         visible="{vm>/devMode}"
-                        press=".onDevOpenResultado"/>
+                        press=".onDevOpenResultado"/> -->
 
                 <!-- Para teste em DEV -->
 
@@ -93,6 +93,12 @@
                             icon="sap-icon://simulate"
                             press=".onSimularPress" />
                     <ToolbarSpacer id="spacerTabela"/>
+                    <Button
+                        id="btnExportExcel"
+                        text="Exportar"
+                        icon="sap-icon://excel-attachment"
+                        type="Transparent"
+                        press=".onExportExcel" />
                     <Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/>
                     <Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
                     <Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/>
