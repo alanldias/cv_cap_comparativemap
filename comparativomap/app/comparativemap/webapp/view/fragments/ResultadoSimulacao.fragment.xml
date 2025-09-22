@@ -9,8 +9,15 @@
       <Button id="_IDGenButton3" icon="sap-icon://group-2" press=".onResGroup"/>
     </Toolbar>
   </customHeader>
-    <Table id="_IDGenTable2" items="{res>/rows}" sticky="ColumnHeaders" mode="MultiSelect"
-           autoPopinMode="false" growing="false"> 
+   <Table id="_IDGenTable2"
+       items="{res>/rows}"
+       sticky="ColumnHeaders"
+       mode="MultiSelect"
+       autoPopinMode="false"
+       growing="true"
+       growingThreshold="500"
+       growingScrollToLoad="false"
+       growingTriggerText="Carregar +500">
            <infoToolbar>
         <OverflowToolbar id="resVsdFilterBar" visible="false">
           <Text id="resVsdFilterLabel"/>

@@ -62,11 +62,11 @@ sap.ui.define(
           if (qm?.setSizeLimit) qm.setSizeLimit(10000);
 
           let res = view.getModel("res");
-          if (!res) {
+          if (!(res instanceof sap.ui.model.json.JSONModel)) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
             view.setModel(res, "res");
           }
-          if (res.getSizeLimit() < 5000) res.setSizeLimit(5000);
+          res.setSizeLimit(5000);
 
 
           this._prefs = PrefsStore.load();
@@ -250,7 +250,7 @@ sap.ui.define(
           const qm = view.getModel("qm");
 
           const resModel = this.getView().getModel("res");
-          if (resModel.getSizeLimit() < 5000) resModel.setSizeLimit(5000);
+          if (resModel?.setSizeLimit) resModel.setSizeLimit(5000);
           resModel.setProperty("/header", {});
           resModel.setProperty("/rows", []);
           resModel.setProperty("/totals", {});

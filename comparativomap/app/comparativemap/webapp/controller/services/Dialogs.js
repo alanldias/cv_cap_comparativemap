@@ -19,23 +19,21 @@ sap.ui.define(
     }
 
     async function openResultDialog(view, rows, controller) {
-      // 1) Modelo "res"
       let resModel = view.getModel("res");
       if (!(resModel instanceof sap.ui.model.json.JSONModel)) {
-        resModel = new JSONModel({ header: {}, rows: [], totals: {} });
+        resModel = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
         view.setModel(resModel, "res");
       }
-      if (typeof resModel.setSizeLimit === "function") {
-        resModel.setSizeLimit(5000); // idempotente
-      }
+      // limite > total esperado
+      resModel.setSizeLimit(Math.max(10000, (rows?.length || 0)));
 
-      // 2) Prepara linhas (mantém sua regra do qtyAward)
-      const safeRows = (rows || []).map(r => ({
-        ...r,
-        qtyAward: (r.qtyAward != null ? r.qtyAward : Number(r.quantity) || 0)
-      }));
-      // Atualiza só o path necessário (mantém instância + configs)
+      // aplica dados e força refresh (garante que o binding veja >100)
+      const safeRows = (rows || []).map(r => ({ ...r, qtyAward: r.qtyAward ?? Number(r.quantity) }));
       resModel.setProperty("/rows", safeRows);
+      resModel.refresh();  // <<< importante
+
+      console.log("[res] rows.len=", resModel.getProperty("/rows")?.length,
+        "sizeLimit=", resModel.getSizeLimit && resModel.getSizeLimit());
 
       // 3) Fecha dialog antigo (mantido)
       if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
@@ -111,12 +109,7 @@ sap.ui.define(
         console.warn("[Dialogs] ViewSettings (fragment) não inicializado:", e);
       }
 
-      // (Opcional) se sua <Table> usar growing="true", ajuste o threshold aqui:
-      const tbl = sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2");
-      if (tbl?.getGrowing && tbl.getGrowing() && tbl.setGrowingThreshold) {
-        const desired = Math.max(5000, safeRows.length);
-        tbl.setGrowingThreshold(desired);
-      }
+
 
       dlg.attachAfterClose(() => {
         try { dlg.destroy(); } catch (e) { }

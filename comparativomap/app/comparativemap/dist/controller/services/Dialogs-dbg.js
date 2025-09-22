@@ -19,29 +19,31 @@ sap.ui.define(
     }
 
     async function openResultDialog(view, rows, controller) {
-      // 1) Modelo "res"
-      let resModel = view.getModel("res") || new JSONModel({ rows: [] });
-
-      if (typeof resModel.setSizeLimit === "function") {
-        resModel.setSizeLimit(5000);
+      let resModel = view.getModel("res");
+      if (!(resModel instanceof sap.ui.model.json.JSONModel)) {
+        resModel = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
+        view.setModel(resModel, "res");
       }
+      // limite > total esperado
+      resModel.setSizeLimit(Math.max(10000, (rows?.length || 0)));
 
-      const safeRows = (rows || []).map(r => ({
-        ...r,
-        qtyAward: (r.qtyAward != null ? r.qtyAward : Number(r.quantity) || 0)
-      }));
-      resModel.setData({ rows: safeRows });
-      view.setModel(resModel, "res");
+      // aplica dados e força refresh (garante que o binding veja >100)
+      const safeRows = (rows || []).map(r => ({ ...r, qtyAward: r.qtyAward ?? Number(r.quantity) }));
+      resModel.setProperty("/rows", safeRows);
+      resModel.refresh();  // <<< importante
 
-      // 2) Dialog antigo?
+      console.log("[res] rows.len=", resModel.getProperty("/rows")?.length,
+        "sizeLimit=", resModel.getSizeLimit && resModel.getSizeLimit());
+
+      // 3) Fecha dialog antigo (mantido)
       if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
         try { controller._dlgRes.destroy(); } catch (e) { }
         controller._dlgRes = null;
       }
 
-      // 3) Carrega fragment (escopo único)
+      // 4) Carrega fragment (mantido)
       const scopeId = view.createId("resDlg-" + Date.now());
-      const root = await Fragment.load({
+      const root = await sap.ui.core.Fragment.load({
         id: scopeId,
         name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
         controller,
@@ -54,10 +56,8 @@ sap.ui.define(
       view.addDependent(dlg);
       controller._dlgRes = dlg;
 
-      // 4) ViewSettings no FRAGMENT
-      // 4) ViewSettings no FRAGMENT
+      // 5) ViewSettings no FRAGMENT (mantida sua lógica)
       try {
-        // prefs isoladas do fragment
         controller._prefsRes = {
           filter: { fornecedor: [], nomeItem: [], moeda: [], centro: [], grupoMat: [], ncm: [], precoMin: null, precoMax: null },
           sort: { key: null, desc: false },
@@ -65,8 +65,7 @@ sap.ui.define(
         };
 
         function getDistinctRes(path) {
-          const data = view.getModel("res")?.getData() || {};
-          const rows = Array.isArray(data.rows) ? data.rows : [];
+          const rows = view.getModel("res")?.getProperty("/rows") || [];
           const set = new Set();
           rows.forEach(r => {
             const v = r?.[path];
@@ -76,8 +75,7 @@ sap.ui.define(
         }
 
         function findTableInFragment() {
-          // usa o MESMO scopeId gerado pro fragment
-          return sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2");
+          return sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2"); // mesmo id do seu XML
         }
 
         const mGroup = controller.mGroupFunctions || {
@@ -93,7 +91,7 @@ sap.ui.define(
         };
 
         controller._vsRes = ViewSettingsCmp.create(
-          dlg,                         // owner (Dialog)
+          dlg,
           controller._prefsRes,
           getDistinctRes,
           mGroup,
@@ -101,7 +99,7 @@ sap.ui.define(
           {
             filterBarId: "resVsdFilterBar",
             filterLabelId: "resVsdFilterLabel",
-            fragmentScopeId: scopeId   // <<< chave para resolver ids no fragment
+            fragmentScopeId: scopeId
           }
         );
 
@@ -111,6 +109,8 @@ sap.ui.define(
         console.warn("[Dialogs] ViewSettings (fragment) não inicializado:", e);
       }
 
+
+
       dlg.attachAfterClose(() => {
         try { dlg.destroy(); } catch (e) { }
         controller._dlgRes = null;
@@ -119,6 +119,7 @@ sap.ui.define(
 
       dlg.open();
     }
+
 
     function closeAny(controller, evt) {
       try {
