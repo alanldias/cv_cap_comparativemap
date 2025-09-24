@@ -31,6 +31,7 @@ service service {
     // TAX_CODE                        : String(10);
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
+    Incoterms                       : String(5);
     supplierName                    : String(255);
     itemId            : Integer64;      // novo (opcional, mantemos os dois por compatibilidade)
     invitationId      : String(200);    // novo

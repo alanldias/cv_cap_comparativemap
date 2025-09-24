@@ -154,6 +154,7 @@ async function fetchSupplierBids(docId) {
         ItemCategory: byId["ItemCategory"]?.value?.simpleValue ?? null,
         MaterialCode: byId["MaterialCode"]?.value?.simpleValue ?? null,
         grupo_de_materias: byId["MaterialGroup"]?.value?.simpleValue ?? null,
+        Incoterms: byId["Incoterms"]?.value.simpleValue ?? null,
         DELIVERY_DATE_RAW:
           byId["REQUESTDELIVERYDATE"]?.value ??
           byId["REQUESTDELIVERYDATE"] ??
