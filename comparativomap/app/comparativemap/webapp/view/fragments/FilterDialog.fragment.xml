@@ -1,0 +1,16 @@
+<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core" xmlns:mdc="sap.ui.mdc">
+  <Dialog id="dlgFilters" title="Filtros" contentWidth="1000px" resizable="true" draggable="true">
+    <VBox id="idvboxfilterdialog" class="sapUiContentPadding">
+      <!--  (campos são adicionados via JS) -->
+      <mdc:FilterBar id="fb" showGoButton="false" />
+    </VBox>
+
+    <beginButton>
+      <Button id="botaoaplicarfilter" text="Aplicar" type="Emphasized" press=".onFilterSearch"/>
+    </beginButton>
+      <Button id ="botaolimpar" text="Limpar" press=".onResetMdcFilters"/>
+    <endButton>
+      <Button id ="botaofecharfiltar" text="Fechar" press=".onCloseFiltersDialog"/>
+    </endButton>
+  </Dialog>
+</core:FragmentDefinition>

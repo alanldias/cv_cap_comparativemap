@@ -19,7 +19,9 @@ sap.ui.define(
     "sap/ui/Device",
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
-    "sap/ui/export/library"
+    "sap/ui/export/library",
+    "comparativemap/comparativemap/controller/helpers/filtros"
+
   ],
   function (
     Controller,
@@ -41,7 +43,8 @@ sap.ui.define(
     Device,
     Build,
     Spreadsheet,
-    exportLibrary
+    exportLibrary,
+    Filtros
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
@@ -122,6 +125,7 @@ sap.ui.define(
 
           // // DEV
           // // vm.setProperty("/devMode", true);
+          Filtros.init(this);
         },
 
         // ===== DEV: abrir fragment com mock =====
@@ -162,6 +166,8 @@ sap.ui.define(
           try {
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
             if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
+
+            Filtros.reset(this);
 
             const binding = tbl?.getBinding("items");
             if (binding) {
@@ -240,6 +246,31 @@ sap.ui.define(
         onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
         },
+
+        onOpenColumnsDialog() {
+          Filtros.onOpenColumnsDialog(this);
+        },
+
+        onOpenMdcFilters() {
+          Filtros.openDialog(this);
+        },
+        onCloseFiltersDialog() {
+          Filtros.closeDialog(this);
+        },
+        onResetMdcFilters() {
+          // limpa apenas condições e também zera a tabela se quiser
+          Filtros.reset(this); // ou Filtros.clearConditions(this) se preferir não mexer no binding
+        },
+
+        // já tinha:
+        onFilterSearch() {
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
+          Filtros.onFilterSearch(this);
+        },
+        onVariantSave() { Filtros.onVariantSave(this); },
+        onVariantSelect(oEvent) { Filtros.onVariantSelect(this, oEvent); },
+        onVariantManage() { Filtros.onVariantManage(this); },
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
