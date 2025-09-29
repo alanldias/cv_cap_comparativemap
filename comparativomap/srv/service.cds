@@ -5,8 +5,8 @@ service service {
 
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
-  type QuoteRow       : {
-    poItem                         : String(5);     // ex.: 01000, 01010, 01020...
+  type QuoteRow             : {
+    poItem                          : String(5); // ex.: 01000, 01010, 01020...
     ItemId                          : String(30);
     itemDescription                 : String(255); // mantido como está
     quantity                        : Decimal(15, 3);
@@ -31,15 +31,19 @@ service service {
     // TAX_CODE                        : String(10);
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
-    Incoterms                       : String(5);
+    Incoterms                       : String;
     supplierName                    : String(255);
-    itemId            : Integer64;      // novo (opcional, mantemos os dois por compatibilidade)
-    invitationId      : String(200);    // novo
-    invitationEmail   : String(200);    // novo (fallback útil)
-    DELIVERY_DATE_RAW               : String(50);
+    itemId                          : Integer64; // novo (opcional, mantemos os dois por compatibilidade)
+    invitationId                    : String(200); // novo
+    invitationEmail                 : String(200); // novo (fallback útil)
+    NumeroItensRequisicao           : Integer;
+    CodigoRFQ                       : Integer;
+    CodigoRequisicao                : Integer;
+    PrazoEntrega                    : String;
+    DeliveryDate               : String(50);
   }
 
-  type AribaHeader    : {
+  type AribaHeader          : {
     docId                  : String;
     tipoPedido             : String;
     purchasingOrganization : String;
@@ -52,12 +56,12 @@ service service {
     moeda                  : String(3);
   };
 
-  type QuotesResponse : {
+  type QuotesResponse       : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
 
-  function GetQuotes(docId: String)                  returns QuotesResponse;
+  function GetQuotes(docId: String)                            returns QuotesResponse;
 
   /* ==================== Tipos p/ Simulação BAPI ==================== */
 
@@ -66,7 +70,7 @@ service service {
   // Também expõe "itemDescription" como alias opcional
   // para cobrir o typo "itemDescription" sem quebrar nada.
   type SimulateItemInput    : QuoteRow {
-    lifnr          : String(10);
+    lifnr           : String(10);
     PREQ_NO         : String(10);
     PREQ_ITEM       : String(5);
     itemDescription : String(255); // opcional, alias aceito pelo backend
@@ -116,24 +120,23 @@ service service {
                                 items: many SimulateItemInput) returns SimulateBapiResponse;
 
   // === Tipos da premiação ===
-type SupplierBidInput : {
-  itemId            : Integer64;     // ID do item do evento (ex.: 4094721049)
-  invitationId      : String(200);   // invitationId COMPLETO: "NNNNNNNNN_email@domínio.com"
-  winningSplitType  : Integer;       // 1 = percentual (default no backend)
-  winningSplitValue : Decimal(9,3);  // ex.: 100
-  bidType           : String(20);    // ex.: 'Primary'
-}
-@odata.draft.enabled
-  action CreateScenario(
-    eventId      : String,
-    title        : String,
-    scenarioType : Integer,     // ex.: 0 (manual)
-    supplierBids : many SupplierBidInput
-  ) returns {
-    success        : Boolean;
-    scenarioId     : String;
-    aribaResponse  : LargeString;  // eco do que o Ariba devolver
-    correlationId  : String;
+  type SupplierBidInput     : {
+    itemId            : Integer64; // ID do item do evento (ex.: 4094721049)
+    invitationId      : String(200); // invitationId COMPLETO: "NNNNNNNNN_email@domínio.com"
+    winningSplitType  : Integer; // 1 = percentual (default no backend)
+    winningSplitValue : Decimal(9, 3); // ex.: 100
+    bidType           : String(20); // ex.: 'Primary'
+  }
+
+  @odata.draft.enabled
+  action   CreateScenario(eventId: String,
+                          title: String,
+                          scenarioType: Integer, // ex.: 0 (manual)
+                          supplierBids: many SupplierBidInput) returns {
+    success       : Boolean;
+    scenarioId    : String;
+    aribaResponse : LargeString; // eco do que o Ariba devolver
+    correlationId : String;
   };
 
   // ==== Axel ====
@@ -240,6 +243,6 @@ type SupplierBidInput : {
   // Action única (agora sempre em lote)
   // --------------------------------------
   action   simularPO(requests: array of SimulacaoPORequest,
-                     concurrency: Integer default 4) returns array of SimulacaoPOResult;
+                     concurrency: Integer default 4)           returns array of SimulacaoPOResult;
 
 }
