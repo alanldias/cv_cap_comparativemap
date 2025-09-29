@@ -124,7 +124,7 @@ Accept: application/json
 Connection: close
 
 ### teste com dados do postman
-GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Material,PurchasingInfoRecord,Supplier,TaxCode&$filter=(Supplier eq '100581343' and Material eq '726133') or (Supplier eq '100581341' and Material eq '726133') or (Supplier eq '100593191' and Material eq '726133')&$top=50&sap-client=300 HTTP/1.1
+GET /sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$filter=(Supplier eq '100581343' and Material eq '726133') or (Supplier eq '100581341' and Material eq '726133') or (Supplier eq '100593191' and Material eq '726133')&$top=50&sap-client=300 HTTP/1.1
 Host: s4h-qas-cq5:50255
 Accept: application/json
 Connection: close
@@ -172,7 +172,7 @@ Content-Type: application/json
 http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100067401'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100067401'%20and%20Material%20eq%20'726164')&sap-client=300
 
 ### 2 teste url montada pela action
-http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
 
 ### 3 teste da url montada pela action
 http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100581343'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100581341'%20and%20Material%20eq%20'726133')%20or%20(Supplier%20eq%20'100593191'%20and%20Material%20eq%20'726133')&sap-client=300
