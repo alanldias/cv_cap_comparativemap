@@ -23,10 +23,9 @@ sap.ui.define(
       throw new Error("Data inválida: " + val);
     }
     function getDeliveryDateFromRow(r) {
-      const raw =
-        r?.DELIVERY_DATE_RAW?.dateValue ||
-        r?.DELIVERY_DATE_RAW ||
-        r?.deliveryDate;
+      // Prioriza o campo técnico que já vem do back como "YYYY-MM-DD"
+      const raw = r?.DeliveryDateEdm || r?.DeliveryDate || null;
+      console.log("este é o raw =", raw);
       return normalizeDate(raw || new Date());
     }
 
@@ -176,7 +175,6 @@ sap.ui.define(
         const n = normPo(r?.poItem ?? r?.PO_ITEM ?? r?.poitem);
         if (n == null) continue;
         if (srcByPo.has(n)) {
-          // não falha, mas alerta que há duplicata de poItem na seleção
           console.warn("[MAP] poItem duplicado em srcRows p/ vendor", lifnrHeader, "poItem=", n);
         } else {
           srcByPo.set(n, r);
@@ -187,26 +185,21 @@ sap.ui.define(
       const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
       return itens.map((it) => {
-        // poItem do retorno da BAPI (vem "00010", "01000"...)
         const poPadded = String(it?.poItem || "").padStart(5, "0");
         const poNum = normPo(it?.poItem);
 
-        // 1) match determinístico por poItem
         let src = (poNum != null) ? srcByPo.get(poNum) : undefined;
 
-        // 2) Fallback sem “adivinhar por índice”: tenta dicionário LIFNR/MATERIAL/NAME
         let meta = null;
         const matKey = Keys.matKeyFromBapiMaterial(it?.material);
         if (!src) {
           meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
           if (!meta) {
-            // tenta por NAME com base na primeira fonte do mesmo fornecedor (quando há)
             const src0 = srcRows[0] || {};
             const nameKey = Keys.normKey(src0?.supplierName || "");
             meta = idByKey[`${matKey}|NAME:${nameKey}`];
           }
         } else {
-          // preferimos informações da própria linha fonte
           meta = {
             itemId: src.itemId ?? src.ItemId ?? null,
             invitationId: src.invitationId ?? src._invitationId ?? null,
@@ -218,7 +211,6 @@ sap.ui.define(
           };
         }
 
-        // 3) Campos de identificação vindos da fonte/meta
         const invitationId =
           (src && (src.invitationId ?? src._invitationId)) != null
             ? (src.invitationId ?? src._invitationId)
@@ -248,12 +240,10 @@ sap.ui.define(
             ? (src.itemId ?? src.ItemId)
             : (meta?.itemId ?? null);
 
-        // 4) Valores e totais
         const quantity = Number(it?.quantidade || 0) || 0;
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
 
-        // 5) Pass-through da BAPI
         const descricao = it?.descricao ?? "";
         const ncm = it?.ncm ?? null;
         const taxCode = it?.taxCode ?? null;
@@ -263,13 +253,11 @@ sap.ui.define(
         const priceDate = it?.priceDate ?? null;
         const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
 
-        // Se não achou src por poItem, loga 1x para visibilidade
         if (!src) {
           console.warn("[MAP] Sem match por poItem no retorno", { vendor: lifnrHeader, poItem: poPadded, matKey });
         }
 
         return {
-          // Dados de exibição/ligação
           materialCode: matDisplay,
           MaterialCode: matDisplay,
           supplierName,
@@ -287,10 +275,8 @@ sap.ui.define(
           invitationEmail,
           lifnr: lifnrHeader,
 
-          // >>> mantém o poItem de volta (padded da BAPI)
           poItem: poPadded,
 
-          // Extras vindos da BAPI
           descricao,
           ncm,
           taxCode,

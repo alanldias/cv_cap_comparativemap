@@ -164,7 +164,7 @@
                                     <!-- <Text id="cellIva"            text="{= ${vm>TAX_CODE}                   || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/> -->
                                     <Text id="cellNumberItems"        text="{= ${vm>NumeroItensRequisicao}       || '-'}"    wrapping="true" maxLines="2"/>
                                     <Text id="cellCodigoRFQ"          text="{= ${vm>CodigoRFQ}                   || '-'}"    wrapping="true" maxLines="2"/>
-                                    <Text id="cellDeliveryDate"       text="{= ${vm>DeliveryDate}                || '-'}"    wrapping="true" maxLines="2"/>
+                                    <Text id="cellDeliveryDate"       text="{= ${vm>DeliveryDateNice}                || '-'}"    wrapping="true" maxLines="2"/>
                                     <Text id="cellPrazoEntrega"       text="{= ${vm>PrazoEntrega}                || '-'}"    wrapping="true" maxLines="2"/>
                                     <Text id="cellSupplierCodeText"   text="{= ${vm>suppliercode}                || '-'}"    visible="false"/>
                                 </cells>

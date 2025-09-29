@@ -24,6 +24,20 @@ function markX(obj, extra = {}) {
   return x;
 }
 
+function toDATS(edm /* "YYYY-MM-DD" */) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(edm)) {
+    throw new Error("Edm.Date inválida (YYYY-MM-DD): " + edm);
+  }
+  return edm.replace(/-/g, ""); // "YYYYMMDD"
+}
+function todayDATS() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
 async function getBapiClient() {
   const endpoint = { url: null };
   dbg("[getBapiClient] WSDL_PATH (resolved) =", SOAP.WSDL_PATH);
@@ -58,18 +72,17 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-        {
-          poItem: 10,
-          plant: "BR01",
-          shortText: "Teste chamada BAPI",
-          quantity: 1,
-          unit: "PC",
-          taxCode: "I1",
-        },
-      ];
+          {
+            poItem: 10,
+            plant: "BR01",
+            shortText: "Teste chamada BAPI",
+            quantity: 1,
+            unit: "PC",
+            taxCode: "I1",
+          },
+        ];
 
-  const poitem = [],
-    poitemx = [];
+  const poitem = [], poitemx = [];
   itemList.forEach((it, i) => {
     const _po = Number(String(it.poItem ?? "").replace(/\D/g, ""));
     if (!Number.isFinite(_po)) {
@@ -92,32 +105,30 @@ function buildSmokePayload(header, items, schedules, testRun) {
     poitemx.push(markX(rec, { PO_ITEM }));
   });
 
-  const today = isoDate(new Date());
+  const today = isoDate(new Date()); // só usado no fallback antigo
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-        PO_ITEM: (() => {
-          const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
-          if (!Number.isFinite(_po)) {
-            throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
-          }
-          return padLeft(String(_po), 5, "0");
-        })(),
-        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-        DELIVERY_DATE: s.deliveryDate
-          ? isoDate(new Date(s.deliveryDate))
-          : today,
-        QUANTITY: String(s.quantity ?? "0"),
-      }))
+          PO_ITEM: (() => {
+            const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+            if (!Number.isFinite(_po)) {
+              throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
+            }
+            return padLeft(String(_po), 5, "0");
+          })(),
+          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+          // >>> campo correto + sem parse ambíguo
+          DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
+          QUANTITY: String(s.quantity ?? "0"),
+        }))
       : poitem.map((p) => ({
-        PO_ITEM: p.PO_ITEM,
-        SCHED_LINE: "0001",
-        DELIVERY_DATE: today,
-        QUANTITY: p.QUANTITY,
-      }));
+          PO_ITEM: p.PO_ITEM,
+          SCHED_LINE: "0001",
+          DELIV_DATE: todayDATS(),
+          QUANTITY: p.QUANTITY,
+        }));
 
-  const posched = [],
-    poschedx = [];
+  const posched = [], poschedx = [];
   schedList.forEach((s) => {
     posched.push(s);
     poschedx.push(markX(s));
@@ -144,7 +155,7 @@ function normalizeBapiResult(r0, testRunFlag) {
     const key = String(s.PO_ITEM || "").padStart(5, "0");
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
-      deliveryDate: s.DELIVERY_DATE,
+      deliveryDate: s.DELIV_DATE, // <— ler o campo correto
       qty: Number(s.QUANTITY || 0),
     });
     return acc;
