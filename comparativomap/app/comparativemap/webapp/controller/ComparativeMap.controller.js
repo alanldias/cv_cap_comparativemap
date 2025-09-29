@@ -123,8 +123,30 @@ sap.ui.define(
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
 
-          // // DEV
-          // // vm.setProperty("/devMode", true);
+          const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
+          this.getView().setModel(ui, "ui");
+
+          // deixa tudo compacto (baixa a altura das linhas/inputs)
+          this.getView().addStyleClass("sapUiSizeCompact");
+
+          // monta a partir da tabela usando **id curto**
+          const tbl = this.byId("tblDocs");
+          const colsMap = {};
+          const colList = [];
+          const prefix = this.getView().getId() + "--"; // para remover do getId()
+
+          (tbl?.getColumns() || []).forEach((c) => {
+            const longId = c.getId();
+            const shortId = longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
+            const label = c.getHeader()?.getText?.() || shortId;
+            colsMap[shortId] = c.getVisible();    // estado inicial fiel ao que está no XML
+            colList.push({ id: shortId, label });
+          });
+
+          ui.setProperty("/columns", colsMap);
+          ui.setProperty("/columnList", colList);
+
+
           Filtros.init(this);
         },
 
@@ -243,34 +265,15 @@ sap.ui.define(
           ctx.getModel().checkUpdate(true);
         },
 
-        onCloseDialog(ev) {
-          Dialogs.closeAny(this, ev);
-        },
-
-        onOpenColumnsDialog() {
-          Filtros.onOpenColumnsDialog(this);
-        },
-
-        onOpenMdcFilters() {
-          Filtros.openDialog(this);
-        },
-        onCloseFiltersDialog() {
-          Filtros.closeDialog(this);
-        },
-        onResetMdcFilters() {
-          // limpa apenas condições e também zera a tabela se quiser
-          Filtros.reset(this); // ou Filtros.clearConditions(this) se preferir não mexer no binding
-        },
-
-        // já tinha:
+        onOpenMdcFilters() { Filtros.openDialog(this); },
+        onCloseFiltersDialog() { Filtros.closeDialog(this); },
+        onResetMdcFilters() { Filtros.reset(this); },
         onFilterSearch() {
           this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
           this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
           Filtros.onFilterSearch(this);
         },
-        onVariantSave() { Filtros.onVariantSave(this); },
-        onVariantSelect(oEvent) { Filtros.onVariantSelect(this, oEvent); },
-        onVariantManage() { Filtros.onVariantManage(this); },
+        onOpenColumnsDialog() { Filtros.onOpenColumnsDialog(this); },
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
