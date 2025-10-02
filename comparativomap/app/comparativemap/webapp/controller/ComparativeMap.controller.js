@@ -264,6 +264,9 @@ sap.ui.define(
           row.quantity = Math.floor(v);
           ctx.getModel().checkUpdate(true);
         },
+           onCloseDialog(ev) {
+          Dialogs.closeAny(this, ev);
+        },
 
         onOpenMdcFilters() { Filtros.openDialog(this); },
         onCloseFiltersDialog() { Filtros.closeDialog(this); },

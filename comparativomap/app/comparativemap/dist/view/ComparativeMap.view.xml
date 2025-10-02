@@ -2,7 +2,9 @@
     xmlns:mvc="sap.ui.core.mvc"
     xmlns="sap.m"
     xmlns:l="sap.ui.layout"
-    xmlns:core="sap.ui.core">
+    xmlns:core="sap.ui.core"
+    xmlns:mdc="sap.ui.mdc">
+
     <Page id="page" showHeader="false">
 
         <Toolbar id="toolbarCabecalhoTopoNf" class="cabecalhoTopo">
@@ -24,10 +26,9 @@
         </Toolbar>
 
         <l:VerticalLayout id="searchLayout" class="sapUiContentPadding">
-            <HBox id="searchHBox" alignItems="Center" >
+            <HBox id="searchHBox" alignItems="Center">
                 <Label id="labelDoc" text="Doc ID:" labelFor="inputDoID" class="sapUiTinyMarginEnd"/>
-                <Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem"
-                       submit=".onBuscar" />
+                <Input id="inputDoID" placeholder="{i18n>labelDoc}" width="16rem" submit=".onBuscar" />
                 <Button id="btnBuscar" text="{i18n>buscar}" icon="sap-icon://search" type="Emphasized"
                         press=".onBuscar" class="sapUiTinyMarginBegin" />
             </HBox>
@@ -35,9 +36,7 @@
 
         <VBox id="tableVBox" class="centralizarTabela">
             <Toolbar id="tableToolbar" class="cabecalhoTabela">
-                <Text id="tituloTabelaAriba"
-                      text="{i18n>tituloTabela}"
-                      class="textoTabela" />
+                <Text id="tituloTabelaAriba" text="{i18n>tituloTabela}" class="textoTabela" />
             </Toolbar>
 
             <Table id="tblHeader"
@@ -76,34 +75,18 @@
             
             <VBox id="detailsVBox" class="sapUiSmallMarginTop">
                 <Toolbar id="detailsToolbar">
-
-                <!-- Para teste em DEV -->
-
-                <!-- <Button id="btnDevRes"
-                        text="DEV: Resultado"
-                        type="Transparent"
-                        icon="sap-icon://inspect"
-                        visible="{vm>/devMode}"
-                        press=".onDevOpenResultado"/> -->
-
-                <!-- Para teste em DEV -->
-
-
                     <Button id="btnSimular" text="{i18n>simular}" type="Ghost"
                             icon="sap-icon://simulate"
                             press=".onSimularPress" />
                     <ToolbarSpacer id="spacerTabela"/>
-                    <Button
-                        id="btnExportExcel"
-                        text="Exportar"
-                        icon="sap-icon://excel-attachment"
-                        type="Transparent"
-                        press=".onExportExcel" />
+                    <Button id="btnExportExcel" text="Exportar" icon="sap-icon://excel-attachment" type="Transparent" press=".onExportExcel" />
                     <Button id="btnSort" icon="sap-icon://sort" text="Sort" press=".handleSortButtonPressed"/>
-                    <Button id="btnFilter" icon="sap-icon://filter" text="Filter" press=".handleFilterButtonPressed"/>
+                    <Button id="btnFilter2" icon="sap-icon://filter" text="Filter" press=".onOpenMdcFilters"/>
                     <Button id="btnGroup" icon="sap-icon://group-2" text="Group" press=".handleGroupButtonPressed"/>
+                    <Button id="botaocoluna" text="Colunas" icon="sap-icon://table-view" press=".onOpenColumnsDialog"/>
                 </Toolbar>
-                <ScrollContainer id="tableScrollContainer" width="100%" height="35rem" horizontal="true" vertical="true">
+
+                <ScrollContainer id="tableScrollContainer" width="100%" height="35rem" horizontal="true" vertical="false">
                     <Table id="tblDocs"
                            inset="false"
                            mode="MultiSelect"
@@ -119,31 +102,35 @@
                         </infoToolbar>
                         
                         <columns>
-                            <Column id="colFornecedor"      width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column>
-                            <Column id="colNomeItem"        width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column>
-                            <Column id="colQuantidade"      width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column>
-                            <Column id="colPreco"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column>
-                            <Column id="colMoeda"           width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column>
-                            <Column id="colNCM"             width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column>
-                            <Column id="colMVA"             width="5rem"     hAlign="Center"><header><Text id="txtHdrMVA"            text="MVA (%)"/></header></Column>
-                            <Column id="colAliqICMS"        width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMS"       text="Alíquota ICMS (%)"/></header></Column>
-                            <Column id="colICMSAp"          width="7rem"     hAlign="Center"><header><Text id="txtHdrICMSAp"         text="ICMS Apurado"/></header></Column>
-                            <Column id="colAliqIPI"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqIPI"        text="Alíquota IPI (%)"/></header></Column>
-                            <Column id="colIPIAp"           width="6rem"     hAlign="Center"><header><Text id="txtHdrIPIAp"          text="IPI Apurado"/></header></Column>
-                            <Column id="colAliqPIS"         width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqPIS"        text="Alíquota PIS (%)"/></header></Column>
-                            <Column id="colPISAp"           width="7rem"     hAlign="Center"><header><Text id="txtHdrPISAp"          text="PIS Apurado"/></header></Column>
-                            <Column id="colAliqCOFINS"      width="10rem"    hAlign="Center"><header><Text id="txtHdrAliqCOFINS"     text="Alíquota COFINS (%)"/></header></Column>
-                            <Column id="colCOFINSAp"        width="8rem"     hAlign="Center"><header><Text id="txtHdrCOFINSAp"       text="COFINS Apurado"/></header></Column>
-                            <Column id="colAliqICMSIntra"   width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMSIntra"  text="Alíquota ICMS Interna (%)"/></header></Column>
-                            <Column id="colOrigem"          width="9rem"     hAlign="Center"><header><Text id="txtHdrOrigem"         text="Origem do Material"/></header></Column>
-                            <Column id="colPrecoEstendido"  width="9rem"     hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column>
-                            <Column id="colCentro"          width="15rem"    hAlign="Center"><header><Text id="txtHdrCentro"         text="Centro"/></header></Column>
-                            <Column id="colCategoriaItem"   width="10rem"    hAlign="Center"><header><Text id="txtHdrCategoriaItem"  text="Categoria do Item"/></header></Column>
-                            <Column id="colReq"             width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column>
-                            <Column id="colGrpMateriais"    width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column>
-                            <Column id="colCodMaterial"     width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column>
-                            <!-- <Column id="colIva"             width="8rem"     hAlign="Center"><header><Text id="txtHdrIva"            text="Campo Iva"/></header></Column> -->
-                            <Column id="coluna"             visible="false"><Text id = "textotax" text="deliverydate"/></Column>
+                            <Column id="colFornecedor"      visible="{ui>/columns/colFornecedor}" width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column>
+                            <Column id="colNomeItem"        visible="{ui>/columns/colNomeItem}" width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column>
+                            <Column id="colQuantidade"      visible="{ui>/columns/colQuantidade}" width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column>
+                            <Column id="colPreco"           visible="{ui>/columns/colPreco}" width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column>
+                            <Column id="colMoeda"           visible="{ui>/columns/colMoeda}" width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column>
+                            <Column id="colNCM"             visible="{ui>/columns/colNCM}" width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column>
+                            <Column id="colMVA"             visible="{ui>/columns/colMVA}" width="5rem"     hAlign="Center"><header><Text id="txtHdrMVA"            text="MVA (%)"/></header></Column>
+                            <Column id="colAliqICMS"        visible="{ui>/columns/colAliqICMS}" width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMS"       text="Alíquota ICMS (%)"/></header></Column>
+                            <Column id="colICMSAp"          visible="{ui>/columns/colICMSAp}" width="7rem"     hAlign="Center"><header><Text id="txtHdrICMSAp"         text="ICMS Apurado"/></header></Column>
+                            <Column id="colAliqIPI"         visible="{ui>/columns/colAliqIPI}" width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqIPI"        text="Alíquota IPI (%)"/></header></Column>
+                            <Column id="colIPIAp"           visible="{ui>/columns/colIPIAp}" width="6rem"     hAlign="Center"><header><Text id="txtHdrIPIAp"          text="IPI Apurado"/></header></Column>
+                            <Column id="colAliqPIS"         visible="{ui>/columns/colAliqPIS}" width="8rem"     hAlign="Center"><header><Text id="txtHdrAliqPIS"        text="Alíquota PIS (%)"/></header></Column>
+                            <Column id="colPISAp"           visible="{ui>/columns/colPISAp}" width="7rem"     hAlign="Center"><header><Text id="txtHdrPISAp"          text="PIS Apurado"/></header></Column>
+                            <Column id="colAliqCOFINS"      visible="{ui>/columns/colAliqCOFINS}" width="10rem"    hAlign="Center"><header><Text id="txtHdrAliqCOFINS"     text="Alíquota COFINS (%)"/></header></Column>
+                            <Column id="colCOFINSAp"        visible="{ui>/columns/colCOFINSAp}" width="8rem"     hAlign="Center"><header><Text id="txtHdrCOFINSAp"       text="COFINS Apurado"/></header></Column>
+                            <Column id="colAliqICMSIntra"   visible="{ui>/columns/colAliqICMSIntra}" width="9rem"     hAlign="Center"><header><Text id="txtHdrAliqICMSIntra"  text="Alíquota ICMS Interna (%)"/></header></Column>
+                            <Column id="colOrigem"          visible="{ui>/columns/colOrigem}" width="9rem"     hAlign="Center"><header><Text id="txtHdrOrigem"         text="Origem do Material"/></header></Column>
+                            <Column id="colPrecoEstendido"  visible="{ui>/columns/colPrecoEstendido}" width="9rem"     hAlign="Center"><header><Text id="txtHdrPrecoEstendido" text="Preço Estendido"/></header></Column>
+                            <Column id="colCentro"          visible="{ui>/columns/colCentro}" width="15rem"    hAlign="Center"><header><Text id="txtHdrCentro"         text="Centro"/></header></Column>
+                            <Column id="colCategoriaItem"   visible="{ui>/columns/colCategoriaItem}" width="10rem"    hAlign="Center"><header><Text id="txtHdrCategoriaItem"  text="Categoria do Item"/></header></Column>
+                            <Column id="colReq"             visible="{ui>/columns/colReq}" width="10rem"    hAlign="Center"><header><Text id="txtHdrReq"            text="Código da Requisição"/></header></Column>
+                            <Column id="colGrpMateriais"    visible="{ui>/columns/colGrpMateriais}" width="15rem"    hAlign="Center"><header><Text id="txtHdrGrpMateriais"   text="Grupo de Materiais"/></header></Column>
+                            <Column id="colCodMaterial"     visible="{ui>/columns/colCodMaterial}" width="15rem"    hAlign="Center"><header><Text id="txtHdrCodMaterial"    text="Código Material"/></header></Column>
+                            <Column id="colIncoterms"       visible="{ui>/columns/colIncoterms}" width="8rem"     hAlign="Center"><header><Text id="txtHdIncoterms"       text="Incoterms"/></header></Column>
+                            <!-- <Column id="colIva"        visible="{ui>/columns/colFornecedor}"      width="8rem"     hAlign="Center"><header><Text id="txtHdrIva"            text="Campo Iva"/></header></Column> -->
+                            <Column id="colNumberItens"     visible="{ui>/columns/colNumberItens}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrNumberItens"  text="Número de Itens da Requisição"/></header></Column>
+                            <Column id="colCodigoRFQ"       visible="{ui>/columns/colCodigoRFQ}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrCodigoRFQ"    text="Código da RFQ"/></header></Column>
+                            <Column id="colDeliveryDate"    visible="{ui>/columns/colDeliveryDate}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrDeliveryDate" text="Data de Entrega Solicitada"/></header></Column>
+                            <Column id="colPrazoEntrega"    visible="{ui>/columns/colPrazoEntrega}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrPrazoEntrega" text="Prazo de Entrega"/></header></Column>
                             <Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
                         </columns>
 
@@ -173,9 +160,13 @@
                                     <Text id="cellReq"            text="{= ${vm>CodigoRequisicao}                || '-'}"    wrapping="true" maxLines="2" />
                                     <Text id="cellGrpMateriais"   text="{= ${vm>grupo_de_materias}               || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>grupo_de_materias}"/>
                                     <Text id="cellCodMaterial"    text="{= ${vm>MaterialCode}                    || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>MaterialCode}"/>
-                                    <!-- <Text id="cellIva"            text="{= ${vm>TAX_CODE}                        || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/> -->
-                                    <Text id="deliverydate"       text="{= ${vm>DELIVERY_DATE_RAW}               || '-'}"    visible="false"/>
-                                    <Text id="suppliercodeText"   text="{= ${vm>suppliercode}                    || '-'}"    visible="false"/>
+                                    <Text id="cellIncoterms"      text="{= ${vm>Incoterms}                       || '-'}"    wrapping="true" maxLines="2" />
+                                    <!-- <Text id="cellIva"            text="{= ${vm>TAX_CODE}                   || '-'}"    wrapping="true" maxLines="2" tooltip="{vm>TAX_CODE}"/> -->
+                                    <Text id="cellNumberItems"        text="{= ${vm>NumeroItensRequisicao}       || '-'}"    wrapping="true" maxLines="2"/>
+                                    <Text id="cellCodigoRFQ"          text="{= ${vm>CodigoRFQ}                   || '-'}"    wrapping="true" maxLines="2"/>
+                                    <Text id="cellDeliveryDate"       text="{= ${vm>DeliveryDateNice}                || '-'}"    wrapping="true" maxLines="2"/>
+                                    <Text id="cellPrazoEntrega"       text="{= ${vm>PrazoEntrega}                || '-'}"    wrapping="true" maxLines="2"/>
+                                    <Text id="cellSupplierCodeText"   text="{= ${vm>suppliercode}                || '-'}"    visible="false"/>
                                 </cells>
                             </ColumnListItem>
                         </items>

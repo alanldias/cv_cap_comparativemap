@@ -19,7 +19,9 @@ sap.ui.define(
     "sap/ui/Device",
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
-    "sap/ui/export/library"
+    "sap/ui/export/library",
+    "comparativemap/comparativemap/controller/helpers/filtros"
+
   ],
   function (
     Controller,
@@ -41,7 +43,8 @@ sap.ui.define(
     Device,
     Build,
     Spreadsheet,
-    exportLibrary
+    exportLibrary,
+    Filtros
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
@@ -120,8 +123,31 @@ sap.ui.define(
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
 
-          // // DEV
-          // // vm.setProperty("/devMode", true);
+          const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
+          this.getView().setModel(ui, "ui");
+
+          // deixa tudo compacto (baixa a altura das linhas/inputs)
+          this.getView().addStyleClass("sapUiSizeCompact");
+
+          // monta a partir da tabela usando **id curto**
+          const tbl = this.byId("tblDocs");
+          const colsMap = {};
+          const colList = [];
+          const prefix = this.getView().getId() + "--"; // para remover do getId()
+
+          (tbl?.getColumns() || []).forEach((c) => {
+            const longId = c.getId();
+            const shortId = longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
+            const label = c.getHeader()?.getText?.() || shortId;
+            colsMap[shortId] = c.getVisible();    // estado inicial fiel ao que está no XML
+            colList.push({ id: shortId, label });
+          });
+
+          ui.setProperty("/columns", colsMap);
+          ui.setProperty("/columnList", colList);
+
+
+          Filtros.init(this);
         },
 
         // ===== DEV: abrir fragment com mock =====
@@ -162,6 +188,8 @@ sap.ui.define(
           try {
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
             if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
+
+            Filtros.reset(this);
 
             const binding = tbl?.getBinding("items");
             if (binding) {
@@ -236,10 +264,19 @@ sap.ui.define(
           row.quantity = Math.floor(v);
           ctx.getModel().checkUpdate(true);
         },
-
-        onCloseDialog(ev) {
+           onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
         },
+
+        onOpenMdcFilters() { Filtros.openDialog(this); },
+        onCloseFiltersDialog() { Filtros.closeDialog(this); },
+        onResetMdcFilters() { Filtros.reset(this); },
+        onFilterSearch() {
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
+          Filtros.onFilterSearch(this);
+        },
+        onOpenColumnsDialog() { Filtros.onOpenColumnsDialog(this); },
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
