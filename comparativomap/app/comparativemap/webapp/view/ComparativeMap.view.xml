@@ -72,6 +72,11 @@
                     </ColumnListItem>
                 </items>
             </Table>
+
+           <Button id="btnsalvarvisao" icon="sap-icon://save" text="salvar Visao" press=".onSaveVisionPress"/>
+            <Button id="btncarregarvisao" icon="sap-icon://save" text="Carregar Visao" press=".onChooseVisionPress"/>
+
+
             
             <VBox id="detailsVBox" class="sapUiSmallMarginTop">
                 <Toolbar id="detailsToolbar">

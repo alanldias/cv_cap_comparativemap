@@ -4,12 +4,10 @@
       <mdc:FilterBar id="fb" showGoButton="false" />
     </VBox>
 
-    <beginButton>
+    <buttons>
       <Button text="Aplicar" type="Emphasized" press=".onFilterSearch"/>
-    </beginButton>
-    <endButton>
       <Button text="Limpar" press=".onResetMdcFilters"/>
       <Button text="Fechar" press=".onCloseFiltersDialog"/>
-    </endButton>
+    </buttons>
   </Dialog>
 </core:FragmentDefinition>

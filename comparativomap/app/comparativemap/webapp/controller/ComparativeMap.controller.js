@@ -20,7 +20,7 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
-    "comparativemap/comparativemap/controller/helpers/filtros"
+    "comparativemap/comparativemap/controller/helpers/filtros",
 
   ],
   function (
@@ -44,7 +44,8 @@ sap.ui.define(
     Build,
     Spreadsheet,
     exportLibrary,
-    Filtros
+    Filtros,
+
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
@@ -131,6 +132,10 @@ sap.ui.define(
 
           // monta a partir da tabela usando **id curto**
           const tbl = this.byId("tblDocs");
+          tbl.getBinding("items").attachDataReceived(() => {
+            // Ajuste aqui para o nome exportado
+            Filtros.updateFilterBarLabel(this);
+          });
           const colsMap = {};
           const colList = [];
           const prefix = this.getView().getId() + "--"; // para remover do getId()
@@ -148,6 +153,15 @@ sap.ui.define(
 
 
           Filtros.init(this);
+        },
+
+        onSaveVisionPress: function () {
+          PrefsStore.openSaveViewDialog(this);
+        },
+
+        onChooseVisionPress: function () {
+          // Lista do backend (filtrada pelo docId caso seja true(coloquei false)) e aplica ao escolher
+          PrefsStore.openChooseViewDialog(this, { docScoped: false });
         },
 
         // ===== DEV: abrir fragment com mock =====
@@ -264,7 +278,7 @@ sap.ui.define(
           row.quantity = Math.floor(v);
           ctx.getModel().checkUpdate(true);
         },
-           onCloseDialog(ev) {
+        onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
         },
 

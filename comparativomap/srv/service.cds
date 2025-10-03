@@ -5,6 +5,18 @@ service service {
 
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
+  entity FilterViews as projection on comparativemap.FilterViews;
+
+    action SaveView(
+    name          : String,
+    docId         : String,
+    filtersJSON   : LargeString,
+    uiSortJSON    : LargeString,
+    uiGroupJSON   : LargeString,
+    uiColumnsJSON : LargeString
+  ) returns FilterViews;
+
+
   type QuoteRow             : {
     poItem                          : String(5); // ex.: 01000, 01010, 01020...
     ItemId                          : String(30);
@@ -63,61 +75,6 @@ service service {
 
   function GetQuotes(docId: String)                            returns QuotesResponse;
 
-  /* ==================== Tipos p/ Simulação BAPI ==================== */
-
-  // Entrada do item na simulação: herda o que vem do Ariba
-  // e acrescenta campos usados na sua lógica (PREQ_*).
-  // Também expõe "itemDescription" como alias opcional
-  // para cobrir o typo "itemDescription" sem quebrar nada.
-  type SimulateItemInput    : QuoteRow {
-    lifnr           : String(10);
-    PREQ_NO         : String(10);
-    PREQ_ITEM       : String(5);
-    itemDescription : String(255); // opcional, alias aceito pelo backend
-  };
-
-  // Mensagem retornada pela BAPI
-  type BapiMessage          : {
-    type : String(1); // 'S', 'W', 'E', 'A', ...
-    text : String(220);
-  };
-
-  // Linha da tabela simulada que você exibe no fragment
-  type SimulateItemResult   : {
-    item           : String(5);
-    material       : String(18);
-    descricao      : String(255);
-    centro         : String(100);
-    quantidade     : Decimal(15, 3);
-    unidade        : String(12);
-    precoUnitario  : Decimal(15, 2);
-    precoTotal     : Decimal(15, 2);
-    taxCode        : String(10);
-    icms           : Decimal(15, 2);
-    ipi            : Decimal(15, 2);
-    pis            : Decimal(15, 2);
-    cofins         : Decimal(15, 2);
-    st             : Decimal(15, 2);
-    precoBase      : Decimal(15, 2);
-    moeda          : String(3);
-    grupoMateriais : String(80);
-    categoriaItem  : String(40);
-    preqNo         : String(10);
-    preqItem       : String(5);
-    lifnr          : String(10);
-  };
-
-  // Payload de retorno completo
-  type SimulateBapiResponse : {
-    success       : Boolean;
-    messages      : many BapiMessage;
-    purchaseOrder : String(20); // pode vir null em TESTRUN
-    tabelaItens   : many SimulateItemResult;
-  };
-
-  /* ==================== Action de Simulação (UNBOUND) ==================== */
-  action   SimulateBapiPoCreate(header: AribaHeader,
-                                items: many SimulateItemInput) returns SimulateBapiResponse;
 
   // === Tipos da premiação ===
   type SupplierBidInput     : {
@@ -244,5 +201,8 @@ service service {
   // --------------------------------------
   action   simularPO(requests: array of SimulacaoPORequest,
                      concurrency: Integer default 4)           returns array of SimulacaoPOResult;
+
+
+                     
 
 }

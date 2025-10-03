@@ -32,6 +32,41 @@ const makePoItem = (idx) =>
   String(POITEM_START + idx * POITEM_STEP).padStart(POITEM_WIDTH, "0");
 
 module.exports = function () {
+  const { FilterViews } = this.entities;
+
+   this.on("SaveView", async (req) => {
+    const {
+      name,
+      docId = null,
+      filtersJSON = "{}",
+      uiSortJSON = "{}",
+      uiGroupJSON = "{}",
+      uiColumnsJSON = "{}",
+    } = req.data || {};
+
+    if (!name) return req.error(400, "Nome da visão é obrigatório.");
+
+    const userId = req.user?.id || "anonymous";
+
+    const entry = {
+      name,
+      docId,
+      userId,
+      isPublic: true,
+      filtersJSON: typeof filtersJSON === "string" ? filtersJSON : JSON.stringify(filtersJSON || {}),
+      uiSortJSON:  typeof uiSortJSON  === "string" ? uiSortJSON  : JSON.stringify(uiSortJSON  || {}),
+      uiGroupJSON: typeof uiGroupJSON === "string" ? uiGroupJSON : JSON.stringify(uiGroupJSON || {}),
+      uiColumnsJSON: typeof uiColumnsJSON === "string" ? uiColumnsJSON : JSON.stringify(uiColumnsJSON || {})
+    };
+
+    console.log(entry + "dados")
+
+    const inserted = await INSERT.into(FilterViews).entries(entry);
+    // seleciona com managed preenchido
+    const saved = await SELECT.one.from(FilterViews).where({ ID: inserted.ID });
+    return saved;
+  });
+
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
