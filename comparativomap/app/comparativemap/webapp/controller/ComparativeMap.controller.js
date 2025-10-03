@@ -21,6 +21,7 @@ sap.ui.define(
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
     "comparativemap/comparativemap/controller/helpers/filtros",
+    "comparativemap/comparativemap/controller/prefs/DraftStore"
 
   ],
   function (
@@ -45,6 +46,7 @@ sap.ui.define(
     Spreadsheet,
     exportLibrary,
     Filtros,
+    Drafts
 
   ) {
     "use strict";
@@ -153,6 +155,13 @@ sap.ui.define(
 
 
           Filtros.init(this);
+
+          Drafts.offerRestoreOnEnter(this);
+
+          // Autosave ao sair/recarregar a página (failsafe)
+          this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
+          window.addEventListener("beforeunload", this._onUnloadSave);
+
         },
 
         onSaveVisionPress: function () {
@@ -258,6 +267,7 @@ sap.ui.define(
             tbl?.removeSelections(true);
 
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
+            // Drafts.save(this);
           } catch (e) {
             /* eslint-disable no-console */
             console.error("[onBuscar] ERRO:", e);
@@ -277,6 +287,7 @@ sap.ui.define(
           if (max && v > max) v = max;
           row.quantity = Math.floor(v);
           ctx.getModel().checkUpdate(true);
+          Drafts.autoSave(this);
         },
         onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
@@ -289,6 +300,24 @@ sap.ui.define(
           this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
           this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
           Filtros.onFilterSearch(this);
+
+          // memoriza último bom antes do autosave
+          const cm = this.getView().getModel("cm");
+          if (cm?.getAllConditions) {
+            this.__lastAppliedConditions = (function compact(r) {
+              const out = {}; const raw = r();
+              Object.keys(raw || {}).forEach(k => {
+                const kept = (raw[k] || []).filter(c => {
+                  if (!c || c.isEmpty === true) return false;
+                  const v = Array.isArray(c.values) ? c.values : [];
+                  return c.operator === "BT" ? (v[0] !== "" && v[0] != null && v[1] !== "" && v[1] != null)
+                    : (v[0] !== "" && v[0] != null);
+                });
+                if (kept.length) out[k] = kept;
+              }); return out;
+            })(cm.getAllConditions.bind(cm));
+          }
+          Drafts.autoSave(this); // debounce
         },
         onOpenColumnsDialog() { Filtros.onOpenColumnsDialog(this); },
 
@@ -530,6 +559,7 @@ sap.ui.define(
             this._vs.handleSortDialogConfirm(ev, (p) => {
               this._prefs = p;
               PrefsStore.save(p);
+              Drafts.autoSave(this);
             }),
           );
         },
@@ -539,6 +569,7 @@ sap.ui.define(
               this._vs.handleGroupDialogConfirm(ev, (p) => {
                 this._prefs = p;
                 PrefsStore.save(p);
+                Drafts.autoSave(this);
               }),
             () => { },
           );
@@ -598,6 +629,10 @@ sap.ui.define(
           if (this._dlgRes) {
             this._dlgRes.destroy(true);
             this._dlgRes = null;
+          }
+          if (this._onUnloadSave) {
+            window.removeEventListener("beforeunload", this._onUnloadSave);
+            this._onUnloadSave = null;
           }
         },
         onExportExcel() {

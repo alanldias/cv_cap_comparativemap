@@ -202,6 +202,10 @@ sap.ui.define([
     const conds = _normalizeConditionsForUI(rawConds);
     console.log("📬 Condições normalizadas para aplicar:", JSON.stringify(conds));
 
+    ctrl._pendingConditions = conds;
+    _setAllConditionsCompat(cm, conds);
+
+
     _setAllConditionsCompat(cm, conds);
     cm && cm.updateBindings && cm.updateBindings(true); // Manter isso aqui é bom
     if (ctrl._filterDlg) ctrl._filterDlg.setModel(cm, "cm");
@@ -227,6 +231,10 @@ sap.ui.define([
     ctrl._prefs = Object.assign({}, ctrl._prefs || {}, { sort, group });
     ctrl._vs.setPrefs(ctrl._prefs);
     ctrl._vs.applyGroupSortFromPrefs();
+
+    sap.ui.require(["comparativemap/comparativemap/controller/prefs/DraftStore"], function (Drafts) {
+      Drafts && Drafts.autoSave(ctrl);
+    });
 
     // 3) Colunas
     const cols = JSON.parse(viewObj.uiColumnsJSON || "{}");

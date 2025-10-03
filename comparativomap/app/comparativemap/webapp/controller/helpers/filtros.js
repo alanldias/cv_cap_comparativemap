@@ -173,12 +173,27 @@ sap.ui.define([
     },
 
     /** Abre o diálogo de filtros (Fragment) */
+
     async openDialog(ctrl) {
       const view = ctrl.getView();
-      console.log("🚪 Abrindo o diálogo de filtro...");
-
-      // Vamos verificar as condições ANTES de abrir
       const cm = view.getModel("cm");
+
+      // ✨ AQUI ENTRA A MUDANÇA PRINCIPAL ✨
+      // Verificamos se há filtros "pendentes" que foram guardados pelo applyView ou restoreDraft
+      if (ctrl._pendingConditions) {
+        console.log("Senhor SAP Debug: Aplicando filtros pendentes 'Just-in-Time'!", ctrl._pendingConditions);
+
+        // Usamos a mesma lógica segura do 'setData' para garantir o estado do modelo
+        const modelData = cm.getData();
+        modelData.conditions = ctrl._pendingConditions;
+        cm.setData(modelData);
+
+        // Limpa a variável temporária para não aplicar de novo por engano
+        delete ctrl._pendingConditions;
+      }
+
+      // O resto do seu código continua como estava. A lógica abaixo serve como um reforço.
+      console.log("🚪 Abrindo o diálogo de filtro...");
       console.log("🧐 Instância do ConditionModel em openDialog:", cm?.getId());
       console.log("📋 Condições ATUAIS no modelo ANTES de abrir:", JSON.stringify(cm.getAllConditions()));
 
@@ -191,23 +206,25 @@ sap.ui.define([
         });
         view.addDependent(ctrl._filterDlg);
 
+        // A lógica de forçar a atualização ainda é uma boa prática, vamos manter!
         ctrl._filterDlg.attachAfterOpen(() => {
-          console.log("✅ Diálogo aberto! Agendando atualização dos bindings...");
-          const dialogCm = ctrl._filterDlg.getModel("cm");
-          console.log("🧐 Instância do CM no diálogo:", dialogCm?.getId());
-          if (dialogCm) {
-            // ✨ A MÁGICA DO TIMEOUT ✨
-            setTimeout(() => {
-              console.log("⏰ Executando atualização com delay...");
-              dialogCm.updateBindings(true);
+          console.log("✅ Diálogo de filtro aberto! Agendando atualização FORÇADA...");
+          const view = ctrl.getView();
+          const dialogCm = view.getModel("cm");
+          const filterBar = view.byId("fb");
 
-              // E vamos dar um empurrãozinho na FilterBar também!
-              const filterBar = view.byId("fb"); // 'fb' é o ID que você usou
-              if (filterBar) {
-                console.log("🖌️ Forçando o re-render da FilterBar.");
-                filterBar.rerender();
-              }
-            }, 100); // 100ms é um bom começo
+          if (dialogCm && filterBar) {
+            setTimeout(() => {
+              console.log("⏰ Forçando sincronia total entre Modelo e UI...");
+
+              // 1. Força o modelo a empurrar seus dados para os bindings
+              dialogCm.checkUpdate(true);
+
+              // 2. Invalida a FilterBar para forçar que ela se redesenhe completamente
+              filterBar.invalidate();
+
+              console.log("Sincronia forçada. Os campos agora devem aparecer.");
+            }, 100);
           }
         });
       }
@@ -249,6 +266,7 @@ sap.ui.define([
 
     reset(ctrl) {
       const view = ctrl.getView();
+      ctrl.__allowEmptyFiltersOnce = true;
       const cm = view.getModel("cm");
       view.getModel("vm")?.setProperty("/appliedVisionName", "");
       if (cm) {
@@ -266,6 +284,7 @@ sap.ui.define([
 
       const binding = view.byId("tblDocs")?.getBinding("items");
       binding?.filter([], "Application"); // Remove o filtro da tabela
+      setTimeout(() => { ctrl.__allowEmptyFiltersOnce = false; }, 0);
     },
 
     onOpenColumnsDialog(ctrl) {
@@ -304,6 +323,9 @@ sap.ui.define([
               ui.setProperty("/columns", newMap); // <-- só atualiza o modelo
               ctrl._colDlg.close();
               sap.m.MessageToast.show("Colunas atualizadas");
+              sap.ui.require(["comparativemap/comparativemap/controller/prefs/DraftStore"], function (Drafts) {
+                Drafts && Drafts.autoSave(ctrl);
+              });
             }
           })
         ]
