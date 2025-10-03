@@ -103,9 +103,49 @@ sap.ui.define([
 
   function _ensureCm(ctrl) {
     const view = ctrl.getView();
-    if (!view.getModel("cm")) {
-      view.setModel(new ConditionModel(), "cm");
+    let cm = view.getModel("cm");
+    if (!cm) {
+      cm = new ConditionModel();
+      view.setModel(cm, "cm");
     }
+
+    // Garante paths vazias para todos os campos, de forma segura
+    const modelData = cm.getData();
+    const conditions = modelData.conditions || {};
+    let changed = false;
+    FIELDS.forEach(f => {
+      if (conditions[f.key] === undefined) { // Verifica se a chave não existe
+        conditions[f.key] = [];
+        changed = true;
+      }
+    });
+
+    if (changed) {
+      console.log("Senhor SAP Debug: Garantindo que todos os paths de filtro existem no CM de forma segura.");
+      modelData.conditions = conditions;
+      cm.setData(modelData);
+    }
+  }
+
+  function _updateFilterBarLabel(ctrl) {
+    const view = ctrl.getView();
+    const cm = view.getModel("cm");
+    if (!cm) return;
+
+    // A gente tenta pegar o nome da visão aplicada, que guardamos num modelo separado
+    const visionName = view.getModel("vm")?.getProperty("/appliedVisionName");
+    let text = "";
+
+    if (visionName) {
+      text = `Visão aplicada: ${visionName}`;
+    } else {
+      // Se não tiver visão, usa a função que já existia para gerar o texto dos filtros
+      text = _activeFiltersText(cm.getAllConditions());
+    }
+
+    console.log("Senhor SAP Debug: Sincronizando a label do filtro para:", text);
+    view.byId("vsdFilterLabel")?.setText(text || "");
+    view.byId("vsdFilterBar")?.setVisible(!!text);
   }
 
   function _ensureFilterBarBuilt(ctrl) {
@@ -133,20 +173,68 @@ sap.ui.define([
     },
 
     /** Abre o diálogo de filtros (Fragment) */
+
     async openDialog(ctrl) {
       const view = ctrl.getView();
+      const cm = view.getModel("cm");
+
+      // ✨ AQUI ENTRA A MUDANÇA PRINCIPAL ✨
+      // Verificamos se há filtros "pendentes" que foram guardados pelo applyView ou restoreDraft
+      if (ctrl._pendingConditions) {
+        console.log("Senhor SAP Debug: Aplicando filtros pendentes 'Just-in-Time'!", ctrl._pendingConditions);
+
+        // Usamos a mesma lógica segura do 'setData' para garantir o estado do modelo
+        const modelData = cm.getData();
+        modelData.conditions = ctrl._pendingConditions;
+        cm.setData(modelData);
+
+        // Limpa a variável temporária para não aplicar de novo por engano
+        delete ctrl._pendingConditions;
+      }
+
+      // O resto do seu código continua como estava. A lógica abaixo serve como um reforço.
+      console.log("🚪 Abrindo o diálogo de filtro...");
+      console.log("🧐 Instância do ConditionModel em openDialog:", cm?.getId());
+      console.log("📋 Condições ATUAIS no modelo ANTES de abrir:", JSON.stringify(cm.getAllConditions()));
 
       if (!ctrl._filterDlg) {
+        console.log("🏗️ Carregando o fragmento do diálogo pela primeira vez...");
         ctrl._filterDlg = await Fragment.load({
           name: "comparativemap.comparativemap.view.fragments.FilterDialog",
           controller: ctrl,
           id: view.getId()
         });
         view.addDependent(ctrl._filterDlg);
+
+        // A lógica de forçar a atualização ainda é uma boa prática, vamos manter!
+        ctrl._filterDlg.attachAfterOpen(() => {
+          console.log("✅ Diálogo de filtro aberto! Agendando atualização FORÇADA...");
+          const view = ctrl.getView();
+          const dialogCm = view.getModel("cm");
+          const filterBar = view.byId("fb");
+
+          if (dialogCm && filterBar) {
+            setTimeout(() => {
+              console.log("⏰ Forçando sincronia total entre Modelo e UI...");
+
+              // 1. Força o modelo a empurrar seus dados para os bindings
+              dialogCm.checkUpdate(true);
+
+              // 2. Invalida a FilterBar para forçar que ela se redesenhe completamente
+              filterBar.invalidate();
+
+              console.log("Sincronia forçada. Os campos agora devem aparecer.");
+            }, 100);
+          }
+        });
       }
 
       _ensureCm(ctrl);
       _ensureFilterBarBuilt(ctrl);
+
+      ctrl._filterDlg.setModel(view.getModel("cm"), "cm");
+
+      console.log("🚀 Mandando o diálogo abrir agora!");
       ctrl._filterDlg.open();
     },
 
@@ -154,6 +242,8 @@ sap.ui.define([
     closeDialog(ctrl) {
       ctrl._filterDlg?.close();
     },
+
+    updateFilterBarLabel: _updateFilterBarLabel,
 
     /** Aplica filtros na tabela e fecha o diálogo */
     onFilterSearch(ctrl) {
@@ -174,17 +264,27 @@ sap.ui.define([
       this.closeDialog(ctrl);
     },
 
-    /** Limpa FilterBar + remove filtros aplicados */
     reset(ctrl) {
       const view = ctrl.getView();
+      ctrl.__allowEmptyFiltersOnce = true;
       const cm = view.getModel("cm");
-      if (cm) cm.removeAllConditions();
+      view.getModel("vm")?.setProperty("/appliedVisionName", "");
+      if (cm) {
+        console.log("Senhor SAP Debug: Limpando filtros com o método setData()...");
+        const modelData = cm.getData();
+        modelData.conditions = {}; // Limpa completamente o objeto de condições
+        cm.setData(modelData);
+        cm.updateBindings(true); // Força a UI (FilterBar) a limpar também
+        console.log("Senhor SAP Debug: ConditionModel foi zerado de forma segura.");
+      }
 
+      // Limpa a label de info e o binding da tabela
       view.byId("vsdFilterLabel")?.setText("");
       view.byId("vsdFilterBar")?.setVisible(false);
 
       const binding = view.byId("tblDocs")?.getBinding("items");
-      binding?.filter([], "Application");
+      binding?.filter([], "Application"); // Remove o filtro da tabela
+      setTimeout(() => { ctrl.__allowEmptyFiltersOnce = false; }, 0);
     },
 
     onOpenColumnsDialog(ctrl) {
@@ -223,6 +323,9 @@ sap.ui.define([
               ui.setProperty("/columns", newMap); // <-- só atualiza o modelo
               ctrl._colDlg.close();
               sap.m.MessageToast.show("Colunas atualizadas");
+              sap.ui.require(["comparativemap/comparativemap/controller/prefs/DraftStore"], function (Drafts) {
+                Drafts && Drafts.autoSave(ctrl);
+              });
             }
           })
         ]

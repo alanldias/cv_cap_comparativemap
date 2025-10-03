@@ -21,6 +21,35 @@ sap.ui.define([
   const KEY = "tblDocs-prefs";
   const storage = new Storage(Storage.Type.local, "comparativemap");
 
+  const NUMERIC_KEYS = [
+    "quantity", "price", "mva", "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
+    "Extrinsic_Aliquota_IPI", "Extrinsic_IPI_Apurado", "Extrinsic_Aliquota_PIS",
+    "Extrinsic_PIS_Apurado", "Extrinsic_Aliquota_Cofins", "Extrinsic_Cofins_apurado",
+    "Extrinsic_Aliquota_ICMS_Interna", "EXTENDEDPRICE"
+  ];
+
+  function _compactForBackend(raw) {
+    const out = {};
+    Object.keys(raw || {}).forEach(k => {
+      const kept = (raw[k] || []).filter(c => {
+        if (!c || c.isEmpty === true) return false;
+        const v = Array.isArray(c.values) ? c.values : [];
+        return c.operator === "BT"
+          ? (v[0] !== "" && v[0] != null && v[1] !== "" && v[1] != null)
+          : (v[0] !== "" && v[0] != null);
+      }).map(c => {
+        const vals = Array.isArray(c.values) ? c.values.slice() : [];
+        const values = NUMERIC_KEYS.includes(k)
+          ? vals.map(v => (v === "" || v == null) ? v : Number(v))
+          : vals;
+        // Removemos 'validated' pra reduzir ruído
+        return { operator: c.operator || "EQ", values };
+      });
+      if (kept.length) out[k] = kept;
+    });
+    return out;
+  }
+
   function load() {
     try {
       const raw = storage.get(KEY);
@@ -46,7 +75,7 @@ sap.ui.define([
     const prefs = ctrl._prefs || {};
     const vm = view.getModel("vm");
 
-    const conditions = cm?.getAllConditions?.() || {};
+    const conditions = _compactForBackend(cm?.getAllConditions?.() || {});
     const columnsMap = ui?.getProperty("/columns") || {};
     const columnList = ui?.getProperty("/columnList") || [];
     const docId =
@@ -186,59 +215,84 @@ sap.ui.define([
     }
   }
 
+  function _applyFiltersNowOrWhenReady(ctrl, conds) {
+    const view = ctrl.getView();
+    const tbl = view.byId("tblDocs");
+    const arr = _filtersFromConditions(conds, UI5Filter, UI5FilterOperator);
+
+    const doApply = () => {
+      const b = tbl?.getBinding("items");
+      if (!b) return false;                    // ainda não tem binding/dados
+      b.filter([], "Control");
+      b.sort(null);
+      b.filter(arr, "Application");
+
+      // Atualiza a barra/label dos filtros sem quebrar caso o módulo ainda não esteja carregado
+      try {
+        sap.ui.require(
+          ["comparativemap/comparativemap/controller/helpers/filtros"],
+          (Filtros) => Filtros?.updateFilterBarLabel?.(ctrl)
+        );
+      } catch (e) { }
+      return true;
+    };
+
+    // tenta agora; se não deu, aplica quando a tabela terminar de atualizar
+    if (!doApply()) {
+      const once = () => { if (doApply()) tbl.detachUpdateFinished(once); };
+      tbl.attachUpdateFinished(once);
+    }
+  }
+
   function applyView(ctrl, viewObj) {
     if (!viewObj) return;
-    console.log("📝 Aplicando a visão:", viewObj.name, viewObj); // LOG NOVO
+    console.log("📝 Aplicando a visão:", viewObj.name, viewObj);
 
     const view = ctrl.getView();
     view.getModel("vm").setProperty("/appliedVisionName", viewObj.name);
 
-    const tbl = view.byId("tblDocs");
+    // garante que o ConditionModel exista
+    let cm = view.getModel("cm");
+    if (!cm?.getData) {
+      try {
+        sap.ui.require(
+          ["comparativemap/comparativemap/controller/helpers/filtros"],
+          (Filtros) => Filtros?.init?.(ctrl)
+        );
+      } catch (e) { }
+      cm = view.getModel("cm"); // re-pega após init
+    }
 
-    const cm = view.getModel("cm");
-    // LOG para inspecionar o modelo e os dados
-    console.log("🧐 Instância do ConditionModel em applyView:", cm?.getId());
+    // normaliza e injeta condições
     const rawConds = JSON.parse(viewObj.filtersJSON || "{}");
     const conds = _normalizeConditionsForUI(rawConds);
-    console.log("📬 Condições normalizadas para aplicar:", JSON.stringify(conds));
+    console.log("📬 Condições normalizadas:", JSON.stringify(conds));
 
     ctrl._pendingConditions = conds;
+    ctrl.__lastAppliedConditions = conds;  // memoriza "último bom"
     _setAllConditionsCompat(cm, conds);
-
-
-    _setAllConditionsCompat(cm, conds);
-    cm && cm.updateBindings && cm.updateBindings(true); // Manter isso aqui é bom
-    if (ctrl._filterDlg) ctrl._filterDlg.setModel(cm, "cm");
-
-    // Se for logo antes de abrir o diálogo, isso ajuda
+    cm?.checkUpdate?.(true);
+    cm?.updateBindings?.(true);
     sap.ui.getCore().applyChanges();
 
-    // 1.1) aplica no binding
-    const binding = tbl?.getBinding("items");
-    if (binding) {
-      binding.filter([], "Control");
-      binding.sort(null);
+    // aplica no binding de forma robusta a timing
+    _applyFiltersNowOrWhenReady(ctrl, conds);
 
-      const arr = _filtersFromConditions(conds, UI5Filter, UI5FilterOperator);
-      binding.filter(arr, "Application");
-
-      view.byId("vsdFilterBar")?.setVisible(arr.length > 0);
-      view.byId("vsdFilterLabel")?.setText(arr.length ? `Visão aplicada: ${viewObj.name}` : "");
-    }
-    // 2) Sort/Group
+    // Sort/Group
     const sort = JSON.parse(viewObj.uiSortJSON || "{}");
     const group = JSON.parse(viewObj.uiGroupJSON || "{}");
     ctrl._prefs = Object.assign({}, ctrl._prefs || {}, { sort, group });
     ctrl._vs.setPrefs(ctrl._prefs);
     ctrl._vs.applyGroupSortFromPrefs();
 
+    // Colunas
+    const cols = JSON.parse(viewObj.uiColumnsJSON || "{}");
+    applyColumnsToTable(ctrl, cols);
+
+    // autosave
     sap.ui.require(["comparativemap/comparativemap/controller/prefs/DraftStore"], function (Drafts) {
       Drafts && Drafts.autoSave(ctrl);
     });
-
-    // 3) Colunas
-    const cols = JSON.parse(viewObj.uiColumnsJSON || "{}");
-    applyColumnsToTable(ctrl, cols);
 
     MessageToast.show(`Visão aplicada: ${viewObj.name}`);
   }
@@ -306,14 +360,7 @@ sap.ui.define([
     dlg.open();
   }
 
-  const NUMERIC_KEYS = [
-    "quantity", "price", "mva",
-    "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
-    "Extrinsic_Aliquota_IPI", "Extrinsic_IPI_Apurado",
-    "Extrinsic_Aliquota_PIS", "Extrinsic_PIS_Apurado",
-    "Extrinsic_Aliquota_Cofins", "Extrinsic_Cofins_apurado",
-    "Extrinsic_Aliquota_ICMS_Interna", "EXTENDEDPRICE"
-  ];
+
 
   function _normalizeConditionsForUI(rawConds) {
     const ConditionValidated = sap.ui.require("sap/ui/mdc/condition/ConditionValidated");
