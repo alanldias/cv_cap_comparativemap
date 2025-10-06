@@ -575,6 +575,38 @@ sap.ui.define(
           );
         },
 
+        /**
+ * Coleta as linhas da tabela respeitando filtros/sort/agrupamento.
+ * Se houver seleção, retorna apenas os selecionados.
+ * Caso contrário, retorna TODAS as linhas do binding (já filtradas).
+ *
+ * @param {sap.m.Table} table - tabela (sap.m.Table)
+ * @param {string} modelName - nome do modelo usado no items (ex.: "vm" ou "res")
+ * @param {sap.ui.model.Model} modelFallback - modelo p/ fallback (ex.: view.getModel("vm"))
+ * @param {string} pathFallback - caminho p/ fallback (ex.: "/rows")
+ */
+        _collectRowsFromTable(table, modelName, modelFallback, pathFallback) {
+          if (!table) return [];
+
+          // 1) Seleção tem prioridade
+          const selected = (table.getSelectedContexts(modelName) || []).map(c => c.getObject());
+          if (selected.length) return selected;
+
+          // 2) Senão, coleta do binding (respeita filtros/sort/agrup.)
+          const binding = table.getBinding("items");
+          if (binding && typeof binding.getLength === "function") {
+            const len = binding.getLength();                 // tamanho pós-filtro
+            if (len > 0 && typeof binding.getContexts === "function") {
+              const ctxs = binding.getContexts(0, len);      // todas as contexts filtradas
+              return ctxs.map(c => c.getObject());
+            }
+          }
+
+          // 3) Fallback: tudo do modelo (sem filtros)
+          return modelFallback?.getProperty(pathFallback) || [];
+        },
+
+
         /* ====== ViewSettings: fragment Resultado ====== */
         onResFilter() {
           if (!this._vsRes) return;
@@ -640,17 +672,14 @@ sap.ui.define(
           const vm = view.getModel("vm");
           const tbl = view.byId("tblDocs");
 
-          // 1) linhas: se tiver seleção, exporta só a seleção; senão, exporta todas
-          const selected = tbl?.getSelectedContexts("vm").map(c => c.getObject()) || [];
-          const all = vm?.getProperty("/rows") || [];
-          const rows = selected.length ? selected : all;
-
+          // 🔎 coleta linhas respeitando filtros/sort/seleção
+          const rows = this._collectRowsFromTable(tbl, "vm", vm, "/rows");
           if (!rows.length) {
             sap.m.MessageToast.show("Nada para exportar.");
             return;
           }
 
-          // 2) normaliza campos numéricos principais (caso venham como string)
+          // normaliza numéricos (Excel como número)
           const NUMERIC = [
             "quantity", "price", "mva",
             "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
@@ -663,7 +692,6 @@ sap.ui.define(
             if (v == null || v === "") return null;
             const n = Number(String(v).replace(/\./g, "").replace(",", "."));
             return Number.isFinite(n) ? n : null;
-            // (se seus valores já estão como Number, isso só mantém)
           };
           const data = rows.map(r => {
             const out = { ...r };
@@ -671,7 +699,6 @@ sap.ui.define(
             return out;
           });
 
-          // 3) colunas do Excel (ajuste a gosto)
           const columns = [
             { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
             { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
@@ -699,11 +726,9 @@ sap.ui.define(
             { label: "Código Material", property: "MaterialCode", type: EdmType.String, width: 20 }
           ];
 
-          // 4) nome do arquivo
           const docId = (vm?.getProperty("/header/docId")) || "MapaComparativo";
           const fileName = `Comparativo_${docId}.xlsx`;
 
-          // 5) monta e gera
           const sheet = new Spreadsheet({
             workbook: { columns },
             dataSource: data,
@@ -715,11 +740,11 @@ sap.ui.define(
             .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
             .finally(() => sheet.destroy());
         },
+
         onExportExcelRes() {
           const view = this.getView();
 
-          // 1) tenta achar a tabela do dialog de resultados
-          //    (pelo seu código, o dialog está em this._dlgRes e o 1º content é uma tabela)
+          // tabela do dialog (1º content do dlg)
           const tbl = this._dlgRes?.getContent?.()[0];
           const resModel = view.getModel("res");
 
@@ -728,65 +753,50 @@ sap.ui.define(
             return;
           }
 
-          // 2) dados: se tiver seleção na tabela do dialog, exporta só a seleção;
-          //           senão, exporta todas as linhas do resultado
-          const selected = tbl.getSelectedContexts("res").map(c => c.getObject()) || [];
-          const all = resModel.getProperty("/rows") || [];
-          const rows = selected.length ? selected : all;
-
+          // 🔎 coleta linhas respeitando filtros/sort/seleção
+          const rows = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
           if (!rows.length) {
             sap.m.MessageToast.show("Nada para exportar.");
             return;
           }
 
-          // 3) montar colunas dinamicamente, inferindo numéricos
-          const { EdmType } = sap.ui.require("sap/ui/export/library");
+          const exportLibrary = sap.ui.require("sap/ui/export/library");
           const Spreadsheet = sap.ui.require("sap/ui/export/Spreadsheet");
+          const EdmType = exportLibrary.EdmType;
 
-          // Heurística: coluna é numérica se todos os valores (não nulos) são números válidos
           const toNum = (v) => {
             if (v == null || v === "") return null;
             const n = Number(String(v).replace(/\./g, "").replace(",", "."));
             return Number.isFinite(n) ? n : null;
           };
-          const keys = Object.keys(rows[0] || {});
-          const isNumericCol = (k) => {
-            let any = false;
-            for (const r of rows) {
-              const val = r[k];
-              if (val == null || val === "") continue;
-              const n = toNum(val);
-              if (n == null) return false; // encontrou string não numérica
-              any = true;
-            }
-            return any; // tem pelo menos um número e nenhum inválido
-          };
-
-          // 4) normaliza dados numéricos para Number (Excel entender como número)
-          const numericCols = keys.filter(isNumericCol);
+          const NUMERIC = ["originalQty", "quantity", "qtyAward", "price", "icms", "ipi", "total", "poItem"];
           const data = rows.map(r => {
             const out = { ...r };
-            numericCols.forEach(k => { out[k] = toNum(out[k]); });
+            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
             return out;
           });
 
-          // 5) definição das colunas do XLSX
-          const columns = keys.map(k => {
-            const isNum = numericCols.includes(k);
-            const col = {
-              label: k,           // rótulo = nome do campo (ajuste se quiser nomes amigáveis)
-              property: k,
-              type: isNum ? EdmType.Number : EdmType.String
-            };
-            if (isNum) col.scale = 2; // casas decimais padrão; ajuste se quiser
-            return col;
-          });
+          const columns = [
+            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
+            { label: "Item (cód.)", property: "materialCode", type: EdmType.String, width: 16 },
+            { label: "Qtd Original", property: "originalQty", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Qtd Simulada", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Qtd p/ premiar", property: "qtyAward", type: EdmType.Number, width: 14, scale: 0 },
+            { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "ICMS", property: "icms", type: EdmType.Number, width: 10, scale: 2 },
+            { label: "IPI", property: "ipi", type: EdmType.Number, width: 10, scale: 2 },
+            { label: "Total", property: "total", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "Moeda", property: "currency", type: EdmType.String, width: 8 },
+            { label: "NCM", property: "ncm", type: EdmType.String, width: 12 },
+            { label: "PO Item", property: "poItem", type: EdmType.Number, width: 10, scale: 0 },
+            { label: "Tax Code", property: "taxCode", type: EdmType.String, width: 10 },
+            { label: "ItemId", property: "itemId", type: EdmType.String, width: 10 },
+            { label: "InvitationId (dbg)", property: "invitationId", type: EdmType.String, width: 20 }
+          ];
 
-          // 6) nome do arquivo
           const docId = (view.getModel("vm")?.getProperty("/header/docId")) || "Simulacao";
           const fileName = `Resultado_${docId}.xlsx`;
 
-          // 7) gera planilha
           const sheet = new Spreadsheet({
             workbook: { columns },
             dataSource: data,
@@ -798,6 +808,7 @@ sap.ui.define(
             .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
             .finally(() => sheet.destroy());
         }
+
 
 
       },
