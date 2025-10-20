@@ -121,7 +121,6 @@ sap.ui.define([
     });
 
     if (changed) {
-      console.log("Senhor SAP Debug: Garantindo que todos os paths de filtro existem no CM de forma segura.");
       modelData.conditions = conditions;
       cm.setData(modelData);
     }

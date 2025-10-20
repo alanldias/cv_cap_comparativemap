@@ -100,7 +100,7 @@ sap.ui.define([
         // colunas (visibilidade + ordem)
         const uiColumns = _readColumnsState(ctrl);
 
-        // se quiser, dá pra cortar campos gigantes aqui; por padrão, guarda tudo:
+        // por padrão, guarda tudo:
         return {
             _version: VERSION,
             savedAt: _now(),

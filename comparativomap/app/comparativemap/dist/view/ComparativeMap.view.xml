@@ -73,8 +73,8 @@
                 </items>
             </Table>
 
-           <Button id="btnsalvarvisao" icon="sap-icon://save" text="salvar Visao" press=".onSaveVisionPress"/>
-            <Button id="btncarregarvisao" icon="sap-icon://save" text="Carregar Visao" press=".onChooseVisionPress"/>
+           <!-- <Button id="btnsalvarvisao" icon="sap-icon://save" text="Salvar Visão" press=".onSaveVisionPress"/>
+            <Button id="btncarregarvisao" icon="sap-icon://save" text="Carregar Visão" press=".onChooseVisionPress"/> -->
 
 
             

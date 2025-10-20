@@ -246,7 +246,6 @@ sap.ui.define([
 
   function applyView(ctrl, viewObj) {
     if (!viewObj) return;
-    console.log("📝 Aplicando a visão:", viewObj.name, viewObj);
 
     const view = ctrl.getView();
     view.getModel("vm").setProperty("/appliedVisionName", viewObj.name);
@@ -266,7 +265,6 @@ sap.ui.define([
     // normaliza e injeta condições
     const rawConds = JSON.parse(viewObj.filtersJSON || "{}");
     const conds = _normalizeConditionsForUI(rawConds);
-    console.log("📬 Condições normalizadas:", JSON.stringify(conds));
 
     ctrl._pendingConditions = conds;
     ctrl.__lastAppliedConditions = conds;  // memoriza "último bom"
@@ -383,7 +381,6 @@ sap.ui.define([
 
   function _setAllConditionsCompat(cm, allConditions) {
     if (!cm) {
-      console.error("Senhor SAP avisa: O ConditionModel não foi encontrado! 😱");
       return;
     }
 
@@ -391,16 +388,13 @@ sap.ui.define([
     const modelData = cm.getData();
     // Limpa completamente o objeto de condições para começar do zero.
     modelData.conditions = {};
-    console.log("Senhor SAP Debug: Objeto de condições foi zerado.");
 
     // 2. Agora, vamos reconstruir o objeto de condições apenas com os filtros da visão
-    console.log("Senhor SAP Debug: Reconstruindo o objeto de condições com os dados da visão:", allConditions);
     if (allConditions) {
       Object.keys(allConditions).forEach(key => {
         const conditions = allConditions[key];
         // Só adiciona se realmente tiver alguma condição para aquele campo
         if (conditions && Array.isArray(conditions) && conditions.length > 0) {
-          console.log(`--> Adicionando condições para a chave: '${key}'`, conditions);
           modelData.conditions[key] = conditions;
         }
       });
@@ -409,11 +403,9 @@ sap.ui.define([
     // 3. Com o objeto de dados limpo e reconstruído, usamos setData() para substituir TUDO de uma vez.
     // Esta é uma operação atômica e segura.
     cm.setData(modelData);
-    console.log("Senhor SAP Debug: setData() executado. Estado atual do CM:", JSON.stringify(cm.getAllConditions()));
 
     // 4. Por fim, forçamos a UI a se atualizar com os novos dados
     cm.updateBindings(true);
-    console.log("Senhor SAP Debug: updateBindings(true) foi chamado para atualizar a tela.");
   }
 
   return {
