@@ -3,6 +3,7 @@ const cds = require("@sap/cds");
 const { LOG } = require("./lib/util/log");
 const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
 const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require("./lib/config");
+const { createSemaphore } = require("./lib/util/throttle");
 
 const { destPost } = require("./lib/http/destination");
 const {
@@ -24,7 +25,48 @@ const {
 } = require("./lib/soap/bapi-po-create");
 const { mapWithConcurrency } = require("./lib/util/concurrency");
 
+const POITEM_START = 1000;  // 01000
+const POITEM_STEP = 10;    // de 10 em 10
+const POITEM_WIDTH = 5;     // 5 dígitos com zero à esquerda
+const makePoItem = (idx) =>
+  String(POITEM_START + idx * POITEM_STEP).padStart(POITEM_WIDTH, "0");
+
 module.exports = function () {
+  const { FilterViews } = this.entities;
+
+   this.on("SaveView", async (req) => {
+    const {
+      name,
+      docId = null,
+      filtersJSON = "{}",
+      uiSortJSON = "{}",
+      uiGroupJSON = "{}",
+      uiColumnsJSON = "{}",
+    } = req.data || {};
+
+    if (!name) return req.error(400, "Nome da visão é obrigatório.");
+
+    const userId = req.user?.id || "anonymous";
+
+    const entry = {
+      name,
+      docId,
+      userId,
+      isPublic: true,
+      filtersJSON: typeof filtersJSON === "string" ? filtersJSON : JSON.stringify(filtersJSON || {}),
+      uiSortJSON:  typeof uiSortJSON  === "string" ? uiSortJSON  : JSON.stringify(uiSortJSON  || {}),
+      uiGroupJSON: typeof uiGroupJSON === "string" ? uiGroupJSON : JSON.stringify(uiGroupJSON || {}),
+      uiColumnsJSON: typeof uiColumnsJSON === "string" ? uiColumnsJSON : JSON.stringify(uiColumnsJSON || {})
+    };
+
+    console.log(entry + "dados")
+
+    const inserted = await INSERT.into(FilterViews).entries(entry);
+    // seleciona com managed preenchido
+    const saved = await SELECT.one.from(FilterViews).where({ ID: inserted.ID });
+    return saved;
+  });
+
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
@@ -103,13 +145,15 @@ module.exports = function () {
       const headerWithDoc = Object.assign({ docId }, header || {}, {
         supplierName: null,
       });
-      const itemsOut = results.map((r) => {
+      const itemsOut = results.map((r, idx) => {
         const { _invitationId, _itemId, ...pub } = r;
         const invId = _invitationId || null;
         const supplierName = invId ? nameByInvId.get(invId) || null : null;
         const supplierIdSap = invId ? vendorByInvId.get(invId) || null : null;
         const email = invId ? emailByInvId.get(invId) || null : null;
+
         return {
+          poItem: makePoItem(idx),           // 👈 novo campo gerado no backend
           ...pub,
           supplierName,
           SupplierCode: supplierIdSap,
@@ -188,97 +232,256 @@ module.exports = function () {
   });
 
   this.on("simularPO", async (req) => {
-    const { requests = [], concurrency} = req.data || {};
-    const LIMIT = Number(
-      Number.isFinite(concurrency) ? concurrency : process.env.CONCURRENCY || 4,
-    );
+    const {
+      requests = [],
+      concurrency,       // concorrência entre fornecedores (mapWithConcurrency)
+      chunkSize,         // tamanhos dos lotes por fornecedor
+      vendorParallel,    // paralelo por fornecedor (quantos chunks simultâneos dentro do fornecedor)
+      globalParallel     // limite global de chamadas SOAP simultâneas
+    } = req.data || {};
 
-    console.log(concurrency + "concurrency")
+    // Defaults + ENV overrides
+    const LIMIT = Number.isFinite(+concurrency) ? +concurrency :
+      Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
+    const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
+      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
 
-    LOG.infoL("[simularPO] START", { requests: requests.length, limit: LIMIT });
+    const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel) ? +vendorParallel :
+      Number.isFinite(+process.env.VENDOR_PARALLEL) ? +process.env.VENDOR_PARALLEL : Infinity;
+
+    const GLOBAL_PARALLEL = Number.isFinite(+globalParallel) ? +globalParallel :
+      Number.isFinite(+process.env.GLOBAL_PARALLEL) ? +process.env.GLOBAL_PARALLEL : Infinity;
+
+    LOG.infoL("[simularPO] START", {
+      requests: requests.length,
+      limit: LIMIT,
+      chunk: PER_VENDOR_CHUNK,
+      vendorParallel: PER_VENDOR_PARALLEL,
+      globalParallel: GLOBAL_PARALLEL
+    });
 
     try {
       if (!Array.isArray(requests) || requests.length === 0) return [];
 
+      // cria cliente SOAP 1x
       const client = await getBapiClient();
+      // semáforo global opcional
+      const globalSem = createSemaphore(GLOBAL_PARALLEL);
 
-      const mapper = async (r, idx) => {
-        const {
-          header = {},
-          items: rawItems = [],
-          schedules = [],
-          testRun = true,
-        } = r || {};
+      // mapeia 1 fornecedor
+      const mapper = async (r, idxReq) => {
+        const { header = {}, items: rawItems = [], schedules = [], testRun = true } = r || {};
         LOG.infoL("[mapper] header", {
-          idx,
-          vendor: header.vendor,
-          purchOrg: header.purchOrg,
-          compCode: header.compCode,
-          items: rawItems.length,
-          testRun,
+          idx: idxReq,
+          vendor: header.vendor, purchOrg: header.purchOrg, compCode: header.compCode,
+          items: rawItems.length, testRun
         });
 
+        // 1) resolve TaxCode (uma vez, pro conjunto inteiro do fornecedor)
         const items = rawItems.map(({ taxCode, ...rest }) => rest);
         const enrichInput = items.map((it, i) => ({
           __idx: i,
           Supplier: padLeft(String(header.vendor || ""), 10, "0"),
           Material: it.material || "",
           PurchasingOrganization: header.purchOrg,
-          Plant: it.plant,
+          Plant: it.plant
         }));
 
-        // força erro se faltar TaxCode (mensagem já detalhada sai do taxcode.js)
         const enriched = await enrichWithTaxCode(enrichInput, {
           headerVendor: padLeft(String(header.vendor || ""), 10, "0"),
-          throwIfMissing: true,
+          throwIfMissing: true
         });
 
-        // aplica resultado
+        const normPo = v => {
+          const s = String(v ?? "").trim();
+          if (!s) return null;
+          const n = Number(s.replace(/\D/g, "")); // aceita "01000" -> 1000
+          return Number.isFinite(n) ? n : null;
+        };
+
+        // 1.1) normaliza e valida poItem dos itens vindos do front
+        for (const [i, it] of items.entries()) {
+          const n = normPo(it.poItem);
+          if (n == null) {
+            throw new Error(`Item sem poItem no request #${idxReq + 1} (idx=${i + 1}). Envie poItem a partir do front.`);
+          }
+          it.poItem = n; // garante número
+        }
+
+        // 1.2) checa duplicados dentro do mesmo fornecedor
+        const seen = new Set();
+        const dups = [];
+        for (const it of items) {
+          if (seen.has(it.poItem)) dups.push(it.poItem);
+          seen.add(it.poItem);
+        }
+        if (dups.length) {
+          throw new Error(
+            `poItem duplicado no request do fornecedor ${header.vendor}: ${Array.from(new Set(dups)).join(", ")}`
+          );
+        }
+
+        items.sort((a, b) => a.poItem - b.poItem);
+
         for (const row of enriched) {
           if (row?.__idx != null) {
             items[row.__idx].taxCode = row.TaxCode ?? undefined;
-            items[row.__idx].purchasingInfoRecord =
-              row.PurchasingInfoRecord ?? undefined;
+            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
           }
         }
-        const missing = items.filter((x) => !x.taxCode).length;
-        LOG.infoL("[mapper] taxcode", {
-          idx,
-          resolved: items.length - missing,
-          missing,
+        const missing = items.filter(x => !x.taxCode).length;
+        LOG.infoL("[mapper] taxcode", { idx: idxReq, resolved: items.length - missing, missing });
+        if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`);
+
+        // 2) quebra em chunks por fornecedor
+        const chunks = chunkArray(items, PER_VENDOR_CHUNK);
+        LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
+
+        const tasks = chunks.map((chunkItems, cidx) => async () => {
+          const t0 = Date.now();
+          try {
+            const schedForChunk = filterSchedulesForChunk(schedules, chunkItems);
+
+            const inputPoPad = chunkItems.map(it => padLeft(String(it.poItem), 5, '0'));
+
+            const payload = buildSmokePayload(header, chunkItems, schedForChunk, testRun);
+
+            LOG.infoL("[mapper] chunk IN", { idx: `${idxReq}.${cidx + 1}`, poItems: inputPoPad });
+
+            const resp = await globalSem.run(async () => {
+              const rSoap = await client.BAPI_PO_CREATE1Async(payload);
+              return Array.isArray(rSoap) ? rSoap[0] : rSoap;
+            });
+
+            const out = normalizeBapiResult(resp, !!payload.TESTRUN);
+
+            // >>> REMAPEIA: substitui o poItem retornado pela BAPI pelo que veio do front (mesma ordem)
+            const before = (out.itens || []).map(i => i.poItem);
+            out.itens = (out.itens || []).map((i, k) => ({ ...i, poItem: inputPoPad[k] || i.poItem }));
+
+            LOG.infoL("[mapper] chunk OUT remap", {
+              idx: `${idxReq}.${cidx + 1}`,
+              from: before,
+              to: out.itens.map(i => i.poItem)
+            });
+
+            LOG.infoL("[mapper] CHUNK SOAP OK", {
+              idx: `${idxReq}.${cidx + 1}`,
+              itens: out.itens?.length || 0,
+              ms: Date.now() - t0,
+              inflight: globalSem.stats().inFlight,
+              queued: globalSem.stats().queued
+            });
+            return out;
+          } catch (e) {
+            LOG.errorL("[mapper] CHUNK SOAP ERROR", {
+              idx: `${idxReq}.${cidx + 1}`,
+              ms: Date.now() - t0,
+              err: e?.message || String(e)
+            });
+            return { __chunkError: true, __chunkIndex: cidx, message: e?.message || String(e) };
+          }
         });
 
-        if (missing)
-          throw new Error(
-            `Não foi possível obter TaxCode para ${missing} item(ns).`,
-          );
+        // 4) executa os chunks com limite por fornecedor
+        const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
 
-        const payload = buildSmokePayload(header, items, schedules, testRun);
-        const resp = await client.BAPI_PO_CREATE1Async(payload);
-        const r0 = Array.isArray(resp) ? resp[0] : resp;
-        const out = normalizeBapiResult(r0, !!payload.TESTRUN);
-        LOG.infoL("[mapper] SOAP OK", {
-          idx,
-          returnMsgs: out.returnMessages?.length || 0,
-          itens: out.itens?.length || 0,
-        });
-        return out;
+        return mergeChunkResults(chunkResults, header);
       };
 
+      // concorrência entre fornecedores 
       const results = await mapWithConcurrency(requests, LIMIT, mapper);
       LOG.infoL("[simularPO] END", { results: results.length });
       return results;
+
     } catch (e) {
       const info = safeErr(e);
-      LOG.errorL("[simularPO] ERROR", {
-        msg: info.message || info.code || "Erro",
-        status: info.responseStatus,
-      });
-      return req.error(
-        502,
-        `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`,
-      );
+      LOG.errorL("[simularPO] ERROR", { msg: info.message || info.code || "Erro", status: info.responseStatus });
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`);
     }
   });
+
+  function chunkArray(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
+  }
+
+  // Executa uma lista de funções-async (tasks) com limite de paralelismo.
+  // Se limit for Infinity/undefined/0/negativo, roda tudo em paralelo (Promise.all).
+  async function runTasksWithLimit(tasks, limit) {
+    if (!Array.isArray(tasks) || tasks.length === 0) return [];
+    const n = Number(limit);
+    if (!Number.isFinite(n) || n <= 0 || n >= tasks.length) {
+      return Promise.all(tasks.map((t) => t()));
+    }
+    const out = new Array(tasks.length);
+    let i = 0;
+    const workers = Math.min(n, tasks.length);
+    async function worker() {
+      while (true) {
+        const idx = i++;
+        if (idx >= tasks.length) break;
+        try {
+          out[idx] = await tasks[idx]();
+        } catch (err) {
+          out[idx] = { __chunkError: true, __chunkIndex: idx, message: err?.message || String(err) };
+        }
+      }
+    }
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+    return out;
+  }
+
+  function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
+    if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
+    const norm = v => {
+      const s = String(v ?? "").trim();
+      if (!s) return null;
+      const n = Number(s.replace(/\D/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const poSet = new Set(chunkItems.map(it => norm(it.poItem)).filter(v => v != null));
+    return allSchedules.filter(s => poSet.has(norm(s?.poItem)));
+  }
+
+  function pickHeaderFallback(headerIn) {
+    return {
+      empresa: headerIn.compCode,
+      orgCompras: headerIn.purchOrg,
+      grupoCompras: headerIn.purchGroup,
+      fornecedor: padLeft(String(headerIn.vendor || ""), 10, "0"),
+      moeda: headerIn.currency,
+      incoterms1: headerIn.incoterms1,
+      incoterms2: headerIn.incoterms2,
+      criadoEm: new Date().toISOString().slice(0, 10),
+      criadoPor: "INT_MAPA",
+      poNumber: ""
+    };
+  }
+
+  function mergeChunkResults(chunksNorm = [], headerIn) {
+    const ok = chunksNorm.filter(c => !c.__chunkError);
+    const err = chunksNorm.filter(c => c.__chunkError);
+
+    // header: usa do primeiro OK; senão um fallback com dados do header de entrada
+    const header = ok[0]?.header || pickHeaderFallback(headerIn);
+
+    const itens = ok.flatMap(c => Array.isArray(c.itens) ? c.itens : []);
+    const msgsOk = ok.flatMap(c => Array.isArray(c.returnMessages) ? c.returnMessages : []);
+    const msgsErr = err.map(e => ({
+      type: "E", id: "CHUNK", number: "000",
+      message: e.message || "Falha ao processar chunk", logNo: null
+    }));
+    const mensagens = [...msgsOk, ...msgsErr];
+
+    return {
+      testRun: true,
+      header,
+      itens,
+      returnMessages: mensagens,
+      mensagens
+    };
+  }
 };

@@ -44,7 +44,7 @@
       "db": {
         "kind": "sqlite",
         "credentials": {
-          "database": "dev.sqlite"
+          "database": "db.sqlite"
         }
       },
       "[production]": {

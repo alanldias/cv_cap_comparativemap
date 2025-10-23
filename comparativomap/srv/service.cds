@@ -5,7 +5,20 @@ service service {
 
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
 
-  type QuoteRow       : {
+  entity FilterViews as projection on comparativemap.FilterViews;
+
+    action SaveView(
+    name          : String,
+    docId         : String,
+    filtersJSON   : LargeString,
+    uiSortJSON    : LargeString,
+    uiGroupJSON   : LargeString,
+    uiColumnsJSON : LargeString
+  ) returns FilterViews;
+
+
+  type QuoteRow             : {
+    poItem                          : String(5); // ex.: 01000, 01010, 01020...
     ItemId                          : String(30);
     itemDescription                 : String(255); // mantido como está
     quantity                        : Decimal(15, 3);
@@ -30,14 +43,19 @@ service service {
     // TAX_CODE                        : String(10);
     MaterialCode                    : String(120);
     grupo_de_materias               : String(80);
+    Incoterms                       : String;
     supplierName                    : String(255);
-    itemId            : Integer64;      // novo (opcional, mantemos os dois por compatibilidade)
-    invitationId      : String(200);    // novo
-    invitationEmail   : String(200);    // novo (fallback útil)
-    DELIVERY_DATE_RAW               : String(50);
+    itemId                          : Integer64; // novo (opcional, mantemos os dois por compatibilidade)
+    invitationId                    : String(200); // novo
+    invitationEmail                 : String(200); // novo (fallback útil)
+    NumeroItensRequisicao           : Integer;
+    CodigoRFQ                       : Integer;
+    CodigoRequisicao                : Integer;
+    PrazoEntrega                    : String;
+    DeliveryDate               : String(50);
   }
 
-  type AribaHeader    : {
+  type AribaHeader          : {
     docId                  : String;
     tipoPedido             : String;
     purchasingOrganization : String;
@@ -50,88 +68,32 @@ service service {
     moeda                  : String(3);
   };
 
-  type QuotesResponse : {
+  type QuotesResponse       : {
     header : AribaHeader;
     items  : many QuoteRow;
   };
 
-  function GetQuotes(docId: String)                  returns QuotesResponse;
+  function GetQuotes(docId: String)                            returns QuotesResponse;
 
-  /* ==================== Tipos p/ Simulação BAPI ==================== */
-
-  // Entrada do item na simulação: herda o que vem do Ariba
-  // e acrescenta campos usados na sua lógica (PREQ_*).
-  // Também expõe "itemDescription" como alias opcional
-  // para cobrir o typo "itemDescription" sem quebrar nada.
-  type SimulateItemInput    : QuoteRow {
-    lifnr          : String(10);
-    PREQ_NO         : String(10);
-    PREQ_ITEM       : String(5);
-    itemDescription : String(255); // opcional, alias aceito pelo backend
-  };
-
-  // Mensagem retornada pela BAPI
-  type BapiMessage          : {
-    type : String(1); // 'S', 'W', 'E', 'A', ...
-    text : String(220);
-  };
-
-  // Linha da tabela simulada que você exibe no fragment
-  type SimulateItemResult   : {
-    item           : String(5);
-    material       : String(18);
-    descricao      : String(255);
-    centro         : String(100);
-    quantidade     : Decimal(15, 3);
-    unidade        : String(12);
-    precoUnitario  : Decimal(15, 2);
-    precoTotal     : Decimal(15, 2);
-    taxCode        : String(10);
-    icms           : Decimal(15, 2);
-    ipi            : Decimal(15, 2);
-    pis            : Decimal(15, 2);
-    cofins         : Decimal(15, 2);
-    st             : Decimal(15, 2);
-    precoBase      : Decimal(15, 2);
-    moeda          : String(3);
-    grupoMateriais : String(80);
-    categoriaItem  : String(40);
-    preqNo         : String(10);
-    preqItem       : String(5);
-    lifnr          : String(10);
-  };
-
-  // Payload de retorno completo
-  type SimulateBapiResponse : {
-    success       : Boolean;
-    messages      : many BapiMessage;
-    purchaseOrder : String(20); // pode vir null em TESTRUN
-    tabelaItens   : many SimulateItemResult;
-  };
-
-  /* ==================== Action de Simulação (UNBOUND) ==================== */
-  action   SimulateBapiPoCreate(header: AribaHeader,
-                                items: many SimulateItemInput) returns SimulateBapiResponse;
 
   // === Tipos da premiação ===
-type SupplierBidInput : {
-  itemId            : Integer64;     // ID do item do evento (ex.: 4094721049)
-  invitationId      : String(200);   // invitationId COMPLETO: "NNNNNNNNN_email@domínio.com"
-  winningSplitType  : Integer;       // 1 = percentual (default no backend)
-  winningSplitValue : Decimal(9,3);  // ex.: 100
-  bidType           : String(20);    // ex.: 'Primary'
-}
-@odata.draft.enabled
-  action CreateScenario(
-    eventId      : String,
-    title        : String,
-    scenarioType : Integer,     // ex.: 0 (manual)
-    supplierBids : many SupplierBidInput
-  ) returns {
-    success        : Boolean;
-    scenarioId     : String;
-    aribaResponse  : LargeString;  // eco do que o Ariba devolver
-    correlationId  : String;
+  type SupplierBidInput     : {
+    itemId            : Integer64; // ID do item do evento (ex.: 4094721049)
+    invitationId      : String(200); // invitationId COMPLETO: "NNNNNNNNN_email@domínio.com"
+    winningSplitType  : Integer; // 1 = percentual (default no backend)
+    winningSplitValue : Decimal(9, 3); // ex.: 100
+    bidType           : String(20); // ex.: 'Primary'
+  }
+
+  @odata.draft.enabled
+  action   CreateScenario(eventId: String,
+                          title: String,
+                          scenarioType: Integer, // ex.: 0 (manual)
+                          supplierBids: many SupplierBidInput) returns {
+    success       : Boolean;
+    scenarioId    : String;
+    aribaResponse : LargeString; // eco do que o Ariba devolver
+    correlationId : String;
   };
 
   // ==== Axel ====
@@ -238,6 +200,9 @@ type SupplierBidInput : {
   // Action única (agora sempre em lote)
   // --------------------------------------
   action   simularPO(requests: array of SimulacaoPORequest,
-                     concurrency: Integer default 4) returns array of SimulacaoPOResult;
+                     concurrency: Integer default 4)           returns array of SimulacaoPOResult;
+
+
+                     
 
 }

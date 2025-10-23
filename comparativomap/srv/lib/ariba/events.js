@@ -18,6 +18,43 @@ const moneyObj = (term) => {
     : { amount: null, currency: null };
 };
 
+function addTzColon(s) {
+  return typeof s === "string"
+    ? s.replace(/([+-]\d{2})(\d{2})$/, "$1:$2")
+    : s;
+}
+
+function parseApiDate(raw) {
+  if (!raw) return null;
+  const norm = addTzColon(String(raw));
+  const d = new Date(norm);
+  return isNaN(d) ? null : d;
+}
+
+// *** NOVO: formato técnico para BAPI/UI: "YYYY-MM-DD" ***
+function toEdmDateFromApi(raw, tz = "America/Sao_Paulo") {
+  const d = parseApiDate(raw);
+  if (!d) return null;
+  // Extrai a data no fuso desejado, sem ambiguidade (yyyy-mm-dd):
+  const y = new Intl.DateTimeFormat("en-CA", { timeZone: tz, year: "numeric" }).format(d);
+  const m = new Intl.DateTimeFormat("en-CA", { timeZone: tz, month: "2-digit" }).format(d);
+  const day = new Intl.DateTimeFormat("en-CA", { timeZone: tz, day: "2-digit" }).format(d);
+  return `${y}-${m}-${day}`;
+}
+
+// (opcional) string "bonita" para exibição
+function formatNiceDate(raw, tz = "America/Sao_Paulo") {
+  const d = parseApiDate(raw);
+  if (!d) return null;
+  const date = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: tz, year: "numeric", month: "2-digit", day: "2-digit"
+  }).format(d);
+  const time = new Intl.DateTimeFormat("pt-BR", {
+    timeZone: tz, hour: "2-digit", minute: "2-digit"
+  }).format(d);
+  return `${date} \n ${time}`;
+}
+
 function pickSupplierNameFromRows(rows) {
   if (!Array.isArray(rows)) return null;
   const hit = rows.find(
@@ -122,6 +159,11 @@ async function fetchSupplierBids(docId) {
       const qv = byId["QUANTITY"]?.value?.quantityValue;
       const ext = moneyObj(byId["EXTENDEDPRICE"]);
 
+      // --- datas ---
+      const reqDateRaw = byId["REQUESTDELIVERYDATE"]?.value?.dateValue;
+      const deliveryEdm  = toEdmDateFromApi(reqDateRaw);  // "YYYY-MM-DD"
+      const deliveryNice = formatNiceDate(reqDateRaw);     // "dd/MM/yyyy \n HH:mm" (opcional)
+
       const mapped = {
         ItemId: itemId,
         itemDescription: targetRow?.item?.title ?? null,
@@ -154,10 +196,15 @@ async function fetchSupplierBids(docId) {
         ItemCategory: byId["ItemCategory"]?.value?.simpleValue ?? null,
         MaterialCode: byId["MaterialCode"]?.value?.simpleValue ?? null,
         grupo_de_materias: byId["MaterialGroup"]?.value?.simpleValue ?? null,
-        DELIVERY_DATE_RAW:
-          byId["REQUESTDELIVERYDATE"]?.value ??
-          byId["REQUESTDELIVERYDATE"] ??
-          null,
+        Incoterms: byId["Incoterms"]?.value?.simpleValue ?? null,
+        NumeroItensRequisicao: byId["RequisitionLineItemNumber"]?.value?.simpleValue ?? null,
+        CodigoRFQ: byId["RFQId"]?.value?.simpleValue ?? null,
+        PrazoEntrega: byId["LEADTIME"]?.value?.simpleValue ?? null,
+
+        // *** datas padronizadas ***
+        DeliveryDateEdm: deliveryEdm,        // "YYYY-MM-DD" (para BAPI)
+        DeliveryDateNice: deliveryNice,      // "dd/MM/yyyy \n HH:mm" (UI opcional)
+        DeliveryDate: deliveryEdm,           // compat: DeliveryDate = "YYYY-MM-DD"
       };
       results.push({ ...mapped, _invitationId: invId, _itemId: itemId });
     }

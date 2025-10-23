@@ -17,7 +17,12 @@ sap.ui.define(
     "sap/m/MessageToast",
     "sap/m/MessageBox",
     "sap/ui/Device",
-    "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier"
+    "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
+    "sap/ui/export/Spreadsheet",
+    "sap/ui/export/library",
+    "comparativemap/comparativemap/controller/helpers/filtros",
+    "comparativemap/comparativemap/controller/prefs/DraftStore"
+
   ],
   function (
     Controller,
@@ -37,10 +42,15 @@ sap.ui.define(
     MessageToast,
     MessageBox,
     Device,
-    Build
+    Build,
+    Spreadsheet,
+    exportLibrary,
+    Filtros,
+    Drafts
+
   ) {
     "use strict";
-
+    const EdmType = exportLibrary.EdmType;
     return Controller.extend(
       "comparativemap.comparativemap.controller.ComparativeMap",
       {
@@ -50,37 +60,144 @@ sap.ui.define(
           this.getView().setModel(Models.createVM(), "vm");
           this.getView().setModel(Models.createQM(), "qm");
 
+          const view = this.getView();
+          const vm = view.getModel("vm");
+          const qm = view.getModel("qm");
+
+          if (vm?.setSizeLimit) vm.setSizeLimit(10000);
+          if (qm?.setSizeLimit) qm.setSizeLimit(10000);
+
+          let res = view.getModel("res");
+          if (!(res instanceof sap.ui.model.json.JSONModel)) {
+            res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
+            view.setModel(res, "res");
+          }
+          res.setSizeLimit(5000);
+
+
           this._prefs = PrefsStore.load();
-          const allowedGroups = ["supplierName", "itemId"];
+          const allowedGroups = [
+            "supplierName", "itemId", "PLANT", "currency",
+            "grupo_de_materias", "MaterialCode", "ItemCategory"
+          ];
           if (!allowedGroups.includes(this._prefs.group?.key)) {
             this._prefs.group = { key: null, desc: false };
             PrefsStore.save(this._prefs);
-          };
+          }
+
           this.mGroupFunctions = {
             supplierName: (ctx) => {
               const v = ctx.getProperty("supplierName") || "";
-              const key = v || "__noSupplier__";
-              const text = v || "(Sem fornecedor)";
-              return { key, text };
+              return { key: v || "__noSupplier__", text: v || "(Sem fornecedor)" };
             },
             itemId: (ctx) => {
               const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
               const v = raw == null ? "" : String(raw);
-              const key = v || "__noItemId__";
-              const text = v ? `Item ${v}` : "(Sem ItemId)";
-              return { key, text };
+              return { key: v || "__noItemId__", text: v ? `Item ${v}` : "(Sem ItemId)" };
+            },
+            PLANT: (ctx) => {
+              const v = ctx.getProperty("PLANT") || "";
+              return { key: v || "__noPlant__", text: v || "(Sem Centro)" };
+            },
+            currency: (ctx) => {
+              const v = ctx.getProperty("currency") || "";
+              return { key: v || "__noCurr__", text: v || "(Sem Moeda)" };
+            },
+            grupo_de_materias: (ctx) => {
+              const v = ctx.getProperty("grupo_de_materias") || "";
+              return { key: v || "__noGrpMat__", text: v || "(Sem Grupo Mat.)" };
+            },
+            MaterialCode: (ctx) => {
+              const v = ctx.getProperty("MaterialCode") || "";
+              return { key: v || "__noMatCode__", text: v || "(Sem Código Mat.)" };
+            },
+            ItemCategory: (ctx) => {
+              const v = ctx.getProperty("ItemCategory") || "";
+              return { key: v || "__noItemCat__", text: v || "(Sem Categoria)" };
             }
           };
 
           this._vs = ViewSettingsCmp.create(
-            this.getView(),
+            view,
             this._prefs,
             this._getDistinct.bind(this),
-            this.mGroupFunctions,
+            this.mGroupFunctions
           );
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
+
+          const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
+          this.getView().setModel(ui, "ui");
+
+          // deixa tudo compacto (baixa a altura das linhas/inputs)
+          this.getView().addStyleClass("sapUiSizeCompact");
+
+          // monta a partir da tabela usando **id curto**
+          const tbl = this.byId("tblDocs");
+          tbl.getBinding("items").attachDataReceived(() => {
+            // Ajuste aqui para o nome exportado
+            Filtros.updateFilterBarLabel(this);
+          });
+          const colsMap = {};
+          const colList = [];
+          const prefix = this.getView().getId() + "--"; // para remover do getId()
+
+          (tbl?.getColumns() || []).forEach((c) => {
+            const longId = c.getId();
+            const shortId = longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
+            const label = c.getHeader()?.getText?.() || shortId;
+            colsMap[shortId] = c.getVisible();    // estado inicial fiel ao que está no XML
+            colList.push({ id: shortId, label });
+          });
+
+          ui.setProperty("/columns", colsMap);
+          ui.setProperty("/columnList", colList);
+
+
+          Filtros.init(this);
+
+          Drafts.offerRestoreOnEnter(this);
+
+          // Autosave ao sair/recarregar a página (failsafe)
+          this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
+          window.addEventListener("beforeunload", this._onUnloadSave);
+
         },
+
+        onSaveVisionPress: function () {
+          PrefsStore.openSaveViewDialog(this);
+        },
+
+        onChooseVisionPress: function () {
+          // Lista do backend (filtrada pelo docId caso seja true(coloquei false)) e aplica ao escolher
+          PrefsStore.openChooseViewDialog(this, { docScoped: false });
+        },
+
+        // ===== DEV: abrir fragment com mock =====
+        // onDevOpenResultado: function () {
+        //   const view = this.getView();
+        //   const rows = [
+        //     {
+        //       supplierName: "Fornecedor A",
+        //       materialCode: "MAT-0001",
+        //       originalQty: 120, quantity: 50, qtyAward: 10,
+        //       price: "15.90", currency: "BRL",
+        //       icms: "3.45", ipi: null, total: "795.00",
+        //       ncm: "1234.56.78", poItem: "10", taxCode: "T1",
+        //       itemId: "IT-001", invitationId: "INV-AAA"
+        //     },
+        //     {
+        //       supplierName: "Fornecedor B",
+        //       materialCode: "MAT-0002",
+        //       originalQty: 80, quantity: 80, qtyAward: 20,
+        //       price: "7.30", currency: "BRL",
+        //       icms: "", ipi: "0.00", total: "584.00",
+        //       ncm: "8765.43.21", poItem: "20", taxCode: "T2",
+        //       itemId: "IT-002", invitationId: "INV-BBB"
+        //     }
+        //   ];
+        //   Dialogs.openResultDialog(view, rows, this);
+        // },
 
         /* ====== BUSCAR ====== */
         async onBuscar() {
@@ -95,7 +212,28 @@ sap.ui.define(
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
             if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
 
-            // ✅ limpar seleção e caches da simulação antes de carregar novos dados
+            Filtros.reset(this);
+
+            const binding = tbl?.getBinding("items");
+            if (binding) {
+              binding.filter([], sap.ui.model.FilterType.Application);
+              binding.filter([], sap.ui.model.FilterType.Control);
+              binding.sort(null);
+            }
+            view.byId("vsdFilterBar")?.setVisible(false);
+            view.byId("vsdFilterLabel")?.setText("");
+
+            this._prefs = Object.assign({}, this._prefs, {
+              filter: {
+                fornecedor: [], moeda: [], centro: [], grupoMat: [], ncm: [],
+                onlyTax: false, precoMin: null, precoMax: null, qtdMin: null, qtdMax: null
+              },
+              sort: { key: null, desc: false },
+              group: { key: null, desc: false }
+            });
+            this._vs.setPrefs(this._prefs);
+            PrefsStore.save(this._prefs);
+
             tbl?.removeSelections(true);
             qm?.setProperty("/idByKey", {});
             qm?.setProperty("/simSourceRows", []);
@@ -106,10 +244,8 @@ sap.ui.define(
 
             const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
               ...r,
-              // ⚙️ normalizações p/ agrupar/ordenar
-              itemId: r.itemId ?? r.ItemId ?? null,                  // agrupamento por Item
-              price: (r.price !== undefined && r.price !== null)     // sort numérico por preço
-                ? Number(r.price) : r.price,
+              itemId: r.itemId ?? r.ItemId ?? null,
+              price: (r.price !== undefined && r.price !== null) ? Number(r.price) : r.price,
               _originalQty: Number(r.quantity) || 0
             }));
 
@@ -117,17 +253,23 @@ sap.ui.define(
             vm.setProperty("/rows", rows);
             vm.setProperty("/headerRows", res?.header ? [res.header] : []);
 
-            // rebind + garantir que nada ficou selecionado
+            const distinct = {
+              supplierName: this._distinct(rows, "supplierName"),
+              currency: this._distinct(rows, "currency"),
+              PLANT: this._distinct(rows, "PLANT"),
+              grupo_de_materias: this._distinct(rows, "grupo_de_materias"),
+              ncm: this._distinct(rows, "ncm"),
+            };
+            vm.setProperty("/distinct", distinct);
+
             tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
             tbl?.removeSelections(true);
 
-            // reaplicar preferências (usa seu ViewSettingsCmp)
-            this._vs?.applyGroupSortFromPrefs();
-            this._vs?.applyFiltersFromPrefs();
-
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
+            // Drafts.save(this);
           } catch (e) {
+            /* eslint-disable no-console */
             console.error("[onBuscar] ERRO:", e);
             MessageBox.error("Falha ao buscar dados: " + (e.message || e));
           } finally {
@@ -145,33 +287,59 @@ sap.ui.define(
           if (max && v > max) v = max;
           row.quantity = Math.floor(v);
           ctx.getModel().checkUpdate(true);
+          Drafts.autoSave(this);
         },
-
         onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
         },
 
-        /* ====== SIMULAR ====== */
+        onOpenMdcFilters() { Filtros.openDialog(this); },
+        onCloseFiltersDialog() { Filtros.closeDialog(this); },
+        onResetMdcFilters() { Filtros.reset(this); },
+        onFilterSearch() {
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
+          this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
+          Filtros.onFilterSearch(this);
+
+          // memoriza último bom antes do autosave
+          const cm = this.getView().getModel("cm");
+          if (cm?.getAllConditions) {
+            this.__lastAppliedConditions = (function compact(r) {
+              const out = {}; const raw = r();
+              Object.keys(raw || {}).forEach(k => {
+                const kept = (raw[k] || []).filter(c => {
+                  if (!c || c.isEmpty === true) return false;
+                  const v = Array.isArray(c.values) ? c.values : [];
+                  return c.operator === "BT" ? (v[0] !== "" && v[0] != null && v[1] !== "" && v[1] != null)
+                    : (v[0] !== "" && v[0] != null);
+                });
+                if (kept.length) out[k] = kept;
+              }); return out;
+            })(cm.getAllConditions.bind(cm));
+          }
+          Drafts.autoSave(this); // debounce
+        },
+        onOpenColumnsDialog() { Filtros.onOpenColumnsDialog(this); },
+
+        /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
+          console.log("botão chamado e atualizado");
+
           const view = this.getView();
           const vm = view.getModel("vm");
           const qm = view.getModel("qm");
 
-          // limpa apenas o modelo "res"
-          let resModel = view.getModel("res");
-          if (!resModel) {
-            resModel = new sap.ui.model.json.JSONModel({ rows: [] });
-            view.setModel(resModel, "res");
-          } else {
-            resModel.setData({ rows: [] });
-          }
+          const resModel = this.getView().getModel("res");
+          if (resModel?.setSizeLimit) resModel.setSizeLimit(5000);
+          resModel.setProperty("/header", {});
+          resModel.setProperty("/rows", []);
+          resModel.setProperty("/totals", {});
 
           console.groupCollapsed("[SIMULAR] clique");
           try {
             const tbl = this.byId("tblDocs");
             if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
 
-            // seleção atual (sem contexts “fantasma”)
             const selItems = tbl.getSelectedItems();
             if (!selItems.length) throw new Error("Selecione pelo menos 1 item para simular.");
 
@@ -185,14 +353,11 @@ sap.ui.define(
             }
             Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
-            // índices para casar BAPI → Ariba
             qm.setProperty("/simSourceRows", rows);
             Mapper.prepareQMFromSelection(rows, qm);
 
-            // 🔁 MONTA 1 REQUEST POR FORNECEDOR
             const requests = Build.buildRequestsFromSelection(rows, vm);
 
-            // Validações por request + itens
             const headerMissing = [];
             const itemMissing = [];
             requests.forEach((req, ridx) => {
@@ -229,38 +394,31 @@ sap.ui.define(
               currency: r.header.currency
             })));
 
-            // ---------------------------
-            // Mapa local vendor -> sourceRows e payload sem sourceRows
-            // ---------------------------
             const normVendor = v => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
-
-            // guarda localmente as sourceRows por fornecedor (NÃO envie ao backend)
             const vendorToSrc = new Map(
               (requests || []).map(req => [normVendor(req?.header?.vendor), Array.isArray(req.sourceRows) ? req.sourceRows : []])
             );
+            const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({ header, items, schedules, testRun }));
 
-            // payload limpo (sem sourceRows) para a action do CAP
-            const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({
-              header, items, schedules, testRun
-            }));
+            function replacer(key, value) {
+              if (key === 'items' && Array.isArray(value) && value.length > 5) {
+                return value.slice(0, 5).concat('... [mais itens ocultos]');
+              }
+              return value;
+            }
+            console.log(JSON.stringify(payloadRequests, replacer, 2) + "payload");
 
             sap.ui.core.BusyIndicator.show(0);
 
-            // 🔧 chama action e trata ARRAY de resultados (1 por fornecedor)
             const results = await ODataSvc.simularPO(view, payloadRequests, 4);
             Debug.dbg("Resultados da BAPI (array)", results);
 
-            // 1) erro estrutural (em algum request)
             const structuralErrors = (Array.isArray(results) ? results : [])
               .filter(r => r?.error || r?.success === false);
             if (structuralErrors.length) {
               const firstErr = structuralErrors[0];
               if (Dialogs.showError) {
-                Dialogs.showError(
-                  "Erro na simulação",
-                  firstErr?.message || "Falha ao simular.",
-                  firstErr
-                );
+                Dialogs.showError("Erro na simulação", firstErr?.message || "Falha ao simular.", firstErr);
               } else {
                 MessageBox.error(firstErr?.message || "Falha ao simular.", {
                   details: JSON.stringify(firstErr, null, 2),
@@ -271,7 +429,6 @@ sap.ui.define(
               return;
             }
 
-            // 2) mensagens BAPI agregadas (E/A interrompe)
             const allMsgs = (Array.isArray(results) ? results : [])
               .flatMap(r => r?.returnMessages || r?.mensagens || []);
             const hasErrorMsg = allMsgs.some(m => m.type === "E" || m.type === "A");
@@ -281,7 +438,6 @@ sap.ui.define(
               return;
             }
 
-            // 3) monta linhas do fragment a partir de TODOS os fornecedores (com srcRows por fornecedor!)
             const resultsArr = Array.isArray(results) ? results : [];
             let resRows = [];
 
@@ -293,7 +449,6 @@ sap.ui.define(
               });
             } catch (err) {
               console.error("[SIMULAR] Erro ao montar resRows:", err);
-              // fallback robusto: usa simSourceRows completo
               try {
                 const globalSrc = qm.getProperty("/simSourceRows") || [];
                 resRows = resultsArr.flatMap(r => Mapper.buildResRowsFromBapiResult(r, qm, globalSrc));
@@ -305,7 +460,6 @@ sap.ui.define(
 
             Dialogs.openResultDialog(view, resRows, this);
 
-            // mensagens informativas/aviso
             if (allMsgs.length) Dialogs.showBapiMessages(allMsgs);
 
             console.groupEnd();
@@ -325,8 +479,7 @@ sap.ui.define(
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
-        }
-        ,
+        },
 
         /* ====== PREMIAÇÃO ====== */
         onAwardQtyChangeRes(ev) {
@@ -348,8 +501,7 @@ sap.ui.define(
           const vm = view.getModel("vm");
 
           const tbl = this._dlgRes?.getContent?.()[0];
-          const selected =
-            tbl?.getSelectedContexts("res").map((c) => c.getObject()) || [];
+          const selected = tbl?.getSelectedContexts("res").map((c) => c.getObject()) || [];
           if (!selected.length) {
             MessageToast.show("Selecione ao menos uma linha para premiar.");
             return;
@@ -357,9 +509,7 @@ sap.ui.define(
 
           const allRows = vm?.getProperty("/rows") || [];
           const supplierBids = AwardSvc.validarEMontarPayload(
-            allRows,
-            selected,
-            this._ensureInvitationResourceId.bind(this),
+            allRows, selected, this._ensureInvitationResourceId.bind(this)
           );
           if (!supplierBids) return;
 
@@ -382,13 +532,11 @@ sap.ui.define(
             sap.ui.core.BusyIndicator.hide();
             if (out?.success) {
               MessageBox.success(
-                `Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`,
+                `Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`
               );
               this._dlgRes?.close();
             } else {
-              MessageBox.warning(
-                "CreateScenario executou, porém sem success=true.",
-              );
+              MessageBox.warning("CreateScenario executou, porém sem success=true.");
             }
           } catch (e) {
             sap.ui.core.BusyIndicator.hide();
@@ -397,7 +545,7 @@ sap.ui.define(
           }
         },
 
-        /* ====== ViewSettings delegações ====== */
+        /* ====== ViewSettings: tela principal ====== */
         handleFilterButtonPressed() {
           this._vs.openFilterDialog((ev) =>
             this._vs.handleFilterDialogConfirm(ev, (p) => {
@@ -411,6 +559,7 @@ sap.ui.define(
             this._vs.handleSortDialogConfirm(ev, (p) => {
               this._prefs = p;
               PrefsStore.save(p);
+              Drafts.autoSave(this);
             }),
           );
         },
@@ -420,37 +569,69 @@ sap.ui.define(
               this._vs.handleGroupDialogConfirm(ev, (p) => {
                 this._prefs = p;
                 PrefsStore.save(p);
+                Drafts.autoSave(this);
               }),
             () => { },
           );
         },
 
-        onFilterSelectAllFornecedor() {
-          this._prefs.filter.fornecedor = this._getDistinct("supplierName");
-          PrefsStore.save(this._prefs);
-          this._vs.applyFiltersFromPrefs();
-          MessageToast.show("Fornecedor: selecionado tudo.");
-        },
-        onFilterClearFornecedor() {
-          this._prefs.filter.fornecedor = [];
-          PrefsStore.save(this._prefs);
-          this._vs.applyFiltersFromPrefs();
-          MessageToast.show("Fornecedor: seleção limpa.");
-        },
-        onFilterSelectAllNomeItem() {
-          this._prefs.filter.nomeItem = this._getDistinct("itemDescription");
-          PrefsStore.save(this._prefs);
-          this._vs.applyFiltersFromPrefs();
-          MessageToast.show("Nome do item: selecionado tudo.");
-        },
-        onFilterClearNomeItem() {
-          this._prefs.filter.nomeItem = [];
-          PrefsStore.save(this._prefs);
-          this._vs.applyFiltersFromPrefs();
-          MessageToast.show("Nome do item: seleção limpa.");
+        /**
+ * Coleta as linhas da tabela respeitando filtros/sort/agrupamento.
+ * Se houver seleção, retorna apenas os selecionados.
+ * Caso contrário, retorna TODAS as linhas do binding (já filtradas).
+ *
+ * @param {sap.m.Table} table - tabela (sap.m.Table)
+ * @param {string} modelName - nome do modelo usado no items (ex.: "vm" ou "res")
+ * @param {sap.ui.model.Model} modelFallback - modelo p/ fallback (ex.: view.getModel("vm"))
+ * @param {string} pathFallback - caminho p/ fallback (ex.: "/rows")
+ */
+        _collectRowsFromTable(table, modelName, modelFallback, pathFallback) {
+          if (!table) return [];
+
+          // 1) Seleção tem prioridade
+          const selected = (table.getSelectedContexts(modelName) || []).map(c => c.getObject());
+          if (selected.length) return selected;
+
+          // 2) Senão, coleta do binding (respeita filtros/sort/agrup.)
+          const binding = table.getBinding("items");
+          if (binding && typeof binding.getLength === "function") {
+            const len = binding.getLength();                 // tamanho pós-filtro
+            if (len > 0 && typeof binding.getContexts === "function") {
+              const ctxs = binding.getContexts(0, len);      // todas as contexts filtradas
+              return ctxs.map(c => c.getObject());
+            }
+          }
+
+          // 3) Fallback: tudo do modelo (sem filtros)
+          return modelFallback?.getProperty(pathFallback) || [];
         },
 
-        /* ====== Helpers “de ponte” ====== */
+
+        /* ====== ViewSettings: fragment Resultado ====== */
+        onResFilter() {
+          if (!this._vsRes) return;
+          this._vsRes.openFilterDialog(ev => {
+            this._vsRes.handleFilterDialogConfirm(ev, (newPrefs) => {
+              this._prefsRes = newPrefs; // persiste em memória do controller; se quiser salvar, crie um StoreRes
+            });
+          });
+        },
+        onResSort() {
+          if (!this._vsRes) return;
+          this._vsRes.openSortDialog(
+            ev => this._vsRes.handleSortDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
+            () => this._vsRes.applyGroupSortFromPrefs()
+          );
+        },
+        onResGroup() {
+          if (!this._vsRes) return;
+          this._vsRes.openGroupDialog(
+            ev => this._vsRes.handleGroupDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
+            () => this._vsRes.applyGroupSortFromPrefs()
+          );
+        },
+
+        // ===== Helpers =====
         _getDistinct(path) {
           const rows = this.getView().getModel("vm").getProperty("/rows") || [];
           const set = new Set();
@@ -460,7 +641,14 @@ sap.ui.define(
           });
           return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
         },
-
+        _distinct(list, prop) {
+          const set = new Set();
+          (list || []).forEach(r => {
+            const v = r?.[prop];
+            if (v !== undefined && v !== null && v !== "") set.add(String(v));
+          });
+          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
+        },
         _ensureInvitationResourceId(invId, email) {
           if (!invId) return null;
           const s = String(invId);
@@ -474,8 +662,156 @@ sap.ui.define(
             this._dlgRes.destroy(true);
             this._dlgRes = null;
           }
+          if (this._onUnloadSave) {
+            window.removeEventListener("beforeunload", this._onUnloadSave);
+            this._onUnloadSave = null;
+          }
         },
+        onExportExcel() {
+          const view = this.getView();
+          const vm = view.getModel("vm");
+          const tbl = view.byId("tblDocs");
+
+          // 🔎 coleta linhas respeitando filtros/sort/seleção
+          const rows = this._collectRowsFromTable(tbl, "vm", vm, "/rows");
+          if (!rows.length) {
+            sap.m.MessageToast.show("Nada para exportar.");
+            return;
+          }
+
+          // normaliza numéricos (Excel como número)
+          const NUMERIC = [
+            "quantity", "price", "mva",
+            "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
+            "Extrinsic_Aliquota_IPI", "Extrinsic_IPI_Apurado",
+            "Extrinsic_Aliquota_PIS", "Extrinsic_PIS_Apurado",
+            "Extrinsic_Aliquota_Cofins", "Extrinsic_Cofins_apurado",
+            "Extrinsic_Aliquota_ICMS_Interna", "EXTENDEDPRICE"
+          ];
+          const toNum = (v) => {
+            if (v == null || v === "") return null;
+            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
+            return Number.isFinite(n) ? n : null;
+          };
+          const data = rows.map(r => {
+            const out = { ...r };
+            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
+            return out;
+          });
+
+          const columns = [
+            { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
+            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
+            { label: "Nome do Item", property: "itemDescription", type: EdmType.String, width: 40 },
+            { label: "Quantidade", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Preço do Item", property: "price", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Preço Estendido", property: "EXTENDEDPRICE", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Moeda", property: "currency", type: EdmType.String, width: 10 },
+            { label: "NCM", property: "ncm", type: EdmType.String, width: 14 },
+            { label: "MVA (%)", property: "mva", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "Alíquota ICMS (%)", property: "Extrinsic_Aliquota_ICMS", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Apurado", property: "Extrinsic_ICMS_Apurado", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "Alíquota IPI (%)", property: "Extrinsic_Aliquota_IPI", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "IPI Apurado", property: "Extrinsic_IPI_Apurado", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota PIS (%)", property: "Extrinsic_Aliquota_PIS", type: EdmType.Number, width: 16, scale: 2 },
+            { label: "PIS Apurado", property: "Extrinsic_PIS_Apurado", type: EdmType.Number, width: 14, scale: 2 },
+            { label: "Alíquota COFINS (%)", property: "Extrinsic_Aliquota_Cofins", type: EdmType.Number, width: 20, scale: 2 },
+            { label: "COFINS Apurado", property: "Extrinsic_Cofins_apurado", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "ICMS Interna (%)", property: "Extrinsic_Aliquota_ICMS_Interna", type: EdmType.Number, width: 18, scale: 2 },
+            { label: "Origem Material", property: "Extrinsic_Origem_do_Material", type: EdmType.String, width: 18 },
+            { label: "Centro", property: "PLANT", type: EdmType.String, width: 14 },
+            { label: "Categoria Item", property: "ItemCategory", type: EdmType.String, width: 16 },
+            { label: "Req", property: "CodigoRequisicao", type: EdmType.String, width: 16 },
+            { label: "Grupo Materiais", property: "grupo_de_materias", type: EdmType.String, width: 24 },
+            { label: "Código Material", property: "MaterialCode", type: EdmType.String, width: 20 }
+          ];
+
+          const docId = (vm?.getProperty("/header/docId")) || "MapaComparativo";
+          const fileName = `Comparativo_${docId}.xlsx`;
+
+          const sheet = new Spreadsheet({
+            workbook: { columns },
+            dataSource: data,
+            fileName,
+            worker: true
+          });
+
+          sheet.build()
+            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
+            .finally(() => sheet.destroy());
+        },
+
+        onExportExcelRes() {
+          const view = this.getView();
+
+          // tabela do dialog (1º content do dlg)
+          const tbl = this._dlgRes?.getContent?.()[0];
+          const resModel = view.getModel("res");
+
+          if (!tbl || !resModel) {
+            sap.m.MessageToast.show("Janela de resultados não está aberta.");
+            return;
+          }
+
+          // 🔎 coleta linhas respeitando filtros/sort/seleção
+          const rows = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
+          if (!rows.length) {
+            sap.m.MessageToast.show("Nada para exportar.");
+            return;
+          }
+
+          const exportLibrary = sap.ui.require("sap/ui/export/library");
+          const Spreadsheet = sap.ui.require("sap/ui/export/Spreadsheet");
+          const EdmType = exportLibrary.EdmType;
+
+          const toNum = (v) => {
+            if (v == null || v === "") return null;
+            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
+            return Number.isFinite(n) ? n : null;
+          };
+          const NUMERIC = ["originalQty", "quantity", "qtyAward", "price", "icms", "ipi", "total", "poItem"];
+          const data = rows.map(r => {
+            const out = { ...r };
+            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
+            return out;
+          });
+
+          const columns = [
+            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
+            { label: "Item (cód.)", property: "materialCode", type: EdmType.String, width: 16 },
+            { label: "Qtd Original", property: "originalQty", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Qtd Simulada", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Qtd p/ premiar", property: "qtyAward", type: EdmType.Number, width: 14, scale: 0 },
+            { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "ICMS", property: "icms", type: EdmType.Number, width: 10, scale: 2 },
+            { label: "IPI", property: "ipi", type: EdmType.Number, width: 10, scale: 2 },
+            { label: "Total", property: "total", type: EdmType.Number, width: 12, scale: 2 },
+            { label: "Moeda", property: "currency", type: EdmType.String, width: 8 },
+            { label: "NCM", property: "ncm", type: EdmType.String, width: 12 },
+            { label: "PO Item", property: "poItem", type: EdmType.Number, width: 10, scale: 0 },
+            { label: "Tax Code", property: "taxCode", type: EdmType.String, width: 10 },
+            { label: "ItemId", property: "itemId", type: EdmType.String, width: 10 },
+            { label: "InvitationId (dbg)", property: "invitationId", type: EdmType.String, width: 20 }
+          ];
+
+          const docId = (view.getModel("vm")?.getProperty("/header/docId")) || "Simulacao";
+          const fileName = `Resultado_${docId}.xlsx`;
+
+          const sheet = new Spreadsheet({
+            workbook: { columns },
+            dataSource: data,
+            fileName,
+            worker: true
+          });
+
+          sheet.build()
+            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
+            .finally(() => sheet.destroy());
+        }
+
+
+
       },
     );
-  },
+  }
 );

@@ -8,12 +8,15 @@ default-*.json
 gen/
 node_modules/
 target/
+resources/
+comparativomap/app/comparativomap/dist
 
 # Web IDE, App Studio
 .che/
 .gen/
 
 # MTA
+app/*dist
 *_mta_build_tmp
 *.mtar
 mta_archives/

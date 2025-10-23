@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 1.1.5
+version: 1.8.4
 description: "A simple CAP project."
 
 modules:
@@ -156,5 +156,5 @@ build-parameters:
         - npm ci
         - npx cds build --production
         - npx cds deploy
-        - cp -r dev.sqlite gen/srv
+        - cp -r db.sqlite gen/srv
         - mkdir -p resources

@@ -23,10 +23,9 @@ sap.ui.define(
       throw new Error("Data inválida: " + val);
     }
     function getDeliveryDateFromRow(r) {
-      const raw =
-        r?.DELIVERY_DATE_RAW?.dateValue ||
-        r?.DELIVERY_DATE_RAW ||
-        r?.deliveryDate;
+      // Prioriza o campo técnico que já vem do back como "YYYY-MM-DD"
+      const raw = r?.DeliveryDateEdm || r?.DeliveryDate || null;
+      console.log("este é o raw =", raw);
       return normalizeDate(raw || new Date());
     }
 
@@ -154,73 +153,141 @@ sap.ui.define(
     function buildResRowsFromBapiResult(result, qm, srcRowsOverride) {
       const idByKey = qm.getProperty("/idByKey") || {};
       const norm10 = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+      const normPo = (v) => {
+        const s = String(v ?? "").trim();
+        if (!s) return null;
+        const n = Number(s.replace(/\D/g, ""));
+        return Number.isFinite(n) ? n : null;
+      };
 
-      // LIFNR vindo do resultado
+      // LIFNR vindo do resultado (header)
       const lifnrHeader = norm10(result?.header?.fornecedor || result?.header?.vendor || "");
 
+      // Escolhe as linhas fonte (do mesmo fornecedor)
       const globalSrc = qm.getProperty("/simSourceRows") || [];
-      // se não vier override: filtra o global pelas linhas do mesmo fornecedor
       const srcRows = (Array.isArray(srcRowsOverride) && srcRowsOverride.length)
         ? srcRowsOverride
         : globalSrc.filter(r => norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader);
 
+      // Índice determinístico: poItem (numérico) -> linha fonte
+      const srcByPo = new Map();
+      for (const r of srcRows) {
+        const n = normPo(r?.poItem ?? r?.PO_ITEM ?? r?.poitem);
+        if (n == null) continue;
+        if (srcByPo.has(n)) {
+          console.warn("[MAP] poItem duplicado em srcRows p/ vendor", lifnrHeader, "poItem=", n);
+        } else {
+          srcByPo.set(n, r);
+        }
+      }
+
       const currency = (result?.header?.moeda || "BRL").toString();
       const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
 
-      return itens.map((it, idx) => {
+      return itens.map((it) => {
+        const poPadded = String(it?.poItem || "").padStart(5, "0");
+        const poNum = normPo(it?.poItem);
+
+        let src = (poNum != null) ? srcByPo.get(poNum) : undefined;
+
+        let meta = null;
         const matKey = Keys.matKeyFromBapiMaterial(it?.material);
-        let meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
-
-        if (!meta) {
-          const srcByIdx = srcRows[idx] || {};
-          const nameKey = Keys.normKey(srcByIdx?.supplierName || "");
-          meta = idByKey[`${matKey}|NAME:${nameKey}`];
-        }
-
-        if (!meta) {
-          const po = String(it?.poItem || "");
-          if (/^\d+$/.test(po)) {
-            const n = Math.max(0, Math.floor(parseInt(po, 10) / 10) - 1);
-            const src = srcRows[n] || {};
-            const mk2 = Keys.normKey(Keys.getItemKey(src));
-            const lif2 = norm10(src?.lifnr || src?.supplierId || lifnrHeader);
-            const nm2 = Keys.normKey(src?.supplierName || "");
-            meta = idByKey[`${mk2}|LIFNR:${lif2}`] || idByKey[`${mk2}|NAME:${nm2}`];
+        if (!src) {
+          meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
+          if (!meta) {
+            const src0 = srcRows[0] || {};
+            const nameKey = Keys.normKey(src0?.supplierName || "");
+            meta = idByKey[`${matKey}|NAME:${nameKey}`];
           }
+        } else {
+          meta = {
+            itemId: src.itemId ?? src.ItemId ?? null,
+            invitationId: src.invitationId ?? src._invitationId ?? null,
+            invitationEmail: src.invitationEmail ?? null,
+            masterQty: Number(src._originalQty || src.quantity) || 0,
+            supplierName: src.supplierName || "",
+            lifnr: norm10(src.lifnr || src.supplierId || lifnrHeader),
+            materialCode: src.MaterialCode || src.materialCode || "",
+          };
         }
 
-        const src = srcRows[idx] || {};
         const invitationId =
-          meta?.invitationId != null ? meta.invitationId : (src.invitationId ?? null);
+          (src && (src.invitationId ?? src._invitationId)) != null
+            ? (src.invitationId ?? src._invitationId)
+            : (meta?.invitationId ?? null);
+
         const invitationEmail =
-          meta?.invitationEmail != null ? meta.invitationEmail : (src.invitationEmail ?? null);
+          (src && src.invitationEmail != null)
+            ? src.invitationEmail
+            : (meta?.invitationEmail ?? null);
+
+        const originalQty =
+          (src && Number(src._originalQty || src.quantity))
+            ? Number(src._originalQty || src.quantity)
+            : (Number(meta?.masterQty ?? 0) || 0);
+
+        const matDisplay =
+          (src && (src.MaterialCode || src.materialCode))
+            ? (src.MaterialCode || src.materialCode)
+            : (meta?.materialCode || it?.material || Keys.getItemKey(src || {}) || "");
+
+        const supplierName =
+          (src && src.supplierName) ? src.supplierName :
+            (meta?.supplierName || lifnrHeader);
+
+        const itemId =
+          (src && (src.itemId ?? src.ItemId) != null)
+            ? (src.itemId ?? src.ItemId)
+            : (meta?.itemId ?? null);
 
         const quantity = Number(it?.quantidade || 0) || 0;
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
-        const originalQty = Number(meta?.masterQty ?? 0) || 0;
-        const matDisplay = meta?.materialCode || it?.material || Keys.getItemKey(src) || "";
+
+        const descricao = it?.descricao ?? "";
+        const ncm = it?.ncm ?? null;
+        const taxCode = it?.taxCode ?? null;
+        const taxJurCode = it?.taxJurCode ?? null;
+        const unidade = it?.unidade ?? it?.poUnit ?? null;
+        const priceUnit = Number(it?.priceUnit ?? 1) || 1;
+        const priceDate = it?.priceDate ?? null;
+        const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
+
+        if (!src) {
+          console.warn("[MAP] Sem match por poItem no retorno", { vendor: lifnrHeader, poItem: poPadded, matKey });
+        }
 
         return {
           materialCode: matDisplay,
           MaterialCode: matDisplay,
-          supplierName: meta?.supplierName || src?.supplierName || lifnrHeader,
+          supplierName,
           originalQty,
           quantity,
-          qtyAward: 0,
+          qtyAward: quantity,
           price,
+          netPrice: price,
           currency,
           icms: null,
           ipi: null,
           total,
-          itemId: meta?.itemId ?? null,
+          itemId,
           invitationId,
           invitationEmail,
           lifnr: lifnrHeader,
-          poItem: it?.poItem,
+
+          poItem: poPadded,
+
+          descricao,
+          ncm,
+          taxCode,
+          taxJurCode,
+          unidade,
+          unit: unidade,
+          priceUnit,
+          priceDate,
+          schedules,
         };
       });
-
     }
 
     return {
