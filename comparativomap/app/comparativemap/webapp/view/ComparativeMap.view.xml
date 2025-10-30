@@ -7,7 +7,6 @@
 
     <Page id="page" showHeader="false" enableScrolling="false">
         <VBox id="rootVBox" height="100%" renderType="Bare">
-
             <Toolbar id="toolbarCabecalhoTopo" class="cabecalhoTopo">
                 <HBox id="hboxCabecalho" width="100%" alignItems="Center" justifyContent="SpaceBetween">
                     <HBox id="hboxEsquerda" width="10%" alignItems="Center" class="fundologo">
@@ -29,13 +28,13 @@
             <VBox id="searchLayout" class="sapUiContentPadding" renderType="Bare">
                 <HBox id="searchHBox" alignItems="Center">
                     <Label id="labelDoc" labelFor="inputDoID" class="sapUiTinyMarginEnd"/>
-                    <Input id="inputDoID" placeholder="Digite o ID da cotaçãoBuscar" width="16rem" submit=".onBuscar" />
+                    <Input id="inputDoID" placeholder="Digite o ID da Cotação" width="16rem" submit=".onBuscar" />
                     <Button id="btnBuscar" text="Buscar" icon="sap-icon://search" type="Emphasized"
                             press=".onBuscar" class="sapUiTinyMarginBegin" />
                 </HBox>
             </VBox>
 
-            <VBox id="tableVBox" class="centralizarTabela" renderType="Bare">
+            <VBox id="tableVBox" class="centralizarTabela bordaTabela" renderType="Bare">
                 <layoutData>
                     <FlexItemData id="flexId1" growFactor="1"/>
                 </layoutData>
@@ -78,10 +77,10 @@
                     </items>
                 </Table>
 
-            <!-- <Button id="btnsalvarvisao" icon="sap-icon://save" text="Salvar Visão" press=".onSaveVisionPress"/>
+                <!-- <Button id="btnsalvarvisao" icon="sap-icon://save" text="Salvar Visão" press=".onSaveVisionPress"/>
                 <Button id="btncarregarvisao" icon="sap-icon://save" text="Carregar Visão" press=".onChooseVisionPress"/> -->
             
-                <VBox id="detailsVBox" class="sapUiSmallMarginTop" renderType="Bare">
+                <VBox id="detailsVBox" class="sapUiTinyMarginTop" renderType="Bare">
                     <layoutData>
                         <FlexItemData id="flexId2" growFactor="1"/>
                     </layoutData>
@@ -98,10 +97,10 @@
                         <Button id="botaocoluna" text="Colunas" icon="sap-icon://table-view" press=".onOpenColumnsDialog"/>
                     </Toolbar>
 
-                    <ScrollContainer id="tableScrollContainer" width="100%" horizontal="true" vertical="true">
-                    <layoutData>
-                        <FlexItemData id="flexId3" growFactor="1"/>
-                    </layoutData>
+                    <ScrollContainer id="tableScrollContainer" width="100%" height="1px" horizontal="true" vertical="true">
+                        <layoutData>
+                            <FlexItemData id="flexId3" growFactor="1"/>
+                        </layoutData>
 
                         <Table id="tblDocs"
                             inset="false"
@@ -190,7 +189,6 @@
                     </ScrollContainer>
                 </VBox>
             </VBox>
-        </VBox>
-        
+        </VBox> 
     </Page>
 </mvc:View>
