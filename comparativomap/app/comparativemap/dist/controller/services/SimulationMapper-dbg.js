@@ -25,7 +25,6 @@ sap.ui.define(
     function getDeliveryDateFromRow(r) {
       // Prioriza o campo técnico que já vem do back como "YYYY-MM-DD"
       const raw = r?.DeliveryDateEdm || r?.DeliveryDate || null;
-      console.log("este é o raw =", raw);
       return normalizeDate(raw || new Date());
     }
 

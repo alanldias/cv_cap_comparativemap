@@ -193,3 +193,5 @@ GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/A_P
 ###
 GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_PURCHASEORDER_PROCESS_SRV/$metadata
 
+###
+GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100599426')&sap-client=300

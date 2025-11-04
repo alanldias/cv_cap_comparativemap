@@ -115,100 +115,271 @@ function extractSapOrgEntry(obj) {
   return entry ? { domain: entry.domain, value: entry.value } : null;
 }
 
-async function fetchSupplierBids(docId) {
-  const path = `/events/${encodeURIComponent(docId)}/supplierBids`;
+async function fetchEventItemsTermsMap(docId) {
+  const path = `/events/${encodeURIComponent(docId)}/items`;
   const data = await destGet(DEST.EVENTS, path, {
-    params: {},
-    headers: {},
-    timeoutMs: HTTP_TIMEOUT_MS,
+    params: {}, headers: {}, timeoutMs: HTTP_TIMEOUT_MS,
   });
+  const arr = toArr(data);
+  const map = {};
+  for (const it of arr) {
+    const itemObj = it?.item || it;
+    const itemId = String(itemObj?.itemId ?? it?.id ?? it?.ItemId ?? "");
+    if (!itemId) continue;
+    const terms = termsFrom(itemObj);
+    map[itemId] = Object.fromEntries(
+      terms.filter(t => t?.fieldId).map(t => [t.fieldId, t]),
+    );
+  }
+  return map;
+}
+
+function pickSimple(byMap, ...keys) {
+  for (const k of keys) {
+    const t = byMap[k] || byMap[k?.toUpperCase()] || byMap[k?.toLowerCase()];
+    const v = t?.value?.simpleValue;
+    if (v != null && v !== "") return v;
+  }
+  return null;
+}
+
+const keyOf = (invId, altId, itemId) => `${String(invId)}::${String(altId || itemId)}`;
+function hasQty(b) {
+  return !!(b?.QUANTITY?.value?.quantityValue?.amount);
+}
+function hasPrice(b) {
+  const mv = b?.PRICE?.value?.moneyValue || b?.PRICE?.value?.supplierValue;
+  return !!(mv?.amount);
+}
+
+function normCat(v) {
+  const s = String(v ?? "").trim().toLowerCase();
+  if (s.startsWith("serv")) return "service";
+  if (s.startsWith("mat")) return "material";
+  return null;
+}
+function isRollupExt(byMap) {
+  return !!byMap?.EXTENDEDPRICE?.rollup;
+}
+function isInfoTitle(t = "") {
+  return /\b(contato|contact|inform[aã]?[cç][oõ]es?\s+adicionais|totais?|total|resumo|summary|informações do fornecedor|informacoes do fornecedor)\b/i.test(t.trim());
+}
+function hasAnyAmount(v) {
+  return v != null && v !== "" && Number.isFinite(Number(v));
+}
+function isRollupExt(byMap) {
+  return !!byMap?.EXTENDEDPRICE?.rollup;
+}
+
+function pickMaterialCodeFromMap(byMap) {
+  if (!byMap) return null;
+  const direct =
+    byMap["MaterialCode"]?.value?.simpleValue ||
+    byMap["MATERIAL"]?.value?.simpleValue ||
+    byMap["MaterialNumber"]?.value?.simpleValue || null;
+  if (direct) return direct;
+  // fallback por título (templates variam)
+  const any = Object.values(byMap);
+  const t = any.find(t => /c[óo]digo.*material/i.test(String(t?.title || "")));
+  return t?.value?.simpleValue || null;
+}
+
+async function fetchSupplierBids(docId) {
+  const itemTermsMap = await fetchEventItemsTermsMap(docId);
+
+  const path = `/events/${encodeURIComponent(docId)}/supplierBids`;
+  const data = await destGet(DEST.EVENTS, path, { params: {}, headers: {}, timeoutMs: HTTP_TIMEOUT_MS });
   const rows = toArr(data);
   if (!rows.length) return { rows: [], results: [] };
 
-  const results = [];
-  for (const row of rows) {
-    const invId = row?.invitationId ?? null;
-    const itemIds = Array.isArray(row?.itemsWithBid)
-      ? row.itemsWithBid.map(String)
-      : [];
-    if (!itemIds.length) continue;
+  // --- 1) Agrupa linhas (pai + sub-linhas) por invitationId + alternativeId ---
+  const groups = new Map();
+  for (const r of rows) {
+    const invId = String(r?.invitationId ?? "");
+    const itemId = String(r?.item?.itemId ?? r?.itemId ?? "");
+    if (!itemId) continue;
+    const altId = String(r?.alternativeId ?? r?.item?.alternativeId ?? "");
 
-    for (const itemId of itemIds) {
-      let targetRow =
-        rows.find(
-          (r) =>
-            String(r?.item?.itemId ?? r?.itemId) === String(itemId) &&
-            String(r?.invitationId) === String(invId),
-        ) ||
-        rows.find(
-          (r) => String(r?.item?.itemId ?? r?.itemId) === String(itemId),
-        );
-      if (!targetRow) continue;
+    // maps para decidir a categoria
+    const byIdBid = byFieldId(r);
+    const byIdItem = itemTermsMap[String(itemId)] || {};
 
-      const byId = byFieldId(targetRow);
-      const lifnrTerm =
-        byId["LIFNR"]?.value?.simpleValue ||
-        byId["VendorNumber"]?.value?.simpleValue ||
-        byId["ERPVendor"]?.value?.simpleValue ||
-        byId["ERPVENDOR"]?.value?.simpleValue ||
-        byId["VENDOR"]?.value?.simpleValue ||
-        byId["GITALIFNR"]?.value?.simpleValue ||
-        null;
+    // 1) tenta pegar categoria explícita dos termos
+    const catDecl =
+      normCat(pickSimple(byIdBid, "ItemCategory")) ||
+      normCat(pickSimple(byIdItem, "ItemCategory"));
 
-      const unit = moneyObj(byId["PRICE"]);
-      const qv = byId["QUANTITY"]?.value?.quantityValue;
-      const ext = moneyObj(byId["EXTENDEDPRICE"]);
+    // 2) heurística: se não declarado, infere por comportamento típico de "service"
+    const hasQty = !!(byIdBid?.QUANTITY?.value?.quantityValue?.amount);
+    const hasMat = !!pickMaterialCodeFromMap(byIdBid) || !!pickMaterialCodeFromMap(byIdItem);
+    const rollup = isRollupExt(byIdBid);
 
-      // --- datas ---
-      const reqDateRaw = byId["REQUESTDELIVERYDATE"]?.value?.dateValue;
-      const deliveryEdm  = toEdmDateFromApi(reqDateRaw);  // "YYYY-MM-DD"
-      const deliveryNice = formatNiceDate(reqDateRaw);     // "dd/MM/yyyy \n HH:mm" (opcional)
-
-      const mapped = {
-        ItemId: itemId,
-        itemDescription: targetRow?.item?.title ?? null,
-        quantity: qv?.amount ?? null,
-        unitOfMeasure: qv?.unitOfMeasureCode ?? null,
-        price: unit.amount,
-        currency: unit.currency,
-        lifnr: lifnrTerm ? String(lifnrTerm).padStart(10, "0") : null,
-        ncm: byId["GITASHORTSTRINGIFZ000050"]?.value?.simpleValue ?? null,
-        mva: byId["GITABIGDECIFZ000003"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_Aliquota_ICMS:
-          byId["GITABIGDECIFZ000004"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_ICMS_Apurado: moneyObj(byId["GITAMONEYIFZ000046"]).amount,
-        Extrinsic_Aliquota_IPI:
-          byId["GITABIGDECIFZ000005"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_IPI_Apurado: moneyObj(byId["GITAMONEYIFZ000047"]).amount,
-        Extrinsic_Aliquota_PIS:
-          byId["GITABIGDECIFZ000029"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_PIS_Apurado: moneyObj(byId["GITAMONEYIFZ000048"]).amount,
-        Extrinsic_Aliquota_Cofins:
-          byId["GITABIGDECIFZ000028"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_Cofins_apurado: moneyObj(byId["GITAMONEYIFZ000049"]).amount,
-        Extrinsic_Aliquota_ICMS_Interna:
-          byId["GITABIGDECIFZ000006"]?.value?.bigDecimalValue ?? null,
-        Extrinsic_Origem_do_Material:
-          byId["GITASHORTSTRINGIFZ000153"]?.value?.simpleValue ?? null,
-        EXTENDEDPRICE: ext.amount,
-        CodigoRequisicao: byId["RequisitionId"]?.value?.simpleValue ?? null,
-        PLANT: byId["Plant"]?.value?.simpleValue ?? null,
-        ItemCategory: byId["ItemCategory"]?.value?.simpleValue ?? null,
-        MaterialCode: byId["MaterialCode"]?.value?.simpleValue ?? null,
-        grupo_de_materias: byId["MaterialGroup"]?.value?.simpleValue ?? null,
-        Incoterms: byId["Incoterms"]?.value?.simpleValue ?? null,
-        NumeroItensRequisicao: byId["RequisitionLineItemNumber"]?.value?.simpleValue ?? null,
-        CodigoRFQ: byId["RFQId"]?.value?.simpleValue ?? null,
-        PrazoEntrega: byId["LEADTIME"]?.value?.simpleValue ?? null,
-
-        // *** datas padronizadas ***
-        DeliveryDateEdm: deliveryEdm,        // "YYYY-MM-DD" (para BAPI)
-        DeliveryDateNice: deliveryNice,      // "dd/MM/yyyy \n HH:mm" (UI opcional)
-        DeliveryDate: deliveryEdm,           // compat: DeliveryDate = "YYYY-MM-DD"
-      };
-      results.push({ ...mapped, _invitationId: invId, _itemId: itemId });
+    let cat = catDecl;
+    if (!cat) {
+      if (altId && rollup && !hasQty && !hasMat) cat = "service";
+      else cat = "material";
     }
+
+    // 3) chave do grupo dependendo da categoria
+    // - material => ignora alternativeId (um grupo por itemId)
+    // - service  => usa alternativeId para colapsar pai + sublinhas
+    const groupKey = cat === "service"
+      ? keyOf(invId, altId, itemId)
+      : keyOf(invId, "", itemId); // força ignorar altId
+
+    let g = groups.get(groupKey);
+    if (!g) {
+      g = { invId, rows: [], itemIds: new Set(), cat };
+      groups.set(groupKey, g);
+    }
+    g.rows.push(r);
+    g.itemIds.add(itemId);
+    // guarda a categoria "mais forte" do grupo (se aparecer)
+    if (!g.cat && cat) g.cat = cat;
   }
+
+  // --- 2) Consolida por grupo, fazendo merge dos terms do(s) item(ns) + dos bids ---
+  const results = [];
+  for (const g of groups.values()) {
+    // 1) junte os terms dos itens (pai + sub) no grupo
+    let byIdItemMerged = {};
+    for (const iid of g.itemIds) {
+      const m = itemTermsMap[String(iid)];
+      if (m) byIdItemMerged = { ...byIdItemMerged, ...m };
+    }
+
+    // 2) prepare info dos rows do grupo
+    const rowsInfo = g.rows.map(r => {
+      const bidMap = byFieldId(r);
+      return {
+        row: r,
+        bidMap,
+        matFromBid: pickMaterialCodeFromMap(bidMap),
+        qty: hasQty(bidMap),
+        price: hasPrice(bidMap),
+        title: r?.item?.title || ""
+      };
+    });
+
+    // 3) material code: tente primeiro no BID; se não, nos ITEM TERMS
+    let matRaw =
+      rowsInfo.find(x => !!x.matFromBid)?.matFromBid ||
+      pickMaterialCodeFromMap(byIdItemMerged) || null;
+
+    // 4) escolha o "row preferido" para title/descrição
+    const preferred =
+      rowsInfo.find(x => !!x.matFromBid) ||
+      rowsInfo.find(x => x.qty) ||
+      rowsInfo.find(x => x.price) ||
+      rowsInfo[0]; // fallback
+
+    // 5) quantity/UoM/price do merge completo (itens + bids)
+    let byId = { ...byIdItemMerged };
+    for (const ri of rowsInfo) byId = { ...byId, ...ri.bidMap };
+
+    const qv = byId?.QUANTITY?.value?.quantityValue || null;
+    const unitMoney = moneyObj(byId["PRICE"]);
+    const extMoney = moneyObj(byId["EXTENDEDPRICE"]);
+
+    const unitOfMeasure =
+      qv?.unitOfMeasureCode ||
+      byId["UnitOfMeasure"]?.value?.simpleValue ||
+      byId["UOM"]?.value?.simpleValue ||
+      null;
+
+    const reqDateRaw = byId["REQUESTDELIVERYDATE"]?.value?.dateValue;
+    const deliveryEdm = toEdmDateFromApi(reqDateRaw);
+    const deliveryNice = formatNiceDate(reqDateRaw);
+
+    const lifnrTerm =
+      byId["LIFNR"]?.value?.simpleValue ||
+      byId["VendorNumber"]?.value?.simpleValue ||
+      byId["ERPVendor"]?.value?.simpleValue ||
+      byId["ERPVENDOR"]?.value?.simpleValue ||
+      byId["VENDOR"]?.value?.simpleValue ||
+      byId["GITALIFNR"]?.value?.simpleValue ||
+      null;
+
+    const lifnrRaw =
+      lifnrTerm ??
+      extractSapVendorId(preferred.row) ??
+      extractSapVendorId(g.rows[0]) ??
+      null;
+
+    const lifnr10 = lifnrRaw ? String(lifnrRaw).padStart(10, "0") : null;
+
+    // ItemId representativo = do row preferido (não o menor)
+    const itemId =
+      String(preferred?.row?.item?.itemId ?? preferred?.row?.itemId ?? "") ||
+      [...g.itemIds].sort((a, b) => Number(a) - Number(b))[0] || null;
+
+    const title = (preferred?.title || pickSimple(byId, "ItemDescription") || "").trim();
+    const catNorm = (g.cat || (pickSimple(byId, "ItemCategory") || "")).toLowerCase();
+
+    const hasMat = !!matRaw;
+    const hasQtyValue = hasAnyAmount(qv?.amount);
+    const hasPriceValue = hasAnyAmount(unitMoney.amount);
+    const rollup = isRollupExt(byId);
+
+    const isInfoLike = isInfoTitle(title);
+    const unknownCat = !catNorm || (catNorm !== "material" && catNorm !== "service");
+    const noData = !hasMat && !hasQtyValue && !hasPriceValue;
+    const isTotalsRow = rollup && !hasQtyValue && !hasMat;
+
+    // 1) joga fora linhas claramente informativas/totais sem dados
+    if ((isInfoLike && noData) || (unknownCat && noData) || isTotalsRow) {
+      continue;
+    }
+
+    // 2) regra decisiva de "item válido": precisa ter QUANTIDADE E PREÇO (>0)
+    if (!(hasQtyValue && hasPriceValue)) {
+      // opcional: se quiser só exigir no service, troque por:
+      // if (catNorm === 'service' && !(hasQtyValue && hasPriceValue)) { continue; }
+      continue;
+    }
+
+    const mapped = {
+      ItemId: itemId,
+      itemDescription: preferred.title || pickSimple(byId, "ItemDescription") || null,
+      quantity: qv?.amount ?? null,
+      unitOfMeasure,
+      price: unitMoney.amount,
+      currency: unitMoney.currency,
+      lifnr: lifnr10,
+      MaterialCode: matRaw ?? null,
+
+      ncm: pickSimple(byId, "GITASHORTSTRINGIFZ000050"),
+      mva: byId["GITABIGDECIFZ000003"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_Aliquota_ICMS: byId["GITABIGDECIFZ000004"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_ICMS_Apurado: moneyObj(byId["GITAMONEYIFZ000046"]).amount,
+      Extrinsic_Aliquota_IPI: byId["GITABIGDECIFZ000005"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_IPI_Apurado: moneyObj(byId["GITAMONEYIFZ000047"]).amount,
+      Extrinsic_Aliquota_PIS: byId["GITABIGDECIFZ000029"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_PIS_Apurado: moneyObj(byId["GITAMONEYIFZ000048"]).amount,
+      Extrinsic_Aliquota_Cofins: byId["GITABIGDECIFZ000028"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_Cofins_apurado: moneyObj(byId["GITAMONEYIFZ000049"]).amount,
+      Extrinsic_Aliquota_ICMS_Interna: byId["GITABIGDECIFZ000006"]?.value?.bigDecimalValue ?? null,
+      Extrinsic_Origem_do_Material: pickSimple(byId, "GITASHORTSTRINGIFZ000153"),
+
+      EXTENDEDPRICE: extMoney.amount,
+      CodigoRequisicao: pickSimple(byId, "RequisitionId"),
+      PLANT: pickSimple(byId, "Plant"),
+      ItemCategory: pickSimple(byId, "ItemCategory"),
+      grupo_de_materias: pickSimple(byId, "MaterialGroup"),
+      Incoterms: pickSimple(byId, "Incoterms"),
+      NumeroItensRequisicao: pickSimple(byId, "RequisitionLineItemNumber"),
+      CodigoRFQ: pickSimple(byId, "RFQId"),
+      PrazoEntrega: pickSimple(byId, "LEADTIME"),
+      DeliveryDateEdm: deliveryEdm,
+      DeliveryDateNice: deliveryNice,
+      DeliveryDate: deliveryEdm,
+      _invitationId: g.invId,
+      _groupItemIds: [...g.itemIds],
+    };
+
+    results.push(mapped);
+  }
+
   return { rows, results };
 }
 
@@ -223,7 +394,7 @@ async function fetchParentProjectId(docId) {
     const pid =
       d?.parentProjectId || d?.projectId || d?.parentProjectUniqueName || null;
     if (pid) return pid;
-  } catch {}
+  } catch { }
   const pathIds = `/events/identifiers`;
   const data = await destGet(DEST.EVENTS, pathIds, {
     params: { $filter: `(internalId eq ${encodeURIComponent(docId)})` },

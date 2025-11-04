@@ -17,7 +17,7 @@ sap.ui.define([], function () {
   }
   function dbg(title, obj) {
     /* eslint-disable no-console */
-    console.groupCollapsed("🔎 " + title);
+    console.groupCollapsed(" " + title);
     try {
       console.log(safe(obj));
     } catch (e) {

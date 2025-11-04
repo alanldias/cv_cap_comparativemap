@@ -78,10 +78,12 @@ module.exports = function () {
 
     try {
       const { rows, results } = await fetchSupplierBids(docId);
+      console.log(results)
       LOG.infoL("[GetQuotes] supplierBids", {
         rows: rows.length,
         results: results.length,
       });
+
       if (!rows.length || !results.length) return { header: null, items: [] };
 
       const list = await fetchSupplierInvitationsList(docId, round).catch(
@@ -153,7 +155,7 @@ module.exports = function () {
         const email = invId ? emailByInvId.get(invId) || null : null;
 
         return {
-          poItem: makePoItem(idx),           // 👈 novo campo gerado no backend
+          poItem: makePoItem(idx),           //  novo campo gerado no backend
           ...pub,
           supplierName,
           SupplierCode: supplierIdSap,

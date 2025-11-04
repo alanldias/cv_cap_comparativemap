@@ -31,7 +31,6 @@ sap.ui.define([], function () {
       : (opResult?.value || opResult?.results || []);
 
     const out = Array.isArray(arr) ? arr : (opResult ? [opResult] : []);
-    console.log(`[UI] simularPO: ${requests?.length} req(s) em ${(t1 - t0).toFixed(0)} ms`);
     return out;
   }
 

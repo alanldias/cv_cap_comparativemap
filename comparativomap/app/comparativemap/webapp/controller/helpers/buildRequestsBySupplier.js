@@ -147,15 +147,6 @@ sap.ui.define([
       requests.push({ header, items, schedules, testRun: true });
     });
 
-    // DEBUG/Resumo
-    /* eslint-disable no-console */
-    console.table(requests.map(r => ({
-      vendor: r.header.vendor,
-      items: r.items.length,
-      currency: r.header.currency
-    })));
-    /* eslint-enable no-console */
-
     return requests;
   }
 

@@ -32,8 +32,6 @@ sap.ui.define(
       resModel.setProperty("/rows", safeRows);
       resModel.refresh();  // <<< importante
 
-      console.log("[res] rows.len=", resModel.getProperty("/rows")?.length,
-        "sizeLimit=", resModel.getSizeLimit && resModel.getSizeLimit());
 
       // 3) Fecha dialog antigo (mantido)
       if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {

@@ -270,7 +270,6 @@ sap.ui.define(
             // Drafts.save(this);
           } catch (e) {
             /* eslint-disable no-console */
-            console.error("[onBuscar] ERRO:", e);
             MessageBox.error("Falha ao buscar dados: " + (e.message || e));
           } finally {
             tbl?.setBusy(false);
@@ -323,7 +322,6 @@ sap.ui.define(
 
         /* ====== SIMULAR (idem seu fluxo) ====== */
         async onSimularPress() {
-          console.log("botão chamado e atualizado");
 
           const view = this.getView();
           const vm = view.getModel("vm");
@@ -335,7 +333,6 @@ sap.ui.define(
           resModel.setProperty("/rows", []);
           resModel.setProperty("/totals", {});
 
-          console.groupCollapsed("[SIMULAR] clique");
           try {
             const tbl = this.byId("tblDocs");
             if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
@@ -388,11 +385,6 @@ sap.ui.define(
               throw new Error(msg);
             }
 
-            console.table(requests.map(r => ({
-              vendor: r.header.vendor,
-              items: r.items.length,
-              currency: r.header.currency
-            })));
 
             const normVendor = v => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
             const vendorToSrc = new Map(
@@ -406,7 +398,6 @@ sap.ui.define(
               }
               return value;
             }
-            console.log(JSON.stringify(payloadRequests, replacer, 2) + "payload");
 
             sap.ui.core.BusyIndicator.show(0);
 
@@ -425,7 +416,6 @@ sap.ui.define(
                   contentWidth: "640px",
                 });
               }
-              console.groupEnd();
               return;
             }
 
@@ -434,7 +424,6 @@ sap.ui.define(
             const hasErrorMsg = allMsgs.some(m => m.type === "E" || m.type === "A");
             if (hasErrorMsg) {
               Dialogs.showBapiMessages(allMsgs);
-              console.groupEnd();
               return;
             }
 
@@ -448,12 +437,10 @@ sap.ui.define(
                 return Mapper.buildResRowsFromBapiResult(r, qm, srcRows);
               });
             } catch (err) {
-              console.error("[SIMULAR] Erro ao montar resRows:", err);
               try {
                 const globalSrc = qm.getProperty("/simSourceRows") || [];
                 resRows = resultsArr.flatMap(r => Mapper.buildResRowsFromBapiResult(r, qm, globalSrc));
               } catch (err2) {
-                console.error("[SIMULAR] Fallback também falhou ao montar resRows:", err2);
                 resRows = [];
               }
             }
@@ -462,10 +449,7 @@ sap.ui.define(
 
             if (allMsgs.length) Dialogs.showBapiMessages(allMsgs);
 
-            console.groupEnd();
           } catch (err) {
-            console.error("[SIMULAR] ERRO:", err);
-            console.groupEnd();
             const details =
               err?.cause?.response?.body ||
               err?.cause?.message ||

@@ -73,8 +73,7 @@
           "bundleName": "comparativemap.comparativemap.i18n.i18n",
           "supportedLocales": [
             "",
-            "en",
-            "pt"
+            "en"
           ]
         }
       },
