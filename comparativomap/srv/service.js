@@ -2,7 +2,7 @@
 const cds = require("@sap/cds");
 const { LOG } = require("./lib/util/log");
 const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
-const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND } = require("./lib/config");
+const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND, SERVICE_TAXCODE_DEFAULT } = require("./lib/config");
 const { createSemaphore } = require("./lib/util/throttle");
 
 const { destPost } = require("./lib/http/destination");
@@ -17,6 +17,7 @@ const {
 } = require("./lib/ariba/events");
 const { fetchAribaHeader } = require("./lib/ariba/pm");
 const { enrichWithTaxCode } = require("./lib/s4/taxcode");
+
 const {
   getBapiClient,
   buildSmokePayload,
@@ -34,7 +35,7 @@ const makePoItem = (idx) =>
 module.exports = function () {
   const { FilterViews } = this.entities;
 
-   this.on("SaveView", async (req) => {
+  this.on("SaveView", async (req) => {
     const {
       name,
       docId = null,
@@ -54,7 +55,7 @@ module.exports = function () {
       userId,
       isPublic: true,
       filtersJSON: typeof filtersJSON === "string" ? filtersJSON : JSON.stringify(filtersJSON || {}),
-      uiSortJSON:  typeof uiSortJSON  === "string" ? uiSortJSON  : JSON.stringify(uiSortJSON  || {}),
+      uiSortJSON: typeof uiSortJSON === "string" ? uiSortJSON : JSON.stringify(uiSortJSON || {}),
       uiGroupJSON: typeof uiGroupJSON === "string" ? uiGroupJSON : JSON.stringify(uiGroupJSON || {}),
       uiColumnsJSON: typeof uiColumnsJSON === "string" ? uiColumnsJSON : JSON.stringify(uiColumnsJSON || {})
     };
@@ -280,21 +281,7 @@ module.exports = function () {
           items: rawItems.length, testRun
         });
 
-        // 1) resolve TaxCode (uma vez, pro conjunto inteiro do fornecedor)
-        const items = rawItems.map(({ taxCode, ...rest }) => rest);
-        const enrichInput = items.map((it, i) => ({
-          __idx: i,
-          Supplier: padLeft(String(header.vendor || ""), 10, "0"),
-          Material: it.material || "",
-          PurchasingOrganization: header.purchOrg,
-          Plant: it.plant
-        }));
-
-        const enriched = await enrichWithTaxCode(enrichInput, {
-          headerVendor: padLeft(String(header.vendor || ""), 10, "0"),
-          throwIfMissing: true
-        });
-
+        // normalizador do PO_ITEM vindo do front
         const normPo = v => {
           const s = String(v ?? "").trim();
           if (!s) return null;
@@ -302,7 +289,10 @@ module.exports = function () {
           return Number.isFinite(n) ? n : null;
         };
 
-        // 1.1) normaliza e valida poItem dos itens vindos do front
+        // 1) copiamos itens mantendo campos que precisamos; NÃO confiamos no taxCode do front
+        const items = rawItems.map(it => ({ ...it }));
+
+        // 1.1) valida poItem
         for (const [i, it] of items.entries()) {
           const n = normPo(it.poItem);
           if (n == null) {
@@ -311,7 +301,7 @@ module.exports = function () {
           it.poItem = n; // garante número
         }
 
-        // 1.2) checa duplicados dentro do mesmo fornecedor
+        // 1.2) checa duplicados
         const seen = new Set();
         const dups = [];
         for (const it of items) {
@@ -324,19 +314,58 @@ module.exports = function () {
           );
         }
 
+        // 1.3) ordena por poItem (mantemos essa regra)
         items.sort((a, b) => a.poItem - b.poItem);
 
-        for (const row of enriched) {
-          if (row?.__idx != null) {
-            items[row.__idx].taxCode = row.TaxCode ?? undefined;
-            items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
+        // 2) Determina quais itens são serviço (não consultar S/4)
+        const isService = (it) => String(it.itemCat || "").trim().toUpperCase() === "D";
+
+        const vendor10 = padLeft(String(header.vendor || ""), 10, "0");
+
+
+        // Separe os itens que precisam de consulta no S/4
+        const needsTaxFetch = [];
+        items.forEach((it, idx) => {
+          if (isService(it)) {
+            // serviço: usa fixo e não consulta
+            it.taxCode = SERVICE_TAXCODE_DEFAULT;
+            it.purchasingInfoRecord = undefined;
+          } else {
+            needsTaxFetch.push({
+              __idx: idx,
+              Supplier: vendor10,
+              Material: it.material || "",
+              PurchasingOrganization: header.purchOrg,
+              Plant: it.plant
+            });
+          }
+        });
+
+        // Só chama o OData se realmente houver itens não-serviço
+        if (needsTaxFetch.length) {
+          const enriched = await enrichWithTaxCode(needsTaxFetch, {
+            headerVendor: vendor10,
+            throwIfMissing: true
+          });
+          for (const row of enriched) {
+            if (row?.__idx != null) {
+              items[row.__idx].taxCode = row.TaxCode ?? undefined;
+              items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
+            }
           }
         }
+
         const missing = items.filter(x => !x.taxCode).length;
-        LOG.infoL("[mapper] taxcode", { idx: idxReq, resolved: items.length - missing, missing });
+        LOG.infoL("[mapper] taxcode (service-skip)", {
+          idx: idxReq,
+          total: items.length,
+          serviceFixed: items.filter(isService).length,
+          fetched: needsTaxFetch.length,
+          missing
+        });
         if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`);
 
-        // 2) quebra em chunks por fornecedor
+        // 4) Quebra em chunks por fornecedor (sem mudanças)
         const chunks = chunkArray(items, PER_VENDOR_CHUNK);
         LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
 

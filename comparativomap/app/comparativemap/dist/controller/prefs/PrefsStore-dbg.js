@@ -176,8 +176,54 @@ sap.ui.define([
     const longId = col.getId();
     return longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
   }
+  function reorderColumnsAndCells(ctrl, orderIds) {
+    const view = ctrl.getView();
+    const tbl = view.byId("tblDocs");
+    if (!tbl) return;
 
+    const _shortIdFrom = (col) => {
+      const prefix = view.getId() + "--";
+      const gid = col.getId();
+      return gid.startsWith(prefix) ? gid.slice(prefix.length) : gid;
+    };
 
+    // 0) Captura a ordem ANTES (é essa que define o índice das cells atuais)
+    const beforeCols = tbl.getColumns() || [];
+    const beforeOrder = beforeCols.map(_shortIdFrom);
+    const idxById = {};
+    beforeOrder.forEach((id, i) => { idxById[id] = i; });
+
+    // Considera só ids que existem hoje na tabela
+    const effectiveOrder = (orderIds || []).filter(id => idxById[id] != null);
+
+    // 1) Reordenar COLUNAS (DOM)
+    const byId = {};
+    beforeCols.forEach(c => byId[_shortIdFrom(c)] = c);
+    effectiveOrder
+      .map(id => byId[id])
+      .filter(Boolean)
+      .forEach((c, i) => { tbl.removeColumn(c); tbl.insertColumn(c, i); });
+
+    // 2) Reordenar CELLS (usando o índice ANTES da troca)
+    const reorderItemCells = (item) => {
+      const cells = item.getCells && item.getCells();
+      if (!cells || !cells.length) return;
+      const newCells = effectiveOrder.map(id => cells[idxById[id]]).filter(Boolean);
+      if (!newCells.length) return;
+      item.removeAllCells();
+      newCells.forEach(c => item.addCell(c));
+    };
+
+    // Template do binding (para futuros itens)
+    const binding = tbl.getBinding("items");
+    const template = binding && binding.getTemplate && binding.getTemplate();
+    if (template) reorderItemCells(template);
+
+    // Itens já renderizados
+    (tbl.getItems() || []).forEach(reorderItemCells);
+
+    sap.ui.getCore().applyChanges();
+  }
   function applyColumnsToTable(ctrl, columnsPayload) {
     if (!columnsPayload) return;
     const view = ctrl.getView();
@@ -188,33 +234,31 @@ sap.ui.define([
     const map = columnsPayload.map || {};
     const order = Array.isArray(columnsPayload.order) ? columnsPayload.order.map(o => o.id) : [];
 
-    // 1) Atualiza o modelo UI (para quem está ligado via binding)
+    // 1) Atualiza o modelo UI (visibilidade)
     const newMap = { ...(ui.getProperty("/columns") || {}) };
     Object.keys(newMap).forEach(id => { newMap[id] = !!map[id]; });
     ui.setProperty("/columns", newMap);
 
-    // 2) Aplica visibilidade diretamente na tabela (garante efeito mesmo se não houver binding)
-    const cols = tbl.getColumns();
+    // 2) Aplica visibilidade direto na tabela
     const byId = {};
-    cols.forEach(c => byId[_shortIdFrom(c, view)] = c);
+    (tbl.getColumns() || []).forEach(c => byId[_shortIdFrom(c, view)] = c);
     Object.keys(map).forEach(id => {
       const c = byId[id];
       if (c) c.setVisible(!!map[id]);
     });
 
-    // 3) Reordenar colunas conforme "order"
+    // 3) Reordenar colunas + cells
     if (order.length) {
-      // Mover somente as que existem
-      const present = order.map(id => byId[id]).filter(Boolean);
-      // Remove e re-insere nessa ordem
-      present.forEach((c, i) => {
-        tbl.removeColumn(c);
-        tbl.insertColumn(c, i);
-      });
-      // As que não estavam no "order" ficam no fim, na ordem atual
+      sap.ui.require(
+        ["comparativemap/comparativemap/controller/prefs/PrefsStore"],
+        function (Prefs) {
+          if (Prefs && Prefs.reorderColumnsAndCells) {
+            Prefs.reorderColumnsAndCells(ctrl, order);
+          }
+        }
+      );
     }
   }
-
   function _applyFiltersNowOrWhenReady(ctrl, conds) {
     const view = ctrl.getView();
     const tbl = view.byId("tblDocs");
@@ -421,6 +465,7 @@ sap.ui.define([
 
     // util exposto (se quiser usar direto)
     applyColumnsToTable,
-    applyConditionsToCM
+    applyConditionsToCM,
+    reorderColumnsAndCells
   };
 });

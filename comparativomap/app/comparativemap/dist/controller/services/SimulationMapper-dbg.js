@@ -63,6 +63,26 @@ sap.ui.define(
       };
     }
 
+    function resolveItemCatFromRow(r) {
+      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString().trim();
+      const U = raw.toUpperCase();
+      // aliases comuns de serviço vindos do Ariba / UI
+      if (U === "D" || U === "SERVICE" || U === "SERVIÇO" || U === "SERVICO" || U === "SVC" || U === "service") return "D";
+
+      // tente o mapeador padrão (caso ele reconheça outros casos)
+      if (typeof Keys.mapItemCategory === "function") {
+        const mapped = Keys.mapItemCategory(raw);
+        if (mapped) return mapped;
+      }
+
+      // heurística de fallback: sem material e com texto => trate como serviço
+      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
+      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || "").trim();
+      if (!hasMat && hasText) return "D";
+
+      return "0"; // default: material padrão
+    }
+
     function mapRowToPOItem(r, idx) {
       if (!r || typeof r !== "object") {
         throw new Error(
@@ -88,7 +108,8 @@ sap.ui.define(
         (r.unitOfMeasure || "").toString().toUpperCase(),
       );
       const plant = Keys.mapPlant((r.PLANT || "").toString());
-      const itemCat = Keys.mapItemCategory((r.ItemCategory || "").toString());
+      const itemCat = resolveItemCatFromRow(r);
+      console.log(`[itemCat] raw="${r.ItemCategory}" -> "${itemCat}"`);
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
       const netPrice = r.price != null ? Number(r.price) : null;
       const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || ""))
