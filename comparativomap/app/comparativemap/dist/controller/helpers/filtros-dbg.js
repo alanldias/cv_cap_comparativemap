@@ -279,14 +279,36 @@ sap.ui.define([
       const colList = ui.getProperty("/columnList") || [];
       const columnsMap = ui.getProperty("/columns") || {};
 
-      const list = new sap.m.List({ mode: "MultiSelect" });
+      const list = new sap.m.List({
+        mode: "MultiSelect",
+        includeItemInSelection: true,
+        growing: false
+      });
+
+      // monta itens (na ordem atual)
       colList.forEach(({ id, label }) => {
         list.addItem(new sap.m.StandardListItem({
           title: label,
-          selected: !!columnsMap[id],   // estado atual vem do modelo
-          info: id                      // guardo o id aqui
+          selected: !!columnsMap[id],
+          info: id
         }));
       });
+
+      // habilita drag & drop entre itens
+      list.addDragDropConfig(new sap.ui.core.dnd.DragDropInfo({
+        sourceAggregation: "items",
+        targetAggregation: "items",
+        dropPosition: "Between",
+        drop: function (ev) {
+          const dragged = ev.getParameter("draggedControl");
+          const dropped = ev.getParameter("droppedControl");
+          const l = ev.getSource().getParent();
+          const iDrag = l.indexOfItem(dragged);
+          const iDrop = l.indexOfItem(dropped);
+          l.removeItem(dragged);
+          l.insertItem(dragged, iDrag < iDrop ? iDrop : iDrop);
+        }
+      }));
 
       ctrl._colDlg = new sap.m.Dialog({
         title: "Selecionar colunas",
@@ -299,17 +321,27 @@ sap.ui.define([
             text: "Aplicar",
             type: "Emphasized",
             press: () => {
-              // monta novo mapa só a partir da seleção
+              // visibilidade (seleção)
               const selectedIds = list.getSelectedItems().map(it => it.getInfo());
               const newMap = { ...ui.getProperty("/columns") };
               Object.keys(newMap).forEach(id => { newMap[id] = selectedIds.includes(id); });
+              ui.setProperty("/columns", newMap);
 
-              ui.setProperty("/columns", newMap); // <-- só atualiza o modelo
+              // ORDEM (pela sequência visual da lista)
+              const orderedIds = list.getItems().map(it => it.getInfo());
+
+              // aplica na tabela (colunas + cells)
+              sap.ui.require(
+                ["comparativemap/comparativemap/controller/prefs/PrefsStore",
+                  "comparativemap/comparativemap/controller/prefs/DraftStore"],
+                function (Prefs, Drafts) {
+                  Prefs && Prefs.reorderColumnsAndCells && Prefs.reorderColumnsAndCells(ctrl, orderedIds);
+                  Drafts && Drafts.autoSave && Drafts.autoSave(ctrl);
+                }
+              );
+
               ctrl._colDlg.close();
               sap.m.MessageToast.show("Colunas atualizadas");
-              sap.ui.require(["comparativemap/comparativemap/controller/prefs/DraftStore"], function (Drafts) {
-                Drafts && Drafts.autoSave(ctrl);
-              });
             }
           })
         ]

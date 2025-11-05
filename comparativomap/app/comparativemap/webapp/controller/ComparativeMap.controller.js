@@ -506,15 +506,27 @@ sap.ui.define(
         onAwardQtyChangeRes(ev) {
           const input = ev.getSource();
           const ctx = input.getBindingContext("res");
-          const obj = ctx?.getObject() || {};
-          let v = Number(input.getValue());
-          if (isNaN(v) || v < 0) v = 0;
-          const max = Number(obj.originalQty) || 0;
-          if (v > max) v = max;
-          obj.qtyAward = Math.floor(v);
+          if (!ctx) return;
+
+          const row = ctx.getObject() || {};
+          let v = Math.floor(Number(input.getValue()));
+          if (!Number.isFinite(v) || v < 0) v = 0;
+          row.qtyAward = v;
           ctx.getModel().checkUpdate(true);
-          input.setValue(String(obj.qtyAward));
+          input.setValue(String(row.qtyAward));
+
+          // ⚠️ Aviso visual quando exceder o original
+          const original = Math.floor(Number(row.originalQty) || 0);
+          if (original > 0 && v > original) {
+            input.setValueState(sap.ui.core.ValueState.Warning);
+            input.setValueStateText(`Quantidade acima da original (${original}).`);
+            sap.m.MessageToast.show(`Qtd premiada (${v}) > original (${original}).`);
+          } else {
+            input.setValueState(sap.ui.core.ValueState.None);
+            input.setValueStateText("");
+          }
         },
+
 
         async onAwardDirect() {
           const view = this.getView();

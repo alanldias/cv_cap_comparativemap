@@ -7,6 +7,7 @@ try {
 module.exports = {
   HTTP_TIMEOUT_MS: 60000,
   ARIBA_EVENT_ROUND: 1,
+  SERVICE_TAXCODE_DEFAULT: process.env.TAXCODE_SERVICE_DEFAULT || "YQ",
 
   DEST: {
     EVENTS: "ARIBA_Event_Management_Test",

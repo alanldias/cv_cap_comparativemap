@@ -3,8 +3,18 @@ sap.ui.define([
     "sap/m/MessageBox",
     "sap/m/SelectDialog",
     "sap/m/StandardListItem",
-    "sap/ui/model/json/JSONModel"
-], function (Storage, MessageBox, SelectDialog, StandardListItem, JSONModel) {
+    "sap/ui/model/json/JSONModel",
+    // ↓ adicionados só para o botão "X" dentro do SelectDialog
+    "sap/m/CustomListItem",
+    "sap/m/Button",
+    "sap/m/HBox",
+    "sap/m/VBox",
+    "sap/m/Text",
+    "sap/m/MessageToast"
+], function (
+    Storage, MessageBox, SelectDialog, StandardListItem, JSONModel,
+    CustomListItem, Button, HBox, VBox, Text, MessageToast
+) {
     "use strict";
 
     const storage = new Storage(Storage.Type.local, "comparativemap");
@@ -125,7 +135,10 @@ sap.ui.define([
 
         // 1) header + rows
         vm?.setProperty("/header", snap.header || {});
-        vm?.setProperty("/headerRows", Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : []));
+        vm?.setProperty(
+            "/headerRows",
+            Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : [])
+        );
         vm?.setProperty("/rows", Array.isArray(snap.rows) ? snap.rows : []);
 
         // 2) colunas
@@ -139,29 +152,46 @@ sap.ui.define([
             if (tbl) {
                 const byId = {};
                 (tbl.getColumns() || []).forEach(c => byId[_shortIdFrom(c, view)] = c);
-                // visibilidade:
+
+                // visibilidade
                 Object.keys(snap.uiColumns.map || {}).forEach(id => {
                     const c = byId[id];
                     if (c) c.setVisible(!!snap.uiColumns.map[id]);
                 });
-                // ordem:
-                const order = Array.isArray(snap.uiColumns.order) ? snap.uiColumns.order.map(o => o.id) : [];
-                if (order.length) {
-                    const present = order.map(id => byId[id]).filter(Boolean);
-                    present.forEach((c, i) => {
-                        tbl.removeColumn(c);
-                        tbl.insertColumn(c, i);
-                    });
+
+                // ordem
+                const orderIds = Array.isArray(snap.uiColumns.order)
+                    ? snap.uiColumns.order.map(o => o && o.id).filter(Boolean)
+                    : [];
+
+                if (orderIds.length) {
+                    const doReorder = function () {
+                        try {
+                            sap.ui.require(
+                                ["comparativemap/comparativemap/controller/prefs/PrefsStore"],
+                                function (Prefs) {
+                                    Prefs?.reorderColumnsAndCells?.(ctrl, orderIds);
+                                }
+                            );
+                        } catch (e) {
+                            // fallback: só reordena colunas
+                            const present = orderIds.map(id => byId[id]).filter(Boolean);
+                            present.forEach((c, i) => { tbl.removeColumn(c); tbl.insertColumn(c, i); });
+                        }
+                    };
+
+                    // agora + após render dos itens
+                    doReorder();
+                    tbl.attachEventOnce?.("updateFinished", doReorder);
                 }
             }
         }
-        // Condições compactadas (descarta placeholders que a UI possa ter salvo)
-        // Condições compactadas (tira placeholders) e memorizadas como "last good"
+
+        // 3) filtros (UI + tabela)
         const cleanConds = _compactConditions(snap.conditions || {});
         ctrl._pendingConditions = cleanConds;
         ctrl.__lastAppliedConditions = cleanConds;
 
-        // 3) filtros (aplicando no ConditionModel e na tabela)
         const cm = view.getModel("cm");
         if (cm && typeof cm.setAllConditions === "function") {
             cm.removeAllConditions();
@@ -169,10 +199,8 @@ sap.ui.define([
             cm.checkUpdate(true);
         }
 
-        // 4) re-aplica filtros no binding da tabela (FilterType.Application)
         const binding = view.byId("tblDocs")?.getBinding("items");
         if (binding) {
-            // converte as condições em UI5 Filters
             const Filter = sap.ui.require("sap/ui/model/Filter");
             const FilterOperator = sap.ui.require("sap/ui/model/FilterOperator");
             const FO = {
@@ -183,16 +211,15 @@ sap.ui.define([
                 StartsWith: FilterOperator.StartsWith,
                 EndsWith: FilterOperator.EndsWith
             };
-            const conds = cleanConds;
             const filters = [];
-            Object.keys(conds).forEach(field => {
-                (conds[field] || []).forEach(c => {
+            Object.keys(cleanConds).forEach(field => {
+                (cleanConds[field] || []).forEach(c => {
                     const op = FO[c.operator] || FilterOperator.EQ;
-                    if (op === FilterOperator.BT) {
-                        filters.push(new Filter(field, op, c.values?.[0], c.values?.[1]));
-                    } else {
-                        filters.push(new Filter(field, op, c.values?.[0]));
-                    }
+                    filters.push(
+                        op === FilterOperator.BT
+                            ? new Filter(field, op, c.values?.[0], c.values?.[1])
+                            : new Filter(field, op, c.values?.[0])
+                    );
                 });
             });
 
@@ -201,12 +228,10 @@ sap.ui.define([
             binding.filter(filters, "Application");
         }
 
-        // 5) sincronia de UI
+        // 4) sincronia + sort/group
         sap.ui.getCore().applyChanges();
 
-        // 6) sort e group (via seu ViewSettingsCmp)
         if (ctrl._vs) {
-            // injeta no _prefs do controller e aplica
             ctrl._prefs = Object.assign({}, ctrl._prefs || {}, {
                 sort: snap.uiSort || {},
                 group: snap.uiGroup || {}
@@ -214,6 +239,7 @@ sap.ui.define([
             ctrl._vs.setPrefs(ctrl._prefs);
             ctrl._vs.applyGroupSortFromPrefs();
         }
+
         ctrl.__restoringDraft = false;
         try { save(ctrl); } catch (e) { }
     }
@@ -310,8 +336,11 @@ sap.ui.define([
         // se só tem um, pergunta direto
         if (docIds.length === 1) {
             const only = docIds[0];
+            const savedAtIso = items[only]?.savedAt;
+            const savedAtBR = _formatSavedAtBR(savedAtIso); // usa America/Sao_Paulo
+
             MessageBox.confirm(
-                `Encontramos um rascunho de ${only} salvo em ${items[only].savedAt}. Deseja restaurar agora?`,
+                `Encontramos um rascunho de ${only} salvo em ${savedAtBR}. Deseja restaurar agora?`,
                 {
                     actions: [MessageBox.Action.YES, MessageBox.Action.NO],
                     emphasizedAction: MessageBox.Action.YES,
@@ -321,20 +350,24 @@ sap.ui.define([
             return;
         }
 
-        // senão, lista para escolha
+        // ====> SelectDialog (visual igual) + botão "X" por item para excluir
         const data = docIds
-            .map(d => ({ docId: d, savedAt: items[d].savedAt, rows: items[d].rows }))
+            .map(d => ({
+                docId: d,
+                savedAt: items[d].savedAt,
+                savedAtBR: _formatSavedAtBR(items[d].savedAt), // ← hora formatada no BR
+                rows: items[d].rows
+            }))
             .sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 
+        const mdl = new JSONModel(data);
         const dlg = new SelectDialog({
             title: "Restaurar rascunho",
-            items: {
-                path: "/",
-                template: new StandardListItem({
-                    title: "{docId}",
-                    description: "{savedAt}",
-                    info: "{= ${rows} + ' linha(s)'}"
-                })
+            search: function (ev) {
+                const q = (ev.getParameter("value") || "").toLowerCase();
+                const base = data.slice();
+                const filtered = q ? base.filter(d => String(d.docId).toLowerCase().includes(q)) : base;
+                mdl.setData(filtered);
             },
             confirm: (ev) => {
                 const obj = ev.getParameter("selectedItem")?.getBindingContext()?.getObject();
@@ -343,9 +376,99 @@ sap.ui.define([
             },
             cancel: () => setTimeout(() => dlg.destroy(), 0)
         });
-        dlg.setModel(new JSONModel(data));
+
+        // Template via factory para poder aplicar margens e “gap”
+        dlg.bindAggregation("items", {
+            path: "/",
+            factory: function (sId, oCtx) {
+                const obj = oCtx.getObject();
+
+                // Linha 1 (DocID) + Linha 2 (data formatada + contagem)
+                const txtDoc = new Text({ text: obj.docId, wrapping: false });
+                txtDoc.addStyleClass("sapMTextStrong sapUiTinyMarginBottom"); // destaque + respiro
+
+                const txtMeta = new Text({
+                    text: `Salvo em ${obj.savedAtBR} · ${obj.rows} linha(s)`,
+                    wrapping: false
+                });
+
+                const left = new VBox({ items: [txtDoc, txtMeta], width: "100%" });
+                // Margem interna (padding visual) no item
+                left.addStyleClass("sapUiSmallMarginBeginEnd sapUiTinyMarginTopBottom");
+
+                // Botão “X” (excluir)
+                const btnDel = new Button({
+                    icon: "sap-icon://decline",
+                    type: "Transparent",
+                    tooltip: "Excluir este rascunho",
+                    press: function (oEvent) {
+                        const ctx = oEvent.getSource().getBindingContext();
+                        const row = ctx && ctx.getObject();
+                        if (!row || !row.docId) return;
+
+                        MessageBox.confirm(
+                            `Excluir o rascunho do DocID ${row.docId}?`,
+                            {
+                                actions: [MessageBox.Action.YES, MessageBox.Action.NO],
+                                emphasizedAction: MessageBox.Action.YES,
+                                onClose: (act) => {
+                                    if (act !== MessageBox.Action.YES) return;
+                                    try { clear(row.docId); } catch (e) { /* ignore */ }
+                                    const arr = (mdl.getData() || []).filter(x => x.docId !== row.docId);
+                                    mdl.setData(arr);
+                                    sap.m.MessageToast.show(`Rascunho ${row.docId} removido.`);
+                                    if (!arr.length) setTimeout(() => dlg.close(), 0);
+                                }
+                            }
+                        );
+
+                        // evita “selecionar” o item ao clicar no X
+                        oEvent.preventDefault && oEvent.preventDefault();
+                        oEvent.cancelBubble = true;
+                        oEvent.stopPropagation && oEvent.stopPropagation();
+                        oEvent.stopImmediatePropagation && oEvent.stopImmediatePropagation();
+                    }
+                });
+                btnDel.addStyleClass("sapUiSmallMarginEnd"); // respiro na borda direita
+
+                // “Gap” visível entre a coluna de textos e o botão
+                const gap = new HBox({ width: "1rem" });
+
+                // Container horizontal com alinhamento e espaçamento
+                const row = new HBox({
+                    alignItems: "Center",
+                    justifyContent: "SpaceBetween",
+                    fitContainer: true,
+                    items: [left, gap, btnDel]
+                });
+
+                // Item selecionável (tocar no item = selecionar)
+                const cli = new CustomListItem({ content: [row], type: "Active" });
+                // margem inferior pra separar um item do outro
+                cli.addStyleClass("sapUiSmallMarginBottom");
+
+                return cli;
+            }
+        });
+
+        dlg.setModel(mdl);
         view.addDependent(dlg);
         dlg.open();
+    }
+
+    function _formatSavedAtBR(isoString) {
+        if (!isoString) return "";
+        try {
+            // Mostra sempre no fuso do Brasil, independente do fuso do navegador
+            const dt = new Date(isoString);
+            return new Intl.DateTimeFormat("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit", second: "2-digit"
+            }).format(dt);
+        } catch (e) {
+            return String(isoString || "");
+        }
     }
 
     return {
