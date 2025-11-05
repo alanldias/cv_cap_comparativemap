@@ -285,6 +285,20 @@ sap.ui.define([
         } catch (e) { /* ignore */ }
     }
 
+    function _formatSavedAtBR(isoString) {
+    if (!isoString) return "";
+    try {
+        const dt = new Date(isoString);
+        return new Intl.DateTimeFormat("pt-BR", {
+            timeZone: "America/Sao_Paulo",
+            day: "2-digit", month: "2-digit", year: "numeric",
+            hour: "2-digit", minute: "2-digit", second: "2-digit"
+        }).format(dt);
+    } catch (e) {
+        return String(isoString || "");
+    }
+}
+
     function offerRestoreOnEnter(ctrl) {
         const view = ctrl.getView();
         const current = _getDocId(ctrl);
