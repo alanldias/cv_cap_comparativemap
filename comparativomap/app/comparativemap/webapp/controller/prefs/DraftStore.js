@@ -128,32 +128,33 @@ sap.ui.define([
         vm?.setProperty("/headerRows", Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : []));
         vm?.setProperty("/rows", Array.isArray(snap.rows) ? snap.rows : []);
 
-        // 2) colunas
+        // 2) colunas (sem mexer diretamente nas colunas do sap.m.Table)
         if (ui && snap.uiColumns) {
-            // atualiza o modelo UI e também aplica direto na tabela
-            const newMap = { ...(ui.getProperty("/columns") || {}) };
-            Object.keys(newMap).forEach(id => { newMap[id] = !!snap.uiColumns.map[id]; });
-            ui.setProperty("/columns", newMap);
+            ui.setProperty("/columns", { ...(snap.uiColumns.map || {}) });
 
-            const tbl = view.byId("tblDocs");
-            if (tbl) {
-                const byId = {};
-                (tbl.getColumns() || []).forEach(c => byId[_shortIdFrom(c, view)] = c);
-                // visibilidade:
-                Object.keys(snap.uiColumns.map || {}).forEach(id => {
-                    const c = byId[id];
-                    if (c) c.setVisible(!!snap.uiColumns.map[id]);
-                });
-                // ordem:
-                const order = Array.isArray(snap.uiColumns.order) ? snap.uiColumns.order.map(o => o.id) : [];
-                if (order.length) {
-                    const present = order.map(id => byId[id]).filter(Boolean);
-                    present.forEach((c, i) => {
-                        tbl.removeColumn(c);
-                        tbl.insertColumn(c, i);
-                    });
+            const orderIds = Array.isArray(snap.uiColumns.order)
+                ? snap.uiColumns.order.map(o => o.id)
+                : [];
+
+            if (orderIds.length) {
+                ui.setProperty("/columnOrder", orderIds);
+                try {
+                    const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
+                    Filtros && Filtros.applyColumnOrder(ctrl);
+                } catch (e) {
+                    console.warn("Não consegui carregar 'filtros' (orderIds):", e);
                 }
             }
+        }
+
+        try {
+            const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
+            if (Filtros) {
+                Filtros.captureColCellMap(ctrl);
+                Filtros.applyColumnOrder(ctrl);
+            }
+        } catch (e) {
+            console.warn("Não consegui carregar 'filtros' (capture+apply):", e);
         }
         // Condições compactadas (descarta placeholders que a UI possa ter salvo)
         // Condições compactadas (tira placeholders) e memorizadas como "last good"
@@ -173,8 +174,8 @@ sap.ui.define([
         const binding = view.byId("tblDocs")?.getBinding("items");
         if (binding) {
             // converte as condições em UI5 Filters
-            const Filter = sap.ui.require("sap/ui/model/Filter");
-            const FilterOperator = sap.ui.require("sap/ui/model/FilterOperator");
+            const Filter = sap.ui.requireSync("sap/ui/model/Filter");
+            const FilterOperator = sap.ui.requireSync("sap/ui/model/FilterOperator");
             const FO = {
                 EQ: FilterOperator.EQ, BT: FilterOperator.BT,
                 GE: FilterOperator.GE, LE: FilterOperator.LE,

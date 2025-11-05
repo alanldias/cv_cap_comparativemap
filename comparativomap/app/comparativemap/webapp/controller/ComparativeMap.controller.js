@@ -126,17 +126,46 @@ sap.ui.define(
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
 
+          // cria o modelo de UI
           const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
           this.getView().setModel(ui, "ui");
+
+          // ⬇️ COLE ESTE BLOCO AQUI
+          ui.attachPropertyChange((ev) => {
+            const path = ev.getParameter("path");
+
+            if (path === "/columnOrder") {
+              if (!this.__col2cellMap) Filtros.captureColCellMap(this);
+              Filtros.applyColumnOrder(this);
+            }
+
+            if (path === "/columns") {
+              // 👁️ refletir visibilidade imediatamente
+              const tbl = this.byId("tblDocs");
+              const m = ui.getProperty("/columns") || {};
+              const prefix = this.getView().getId() + "--";
+
+              (tbl.getColumns() || []).forEach((c) => {
+                const id = c.getId().startsWith(prefix) ? c.getId().slice(prefix.length) : c.getId();
+                if (id in m) c.setVisible(!!m[id]);
+              });
+            }
+          });
 
           // deixa tudo compacto (baixa a altura das linhas/inputs)
           this.getView().addStyleClass("sapUiSizeCompact");
 
           // monta a partir da tabela usando **id curto**
           const tbl = this.byId("tblDocs");
+          let _capturedOnce = false;
           tbl.getBinding("items").attachDataReceived(() => {
-            // Ajuste aqui para o nome exportado
             Filtros.updateFilterBarLabel(this);
+            if (!_capturedOnce) {
+              Filtros.captureColCellMap(this);
+              // ✅ reconstroi o template já com o mapa correto
+              Filtros.applyColumnOrder(this);
+              _capturedOnce = true;
+            }
           });
           const colsMap = {};
           const colList = [];
@@ -153,6 +182,14 @@ sap.ui.define(
           ui.setProperty("/columns", colsMap);
           ui.setProperty("/columnList", colList);
 
+          Filtros.captureColCellMap(this);
+
+          setTimeout(() => {
+            const order = ui.getProperty("/columnOrder");
+            if (order && order.length) {
+              Filtros.applyColumnOrder(this);
+            }
+          }, 0);
 
           Filtros.init(this);
 
