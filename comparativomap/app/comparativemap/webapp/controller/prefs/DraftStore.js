@@ -2,9 +2,25 @@ sap.ui.define([
     "sap/ui/util/Storage",
     "sap/m/MessageBox",
     "sap/m/SelectDialog",
-    "sap/m/StandardListItem",
-    "sap/ui/model/json/JSONModel"
-], function (Storage, MessageBox, SelectDialog, StandardListItem, JSONModel) {
+    "sap/m/StandardListItem",        
+    "sap/ui/model/json/JSONModel",
+    "sap/m/CustomListItem",
+    "sap/m/Button",
+    "sap/m/HBox",
+    "sap/m/VBox",
+    "sap/m/Text",
+    "sap/m/MessageToast"
+], function (  Storage,
+    MessageBox,
+    SelectDialog,
+    StandardListItem,                  // <- adiciona esse parâmetro aqui
+    JSONModel,
+    CustomListItem,
+    Button,
+    HBox,
+    VBox,
+    Text,
+    MessageToast) {
     "use strict";
 
     const storage = new Storage(Storage.Type.local, "comparativemap");
@@ -285,6 +301,20 @@ sap.ui.define([
         } catch (e) { /* ignore */ }
     }
 
+    function _formatSavedAtBR(isoString) {
+        if (!isoString) return "";
+        try {
+            const dt = new Date(isoString);
+            return new Intl.DateTimeFormat("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit", second: "2-digit"
+            }).format(dt);
+        } catch (e) {
+            return String(isoString || "");
+        }
+    }
+
     function offerRestoreOnEnter(ctrl) {
         const view = ctrl.getView();
         const current = _getDocId(ctrl);
@@ -311,8 +341,9 @@ sap.ui.define([
         // se só tem um, pergunta direto
         if (docIds.length === 1) {
             const only = docIds[0];
+            const savedAtBR = _formatSavedAtBR(items[only]?.savedAt);
             MessageBox.confirm(
-                `Encontramos um rascunho de ${only} salvo em ${items[only].savedAt}. Deseja restaurar agora?`,
+                `Encontramos um rascunho de ${only} salvo em ${savedAtBR}. Deseja restaurar agora?`,
                 {
                     actions: [MessageBox.Action.YES, MessageBox.Action.NO],
                     emphasizedAction: MessageBox.Action.YES,
@@ -322,20 +353,24 @@ sap.ui.define([
             return;
         }
 
-        // senão, lista para escolha
+
         const data = docIds
-            .map(d => ({ docId: d, savedAt: items[d].savedAt, rows: items[d].rows }))
+            .map(d => ({
+                docId: d,
+                savedAt: items[d].savedAt,
+                savedAtBR: _formatSavedAtBR(items[d].savedAt), // ← hora formatada no BR
+                rows: items[d].rows
+            }))
             .sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 
+        const mdl = new JSONModel(data);
         const dlg = new SelectDialog({
             title: "Restaurar rascunho",
-            items: {
-                path: "/",
-                template: new StandardListItem({
-                    title: "{docId}",
-                    description: "{savedAt}",
-                    info: "{= ${rows} + ' linha(s)'}"
-                })
+            search: function (ev) {
+                const q = (ev.getParameter("value") || "").toLowerCase();
+                const base = data.slice();
+                const filtered = q ? base.filter(d => String(d.docId).toLowerCase().includes(q)) : base;
+                mdl.setData(filtered);
             },
             confirm: (ev) => {
                 const obj = ev.getParameter("selectedItem")?.getBindingContext()?.getObject();
@@ -344,7 +379,82 @@ sap.ui.define([
             },
             cancel: () => setTimeout(() => dlg.destroy(), 0)
         });
-        dlg.setModel(new JSONModel(data));
+
+        // Template via factory para poder aplicar margens e “gap”
+        dlg.bindAggregation("items", {
+            path: "/",
+            factory: function (sId, oCtx) {
+                const obj = oCtx.getObject();
+
+                // Linha 1 (DocID) + Linha 2 (data formatada + contagem)
+                const txtDoc = new Text({ text: obj.docId, wrapping: false });
+                txtDoc.addStyleClass("sapMTextStrong sapUiTinyMarginBottom"); // destaque + respiro
+
+                const txtMeta = new Text({
+                    text: `Salvo em ${obj.savedAtBR} · ${obj.rows} linha(s)`,
+                    wrapping: false
+                });
+
+                const left = new VBox({ items: [txtDoc, txtMeta], width: "100%" });
+                // Margem interna (padding visual) no item
+                left.addStyleClass("sapUiSmallMarginBeginEnd sapUiTinyMarginTopBottom");
+
+                // Botão “X” (excluir)
+                const btnDel = new Button({
+                    icon: "sap-icon://decline",
+                    type: "Transparent",
+                    tooltip: "Excluir este rascunho",
+                    press: function (oEvent) {
+                        const ctx = oEvent.getSource().getBindingContext();
+                        const row = ctx && ctx.getObject();
+                        if (!row || !row.docId) return;
+
+                        MessageBox.confirm(
+                            `Excluir o rascunho do DocID ${row.docId}?`,
+                            {
+                                actions: [MessageBox.Action.YES, MessageBox.Action.NO],
+                                emphasizedAction: MessageBox.Action.YES,
+                                onClose: (act) => {
+                                    if (act !== MessageBox.Action.YES) return;
+                                    try { clear(row.docId); } catch (e) { /* ignore */ }
+                                    const arr = (mdl.getData() || []).filter(x => x.docId !== row.docId);
+                                    mdl.setData(arr);
+                                    MessageToast.show(`Rascunho ${row.docId} removido.`);
+                                    if (!arr.length) setTimeout(() => dlg.close(), 0);
+                                }
+                            }
+                        );
+
+                        // evita “selecionar” o item ao clicar no X
+                        oEvent.preventDefault && oEvent.preventDefault();
+                        oEvent.cancelBubble = true;
+                        oEvent.stopPropagation && oEvent.stopPropagation();
+                        oEvent.stopImmediatePropagation && oEvent.stopImmediatePropagation();
+                    }
+                });
+                btnDel.addStyleClass("sapUiSmallMarginEnd"); // respiro na borda direita
+
+                // “Gap” visível entre a coluna de textos e o botão
+                const gap = new HBox({ width: "1rem" });
+
+                // Container horizontal com alinhamento e espaçamento
+                const row = new HBox({
+                    alignItems: "Center",
+                    justifyContent: "SpaceBetween",
+                    fitContainer: true,
+                    items: [left, gap, btnDel]
+                });
+
+                // Item selecionável (tocar no item = selecionar)
+                const cli = new CustomListItem({ content: [row], type: "Active" });
+                // margem inferior pra separar um item do outro
+                cli.addStyleClass("sapUiSmallMarginBottom");
+
+                return cli;
+            }
+        });
+
+        dlg.setModel(mdl);
         view.addDependent(dlg);
         dlg.open();
     }

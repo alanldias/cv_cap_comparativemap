@@ -2,19 +2,25 @@ sap.ui.define([
     "sap/ui/util/Storage",
     "sap/m/MessageBox",
     "sap/m/SelectDialog",
-    "sap/m/StandardListItem",
+    "sap/m/StandardListItem",        
     "sap/ui/model/json/JSONModel",
-    // ↓ adicionados só para o botão "X" dentro do SelectDialog
     "sap/m/CustomListItem",
     "sap/m/Button",
     "sap/m/HBox",
     "sap/m/VBox",
     "sap/m/Text",
     "sap/m/MessageToast"
-], function (
-    Storage, MessageBox, SelectDialog, StandardListItem, JSONModel,
-    CustomListItem, Button, HBox, VBox, Text, MessageToast
-) {
+], function (  Storage,
+    MessageBox,
+    SelectDialog,
+    StandardListItem,                  // <- adiciona esse parâmetro aqui
+    JSONModel,
+    CustomListItem,
+    Button,
+    HBox,
+    VBox,
+    Text,
+    MessageToast) {
     "use strict";
 
     const storage = new Storage(Storage.Type.local, "comparativemap");
@@ -135,63 +141,44 @@ sap.ui.define([
 
         // 1) header + rows
         vm?.setProperty("/header", snap.header || {});
-        vm?.setProperty(
-            "/headerRows",
-            Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : [])
-        );
+        vm?.setProperty("/headerRows", Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : []));
         vm?.setProperty("/rows", Array.isArray(snap.rows) ? snap.rows : []);
 
-        // 2) colunas
+        // 2) colunas (sem mexer diretamente nas colunas do sap.m.Table)
         if (ui && snap.uiColumns) {
-            // atualiza o modelo UI e também aplica direto na tabela
-            const newMap = { ...(ui.getProperty("/columns") || {}) };
-            Object.keys(newMap).forEach(id => { newMap[id] = !!snap.uiColumns.map[id]; });
-            ui.setProperty("/columns", newMap);
+            ui.setProperty("/columns", { ...(snap.uiColumns.map || {}) });
 
-            const tbl = view.byId("tblDocs");
-            if (tbl) {
-                const byId = {};
-                (tbl.getColumns() || []).forEach(c => byId[_shortIdFrom(c, view)] = c);
+            const orderIds = Array.isArray(snap.uiColumns.order)
+                ? snap.uiColumns.order.map(o => o.id)
+                : [];
 
-                // visibilidade
-                Object.keys(snap.uiColumns.map || {}).forEach(id => {
-                    const c = byId[id];
-                    if (c) c.setVisible(!!snap.uiColumns.map[id]);
-                });
-
-                // ordem
-                const orderIds = Array.isArray(snap.uiColumns.order)
-                    ? snap.uiColumns.order.map(o => o && o.id).filter(Boolean)
-                    : [];
-
-                if (orderIds.length) {
-                    const doReorder = function () {
-                        try {
-                            sap.ui.require(
-                                ["comparativemap/comparativemap/controller/prefs/PrefsStore"],
-                                function (Prefs) {
-                                    Prefs?.reorderColumnsAndCells?.(ctrl, orderIds);
-                                }
-                            );
-                        } catch (e) {
-                            // fallback: só reordena colunas
-                            const present = orderIds.map(id => byId[id]).filter(Boolean);
-                            present.forEach((c, i) => { tbl.removeColumn(c); tbl.insertColumn(c, i); });
-                        }
-                    };
-
-                    // agora + após render dos itens
-                    doReorder();
-                    tbl.attachEventOnce?.("updateFinished", doReorder);
+            if (orderIds.length) {
+                ui.setProperty("/columnOrder", orderIds);
+                try {
+                    const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
+                    Filtros && Filtros.applyColumnOrder(ctrl);
+                } catch (e) {
+                    console.warn("Não consegui carregar 'filtros' (orderIds):", e);
                 }
             }
         }
 
-        // 3) filtros (UI + tabela)
+        try {
+            const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
+            if (Filtros) {
+                Filtros.captureColCellMap(ctrl);
+                Filtros.applyColumnOrder(ctrl);
+            }
+        } catch (e) {
+            console.warn("Não consegui carregar 'filtros' (capture+apply):", e);
+        }
+        // Condições compactadas (descarta placeholders que a UI possa ter salvo)
+        // Condições compactadas (tira placeholders) e memorizadas como "last good"
         const cleanConds = _compactConditions(snap.conditions || {});
         ctrl._pendingConditions = cleanConds;
         ctrl.__lastAppliedConditions = cleanConds;
 
+        // 3) filtros (aplicando no ConditionModel e na tabela)
         const cm = view.getModel("cm");
         if (cm && typeof cm.setAllConditions === "function") {
             cm.removeAllConditions();
@@ -199,10 +186,12 @@ sap.ui.define([
             cm.checkUpdate(true);
         }
 
+        // 4) re-aplica filtros no binding da tabela (FilterType.Application)
         const binding = view.byId("tblDocs")?.getBinding("items");
         if (binding) {
-            const Filter = sap.ui.require("sap/ui/model/Filter");
-            const FilterOperator = sap.ui.require("sap/ui/model/FilterOperator");
+            // converte as condições em UI5 Filters
+            const Filter = sap.ui.requireSync("sap/ui/model/Filter");
+            const FilterOperator = sap.ui.requireSync("sap/ui/model/FilterOperator");
             const FO = {
                 EQ: FilterOperator.EQ, BT: FilterOperator.BT,
                 GE: FilterOperator.GE, LE: FilterOperator.LE,
@@ -211,15 +200,16 @@ sap.ui.define([
                 StartsWith: FilterOperator.StartsWith,
                 EndsWith: FilterOperator.EndsWith
             };
+            const conds = cleanConds;
             const filters = [];
-            Object.keys(cleanConds).forEach(field => {
-                (cleanConds[field] || []).forEach(c => {
+            Object.keys(conds).forEach(field => {
+                (conds[field] || []).forEach(c => {
                     const op = FO[c.operator] || FilterOperator.EQ;
-                    filters.push(
-                        op === FilterOperator.BT
-                            ? new Filter(field, op, c.values?.[0], c.values?.[1])
-                            : new Filter(field, op, c.values?.[0])
-                    );
+                    if (op === FilterOperator.BT) {
+                        filters.push(new Filter(field, op, c.values?.[0], c.values?.[1]));
+                    } else {
+                        filters.push(new Filter(field, op, c.values?.[0]));
+                    }
                 });
             });
 
@@ -228,10 +218,12 @@ sap.ui.define([
             binding.filter(filters, "Application");
         }
 
-        // 4) sincronia + sort/group
+        // 5) sincronia de UI
         sap.ui.getCore().applyChanges();
 
+        // 6) sort e group (via seu ViewSettingsCmp)
         if (ctrl._vs) {
+            // injeta no _prefs do controller e aplica
             ctrl._prefs = Object.assign({}, ctrl._prefs || {}, {
                 sort: snap.uiSort || {},
                 group: snap.uiGroup || {}
@@ -239,7 +231,6 @@ sap.ui.define([
             ctrl._vs.setPrefs(ctrl._prefs);
             ctrl._vs.applyGroupSortFromPrefs();
         }
-
         ctrl.__restoringDraft = false;
         try { save(ctrl); } catch (e) { }
     }
@@ -310,6 +301,20 @@ sap.ui.define([
         } catch (e) { /* ignore */ }
     }
 
+    function _formatSavedAtBR(isoString) {
+        if (!isoString) return "";
+        try {
+            const dt = new Date(isoString);
+            return new Intl.DateTimeFormat("pt-BR", {
+                timeZone: "America/Sao_Paulo",
+                day: "2-digit", month: "2-digit", year: "numeric",
+                hour: "2-digit", minute: "2-digit", second: "2-digit"
+            }).format(dt);
+        } catch (e) {
+            return String(isoString || "");
+        }
+    }
+
     function offerRestoreOnEnter(ctrl) {
         const view = ctrl.getView();
         const current = _getDocId(ctrl);
@@ -336,9 +341,7 @@ sap.ui.define([
         // se só tem um, pergunta direto
         if (docIds.length === 1) {
             const only = docIds[0];
-            const savedAtIso = items[only]?.savedAt;
-            const savedAtBR = _formatSavedAtBR(savedAtIso); // usa America/Sao_Paulo
-
+            const savedAtBR = _formatSavedAtBR(items[only]?.savedAt);
             MessageBox.confirm(
                 `Encontramos um rascunho de ${only} salvo em ${savedAtBR}. Deseja restaurar agora?`,
                 {
@@ -350,7 +353,7 @@ sap.ui.define([
             return;
         }
 
-        // ====> SelectDialog (visual igual) + botão "X" por item para excluir
+
         const data = docIds
             .map(d => ({
                 docId: d,
@@ -416,7 +419,7 @@ sap.ui.define([
                                     try { clear(row.docId); } catch (e) { /* ignore */ }
                                     const arr = (mdl.getData() || []).filter(x => x.docId !== row.docId);
                                     mdl.setData(arr);
-                                    sap.m.MessageToast.show(`Rascunho ${row.docId} removido.`);
+                                    MessageToast.show(`Rascunho ${row.docId} removido.`);
                                     if (!arr.length) setTimeout(() => dlg.close(), 0);
                                 }
                             }
@@ -454,21 +457,6 @@ sap.ui.define([
         dlg.setModel(mdl);
         view.addDependent(dlg);
         dlg.open();
-    }
-
-    function _formatSavedAtBR(isoString) {
-        if (!isoString) return "";
-        try {
-            // Mostra sempre no fuso do Brasil, independente do fuso do navegador
-            const dt = new Date(isoString);
-            return new Intl.DateTimeFormat("pt-BR", {
-                timeZone: "America/Sao_Paulo",
-                day: "2-digit", month: "2-digit", year: "numeric",
-                hour: "2-digit", minute: "2-digit", second: "2-digit"
-            }).format(dt);
-        } catch (e) {
-            return String(isoString || "");
-        }
     }
 
     return {

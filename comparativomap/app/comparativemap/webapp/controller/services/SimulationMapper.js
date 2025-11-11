@@ -64,23 +64,42 @@ sap.ui.define(
     }
 
     function resolveItemCatFromRow(r) {
-      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString().trim();
-      const U = raw.toUpperCase();
-      // aliases comuns de serviço vindos do Ariba / UI
-      if (U === "D" || U === "SERVICE" || U === "SERVIÇO" || U === "SERVICO" || U === "SVC" || U === "service") return "D";
+      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString();
 
-      // tente o mapeador padrão (caso ele reconheça outros casos)
-      if (typeof Keys.mapItemCategory === "function") {
-        const mapped = Keys.mapItemCategory(raw);
-        if (mapped) return mapped;
+      // Normaliza Unicode e remove caracteres invisíveis (zero-width, BOM etc.)
+      const cleaned = raw
+        .normalize("NFKC")
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "") 
+        .replace(/[\u00A0\u202F\u2007]/g, " ") 
+        .replace(/[\s_-]+/g, " ") 
+        .trim()
+        .toUpperCase();
+
+      if (
+        cleaned.startsWith("D") ||
+        cleaned.includes("SERVICE") ||
+        cleaned.includes("SERVIÇO") ||
+        cleaned.includes("SERVICO") ||
+        cleaned === "SVC"
+      ) {
+        return "D";
       }
 
-      // heurística de fallback: sem material e com texto => trate como serviço
-      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
-      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || "").trim();
-      if (!hasMat && hasText) return "D";
+      if (typeof Keys.mapItemCategory === "function") {
+        const mapped = Keys.mapItemCategory(raw);
+        if (mapped && mapped !== "0") {
+          return mapped;
+        }
+      }
 
-      return "0"; // default: material padrão
+      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
+      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || r.ItemDescription || "").trim();
+
+      if (!hasMat && hasText) {
+        return "D";
+      }
+      return "0";
     }
 
     function mapRowToPOItem(r, idx) {
@@ -109,7 +128,6 @@ sap.ui.define(
       );
       const plant = Keys.mapPlant((r.PLANT || "").toString());
       const itemCat = resolveItemCatFromRow(r);
-      console.log(`[itemCat] raw="${r.ItemCategory}" -> "${itemCat}"`);
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
       const netPrice = r.price != null ? Number(r.price) : null;
       const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || ""))

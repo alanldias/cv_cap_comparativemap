@@ -119,7 +119,7 @@
                             <columns>
                                 <Column id="colFornecedor"      visible="{ui>/columns/colFornecedor}" width="15rem"    hAlign="Center"><header><Text id="txtHdrFornecedor"     text="Fornecedor"/></header></Column>
                                 <Column id="colNomeItem"        visible="{ui>/columns/colNomeItem}" width="15rem"    hAlign="Center"><header><Text id="txtHdrNomeItem"       text="Nome do Item"/></header></Column>
-                                <Column id="colQuantidade"      visible="{ui>/columns/colQuantidade}" width="7rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column>
+                                <Column id="colQuantidade"      visible="{ui>/columns/colQuantidade}" width="7.5rem"     hAlign="Center"><header><Text id="txtHdrQuantidade"     text="Quantidade"/></header></Column>
                                 <Column id="colPreco"           visible="{ui>/columns/colPreco}" width="7rem"     hAlign="Center"><header><Text id="txtHdrPreco"          text="Preço do Item"/></header></Column>
                                 <Column id="colMoeda"           visible="{ui>/columns/colMoeda}" width="5rem"     hAlign="Center"><header><Text id="txtHdrMoeda"          text="Moeda"/></header></Column>
                                 <Column id="colNCM"             visible="{ui>/columns/colNCM}" width="10rem"    hAlign="Center"><header><Text id="txtHdrNCM"            text="NCM"/></header></Column>
@@ -146,7 +146,7 @@
                                 <Column id="colCodigoRFQ"       visible="{ui>/columns/colCodigoRFQ}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrCodigoRFQ"    text="Código da RFQ"/></header></Column>
                                 <Column id="colDeliveryDate"    visible="{ui>/columns/colDeliveryDate}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrDeliveryDate" text="Data de Entrega Solicitada"/></header></Column>
                                 <Column id="colPrazoEntrega"    visible="{ui>/columns/colPrazoEntrega}" width="8rem"     hAlign="Center"><header><Text id = "txtHdrPrazoEntrega" text="Prazo de Entrega"/></header></Column>
-                                <Column id="colunasuppliercode" visible="false"><Text id = "suppliercode" text="suppliercode"/></Column>
+                                <Column id="colunasuppliercode" visible="false"><header><Text id = "suppliercode" text="suppliercode"/></header></Column>
                             </columns>
 
                             <items>

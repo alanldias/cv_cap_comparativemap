@@ -185,7 +185,7 @@ async function enrichWithTaxCode(items, options = {}) {
       .slice(0, 10) // limita no log
       .map(
         (x) =>
-          `• MAT=${x.src.Material || "-"} | Plant=${x.src.Plant || "-"} | POrg=${x.src.PurchasingOrganization || "-"}${x.pref ? ` | PreferSup=${x.pref}` : ""}`,
+          `• MAT=${x.src.Material || "-"} | Plant=${x.src.Plant || "-"} | POrg=${x.src.PurchasingOrganization || "-"}${x.pref ? ` | Supplier=${x.pref}` : ""}`,
       )
       .join("\n");
     throw new Error(

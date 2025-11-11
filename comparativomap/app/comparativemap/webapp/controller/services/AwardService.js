@@ -169,14 +169,6 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
       return null;
     }
 
-    // Mostrar avisos de excesso (não bloqueia)
-    if (avisos.length) {
-      MessageBox.warning(
-        "Aviso: há itens com quantidade premiada acima da quantidade indicada.\n\n" +
-          avisos.join("\n"),
-      );
-    }
-
     return supplierBids;
   }
 
