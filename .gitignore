@@ -1,3 +1,16 @@
 comparativomap/srv/teste-dest.js
 comparativomap/resources/comparativemapcomparativemap.zip
 comparativomap/app/comparativemap/dist/comparativemapcomparativemap.zip
+comparativomap/app/comparativemap/dist
+comparativomap/app/comparativemap/dist/*
+comparativomap/app/comparativemap/dist/comparativemapcomparativemap.zip
+comparativomap/app/comparativemap/dist/Component-preload.js
+comparativomap/app/comparativemap/dist/Component-preload.js.map
+comparativomap/app/comparativemap/dist/sap-ui-cachebuster-info.json
+comparativomap/app/comparativemap/dist/controller/services/AwardService-dbg.js
+comparativomap/app/comparativemap/dist/controller/services/AwardService.js
+comparativomap/app/comparativemap/dist/controller/services/AwardService.js.map
+comparativomap/app/comparativemap/dist/controller/services/SimulationMapper-dbg.js
+comparativomap/app/comparativemap/dist/controller/services/SimulationMapper.js
+comparativomap/app/comparativemap/dist/controller/services/SimulationMapper.js.map
+comparativomap/resources/comparativemapcomparativemap.zip

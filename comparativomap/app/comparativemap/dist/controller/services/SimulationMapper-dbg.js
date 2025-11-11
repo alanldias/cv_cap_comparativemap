@@ -64,23 +64,64 @@ sap.ui.define(
     }
 
     function resolveItemCatFromRow(r) {
-      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString().trim();
-      const U = raw.toUpperCase();
-      // aliases comuns de serviço vindos do Ariba / UI
-      if (U === "D" || U === "SERVICE" || U === "SERVIÇO" || U === "SERVICO" || U === "SVC" || U === "service") return "D";
+      // 1. Pegamos o valor cru
+      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString();
 
-      // tente o mapeador padrão (caso ele reconheça outros casos)
-      if (typeof Keys.mapItemCategory === "function") {
-        const mapped = Keys.mapItemCategory(raw);
-        if (mapped) return mapped;
+      // DEBUG INICIAL 🕵️
+      console.log(`[resolveItemCatFromRow] START: Valor 'raw' recebido: "${raw}"`);
+
+      // 1) Normaliza Unicode e remove caracteres invisíveis (zero-width, BOM etc.)
+      const cleaned = raw
+        .normalize("NFKC")
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") // controls
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "") // zero-width & BOM
+        .replace(/[\u00A0\u202F\u2007]/g, " ") // NBSP variantes -> espaço
+        .replace(/[\s_-]+/g, " ") // colapsa espaços/hífens
+        .trim()
+        .toUpperCase();
+
+      // DEBUG MEIO 🕵️
+      console.log(`[resolveItemCatFromRow] STEP 1: Valor 'cleaned' (normalizado, trim, upper): "${cleaned}"`);
+
+      // 2) Regras de serviço (tolerantes)
+      if (
+        cleaned.startsWith("D") ||
+        cleaned.includes("SERVICE") ||
+        cleaned.includes("SERVIÇO") ||
+        cleaned.includes("SERVICO") ||
+        cleaned === "SVC"
+      ) {
+        // DEBUG HIT 🎯
+        console.log(`[resolveItemCatFromRow] STEP 2: Hit! Retornando "D" (startsWithD: ${cleaned.startsWith("D")}, includesService: ${cleaned.includes("SERVICE")})`);
+        return "D";
       }
 
-      // heurística de fallback: sem material e com texto => trate como serviço
-      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
-      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || "").trim();
-      if (!hasMat && hasText) return "D";
+      // 3) Mapeador legado: só aceita se NÃO for "0"/vazio
+      if (typeof Keys.mapItemCategory === "function") {
+        const mapped = Keys.mapItemCategory(raw);
+        // DEBUG STEP 3
+        console.log(`[resolveItemCatFromRow] STEP 3: Mapeador legado (Keys.mapItemCategory) retornou: "${mapped}"`);
+        if (mapped && mapped !== "0") {
+          console.log(`[resolveItemCatFromRow] STEP 3: Hit! Retornando mapeado: "${mapped}"`);
+          return mapped;
+        }
+      }
 
-      return "0"; // default: material padrão
+      // 4) Fallback: sem material e com texto => serviço
+      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
+      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || r.ItemDescription || "").trim();
+
+      // DEBUG STEP 4
+      console.log(`[resolveItemCatFromRow] STEP 4 (Fallback): hasMat? ${hasMat}, hasText? ${hasText}`);
+
+      if (!hasMat && hasText) {
+        console.log(`[resolveItemCatFromRow] STEP 4: Hit! Retornando "D" (fallback)`);
+        return "D";
+      }
+
+      // DEBUG FINAL ❌
+      console.log(`[resolveItemCatFromRow] END: Nenhuma regra bateu. Retornando "0" (default)`);
+      return "0";
     }
 
     function mapRowToPOItem(r, idx) {
@@ -109,7 +150,6 @@ sap.ui.define(
       );
       const plant = Keys.mapPlant((r.PLANT || "").toString());
       const itemCat = resolveItemCatFromRow(r);
-      console.log(`[itemCat] raw="${r.ItemCategory}" -> "${itemCat}"`);
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
       const netPrice = r.price != null ? Number(r.price) : null;
       const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || ""))
