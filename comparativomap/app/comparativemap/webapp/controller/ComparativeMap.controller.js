@@ -14,6 +14,7 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/KeyUtils",
     "comparativemap/comparativemap/controller/helpers/Debug",
     "comparativemap/comparativemap/controller/helpers/Formatters",
+    "comparativemap/comparativemap/controller/helpers/ErrorHandler",
     "sap/m/MessageToast",
     "sap/m/MessageBox",
     "sap/ui/Device",
@@ -39,6 +40,7 @@ sap.ui.define(
     Keys,
     Debug,
     Fmt,
+    ErrorHandler,
     MessageToast,
     MessageBox,
     Device,
@@ -304,10 +306,8 @@ sap.ui.define(
             tbl?.removeSelections(true);
 
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
-            // Drafts.save(this);
           } catch (e) {
-            /* eslint-disable no-console */
-            MessageBox.error("Falha ao buscar dados: " + (e.message || e));
+            ErrorHandler.handle(e, "Erro ao buscar DocID");
           } finally {
             tbl?.setBusy(false);
           }
@@ -422,7 +422,6 @@ sap.ui.define(
               throw new Error(msg);
             }
 
-
             const normVendor = v => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
             const vendorToSrc = new Map(
               (requests || []).map(req => [normVendor(req?.header?.vendor), Array.isArray(req.sourceRows) ? req.sourceRows : []])
@@ -430,8 +429,8 @@ sap.ui.define(
             const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({ header, items, schedules, testRun }));
 
             function replacer(key, value) {
-              if (key === 'items' && Array.isArray(value) && value.length > 5) {
-                return value.slice(0, 5).concat('... [mais itens ocultos]');
+              if (key === "items" && Array.isArray(value) && value.length > 5) {
+                return value.slice(0, 5).concat("... [mais itens ocultos]");
               }
               return value;
             }
@@ -450,7 +449,7 @@ sap.ui.define(
               } else {
                 MessageBox.error(firstErr?.message || "Falha ao simular.", {
                   details: JSON.stringify(firstErr, null, 2),
-                  contentWidth: "640px",
+                  contentWidth: "640px"
                 });
               }
               return;
@@ -487,15 +486,10 @@ sap.ui.define(
             if (allMsgs.length) Dialogs.showBapiMessages(allMsgs);
 
           } catch (err) {
-            const details =
-              err?.cause?.response?.body ||
-              err?.cause?.message ||
-              err?.stack ||
-              (typeof err === "object" ? JSON.stringify(err, null, 2) : String(err));
-
-            MessageBox.error(err.message || String(err), {
-              details,
-              contentWidth: "640px",
+            // 🔹 Agora usando ErrorHandler com painel de detalhes
+            ErrorHandler.handle(err, "Erro ao simular pedido", {
+              showDetailsPanel: true,
+              contentWidth: "640px"
             });
           } finally {
             sap.ui.core.BusyIndicator.hide();
@@ -555,6 +549,7 @@ sap.ui.define(
           }
 
           sap.ui.core.BusyIndicator.show(0);
+
           try {
             const out = await ODataSvc.createScenario(view, {
               eventId: sEventId,
@@ -562,7 +557,7 @@ sap.ui.define(
               scenarioType: 0,
               supplierBids,
             });
-            sap.ui.core.BusyIndicator.hide();
+
             if (out?.success) {
               MessageBox.success(
                 `Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`
@@ -571,10 +566,14 @@ sap.ui.define(
             } else {
               MessageBox.warning("CreateScenario executou, porém sem success=true.");
             }
+
           } catch (e) {
+            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", {
+              showDetailsPanel: true,
+              contentWidth: "640px"
+            });
+          } finally {
             sap.ui.core.BusyIndicator.hide();
-            const msg = e?.message || "Falha ao criar cenário.";
-            MessageBox.error(msg);
           }
         },
 
