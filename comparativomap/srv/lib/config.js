@@ -12,7 +12,7 @@ module.exports = {
   DEST: {
     EVENTS: "ARIBA_Event_Management_Test",
     PROJECTS: "ARIBA_Sourcing_Project_Management_Test",
-    S4H: "S4H_QAS_CQ5_MAPA",
+    S4H: "S4H_QAS_CQE_MAPA",
   },
 
   API_PREFIX: {

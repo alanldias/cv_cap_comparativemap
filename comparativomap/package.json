@@ -60,7 +60,7 @@
       },
       "BAPI_PO_CREATE": {
         "credentials": {
-          "destination": "S4H_QAS_CQ5_MAPA",
+          "destination": "S4H_QAS_CQE_MAPA",
           "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300"
         }
       },
@@ -78,7 +78,7 @@
           "model": "srv/external/API_INFORECORD_PROCESS_SRV.csn.json",
           "[production]": {
             "credentials": {
-              "destination": "S4H_QAS_CQ5_MAPA",
+              "destination": "S4H_QAS_CQE_MAPA",
               "path": "/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV"
             }
           }
