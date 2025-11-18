@@ -59,6 +59,7 @@ sap.ui.define(
         formatter: Fmt,
 
         onInit() {
+          // ===== Modelos base =====
           this.getView().setModel(Models.createVM(), "vm");
           this.getView().setModel(Models.createQM(), "qm");
 
@@ -69,6 +70,7 @@ sap.ui.define(
           if (vm?.setSizeLimit) vm.setSizeLimit(10000);
           if (qm?.setSizeLimit) qm.setSizeLimit(10000);
 
+          // Modelo para resultados da simulação
           let res = view.getModel("res");
           if (!(res instanceof sap.ui.model.json.JSONModel)) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
@@ -76,7 +78,7 @@ sap.ui.define(
           }
           res.setSizeLimit(5000);
 
-
+          // ===== Preferências (sort / group / filtros) =====
           this._prefs = PrefsStore.load();
           const allowedGroups = [
             "supplierName", "itemId", "PLANT", "currency",
@@ -87,6 +89,7 @@ sap.ui.define(
             PrefsStore.save(this._prefs);
           }
 
+          // Funções de agrupamento
           this.mGroupFunctions = {
             supplierName: (ctx) => {
               const v = ctx.getProperty("supplierName") || "";
@@ -128,79 +131,92 @@ sap.ui.define(
           this._vs.applyFiltersFromPrefs();
           this._vs.applyGroupSortFromPrefs();
 
-          // cria o modelo de UI
-          const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
-          this.getView().setModel(ui, "ui");
+          // ===== Modelo "ui" para visibilidade / ordem de colunas =====
+          const ui = new sap.ui.model.json.JSONModel({
+            columns: {},     // { colId: true/false }
+            columnList: [],  // [{ id, label }]
+            columnOrder: []  // usado pelo Filtros.applyColumnOrder
+          });
+          view.setModel(ui, "ui");
 
-          // ⬇️ COLE ESTE BLOCO AQUI
           ui.attachPropertyChange((ev) => {
             const path = ev.getParameter("path");
 
+            // Quando ordem de colunas mudar (arraste & solte no diálogo), aplica no layout
             if (path === "/columnOrder") {
-              if (!this.__col2cellMap) Filtros.captureColCellMap(this);
+              if (!this.__col2cellMap) {
+                Filtros.captureColCellMap(this);
+              }
               Filtros.applyColumnOrder(this);
             }
 
+            // Quando visibilidade mudar, reflete direto nas colunas da MDC Table
             if (path === "/columns") {
-              // 👁️ refletir visibilidade imediatamente
-              const tbl = this.byId("tblDocs");
+              const tblLocal = this.byId("tblDocs");
               const m = ui.getProperty("/columns") || {};
-              const prefix = this.getView().getId() + "--";
+              const prefixLocal = view.getId() + "--";
 
-              (tbl.getColumns() || []).forEach((c) => {
-                const id = c.getId().startsWith(prefix) ? c.getId().slice(prefix.length) : c.getId();
-                if (id in m) c.setVisible(!!m[id]);
+              (tblLocal?.getColumns() || []).forEach((c) => {
+                const longId = c.getId();
+                const shortId = longId.startsWith(prefixLocal)
+                  ? longId.slice(prefixLocal.length)
+                  : longId;
+
+                if (shortId in m) {
+                  c.setVisible(!!m[shortId]);
+                }
               });
             }
           });
 
-          // deixa tudo compacto (baixa a altura das linhas/inputs)
-          this.getView().addStyleClass("sapUiSizeCompact");
+          // ===== Layout compacto (linhas mais baixinhas) =====
+          view.addStyleClass("sapUiSizeCompact");
 
-          // monta a partir da tabela usando **id curto**
-          const tbl = this.byId("tblDocs");
-          let _capturedOnce = false;
-          tbl.getBinding("items").attachDataReceived(() => {
-            Filtros.updateFilterBarLabel(this);
-            if (!_capturedOnce) {
-              Filtros.captureColCellMap(this);
-              // ✅ reconstroi o template já com o mapa correto
-              Filtros.applyColumnOrder(this);
-              _capturedOnce = true;
-            }
-          });
+          // ===== Ler metadados iniciais da MDC Table (tblDocs) =====
+          const tbl = this.byId("tblDocs");   // ⚠️ AQUI é onde o tbl passa a existir
           const colsMap = {};
           const colList = [];
-          const prefix = this.getView().getId() + "--"; // para remover do getId()
+          const prefix = view.getId() + "--"; // prefixo de ID gerado pelo View
 
-          (tbl?.getColumns() || []).forEach((c) => {
-            const longId = c.getId();
-            const shortId = longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
-            const label = c.getHeader()?.getText?.() || shortId;
-            colsMap[shortId] = c.getVisible();    // estado inicial fiel ao que está no XML
-            colList.push({ id: shortId, label });
-          });
+          if (tbl) {
+            (tbl.getColumns() || []).forEach((c) => {
+              const longId = c.getId();
+              const shortId = longId.startsWith(prefix)
+                ? longId.slice(prefix.length)
+                : longId;
+
+              const label = c.getHeader()?.getText?.() || shortId;
+
+              // visibilidade inicial conforme XML
+              colsMap[shortId] = c.getVisible();
+              colList.push({ id: shortId, label });
+            });
+          }
 
           ui.setProperty("/columns", colsMap);
           ui.setProperty("/columnList", colList);
 
-          Filtros.captureColCellMap(this);
+          // Captura mapa coluna → célula e aplica ordem salva (se existir)
+          if (tbl) {
+            Filtros.captureColCellMap(this);
 
-          setTimeout(() => {
-            const order = ui.getProperty("/columnOrder");
-            if (order && order.length) {
-              Filtros.applyColumnOrder(this);
-            }
-          }, 0);
+            setTimeout(() => {
+              const order = ui.getProperty("/columnOrder");
+              if (order && order.length) {
+                Filtros.applyColumnOrder(this);
+              }
+            }, 0);
+          }
 
+          // Inicializa lógica de filtros/colunas (seu módulo Filtros)
           Filtros.init(this);
 
+          // Drafts: restaurar se tiver rascunho salvo
           Drafts.offerRestoreOnEnter(this);
 
-          // Autosave ao sair/recarregar a página (failsafe)
+          // Autosave ao recarregar/fechar página
           this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
           window.addEventListener("beforeunload", this._onUnloadSave);
-
         },
 
         onSaveVisionPress: function () {
