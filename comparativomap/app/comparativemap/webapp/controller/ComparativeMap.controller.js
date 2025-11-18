@@ -289,7 +289,7 @@ sap.ui.define(
             this._vs.setPrefs(this._prefs);
             PrefsStore.save(this._prefs);
 
-            tbl?.removeSelections(true);
+            // tbl?.removeSelections(true);
             qm?.setProperty("/idByKey", {});
             qm?.setProperty("/simSourceRows", []);
 
@@ -319,7 +319,7 @@ sap.ui.define(
 
             tbl?.getBinding("items")?.refresh(true);
             sap.ui.getCore().applyChanges();
-            tbl?.removeSelections(true);
+            // tbl?.removeSelections(true);
 
             if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
           } catch (e) {
