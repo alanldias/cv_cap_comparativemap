@@ -226,42 +226,6 @@ sap.ui.define([
     }, 0);
   }
 
-  function reorderExistingItemCells(tbl, order, ctrl) {
-    console.groupCollapsed("🔧 reorderExistingItemCells");
-    console.log("order", order);
-
-    (tbl.getItems() || []).forEach((li, rowIdx) => {
-      const current = li?.getCells?.() || [];
-      if (!current.length) return;
-
-      const pool = new Map();
-      current.forEach(c => {
-        const shortId = c.getId().split("--").pop();
-        pool.set(shortId, c);
-      });
-
-      console.groupCollapsed(` row#${rowIdx} pool`);
-      console.log("pool keys (cell short IDs):", Array.from(pool.keys()));
-      console.groupEnd();
-
-      const newCells = [];
-      order.forEach(colShortId => {
-        const cellId = mapColIdToCellId(colShortId, ctrl);
-        const found = pool.get(cellId);
-        console.log(`  map col ${colShortId} -> cell ${cellId}:`, found ? "✅" : "❌");
-        if (found) newCells.push(found);
-      });
-
-      // mantém quaisquer células não mapeadas no final (defensivo)
-      current.forEach(c => { if (!newCells.includes(c)) newCells.push(c); });
-
-      li.removeAllCells();
-      newCells.forEach(c => li.addCell(c));
-    });
-
-    console.groupEnd();
-  }
-
   function reorderColumns(tbl, order, ctrl) {
     console.groupCollapsed("🔧 reorderColumns");
     console.log("order", order);

@@ -22,7 +22,7 @@ sap.ui.define(
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
     "comparativemap/comparativemap/controller/helpers/filtros",
-    "comparativemap/comparativemap/controller/prefs/DraftStore"
+    "comparativemap/comparativemap/controller/prefs/DraftStore",
 
   ],
   function (
@@ -48,8 +48,7 @@ sap.ui.define(
     Spreadsheet,
     exportLibrary,
     Filtros,
-    Drafts
-
+    Drafts,
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
@@ -212,31 +211,6 @@ sap.ui.define(
           PrefsStore.openChooseViewDialog(this, { docScoped: false });
         },
 
-        // ===== DEV: abrir fragment com mock =====
-        // onDevOpenResultado: function () {
-        //   const view = this.getView();
-        //   const rows = [
-        //     {
-        //       supplierName: "Fornecedor A",
-        //       materialCode: "MAT-0001",
-        //       originalQty: 120, quantity: 50, qtyAward: 10,
-        //       price: "15.90", currency: "BRL",
-        //       icms: "3.45", ipi: null, total: "795.00",
-        //       ncm: "1234.56.78", poItem: "10", taxCode: "T1",
-        //       itemId: "IT-001", invitationId: "INV-AAA"
-        //     },
-        //     {
-        //       supplierName: "Fornecedor B",
-        //       materialCode: "MAT-0002",
-        //       originalQty: 80, quantity: 80, qtyAward: 20,
-        //       price: "7.30", currency: "BRL",
-        //       icms: "", ipi: "0.00", total: "584.00",
-        //       ncm: "8765.43.21", poItem: "20", taxCode: "T2",
-        //       itemId: "IT-002", invitationId: "INV-BBB"
-        //     }
-        //   ];
-        //   Dialogs.openResultDialog(view, rows, this);
-        // },
 
         /* ====== BUSCAR ====== */
         async onBuscar() {

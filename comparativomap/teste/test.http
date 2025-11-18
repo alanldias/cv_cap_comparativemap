@@ -197,8 +197,7 @@ GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/$metad
 GET http://s4h-qas-cq5:50250/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100058554')&sap-client=300 
 ###
 
-GET http://s4h-qas-cqe:50250/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$select=Supplier,Material,PurchasingOrganization,Plant,PurchasingInfoRecord,TaxCode&$filter=(Supplier%20eq%20'100058554')&sap-client=300
-
+GET http://s4h-qas-cqe:50250/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurgInfoRecdOrgPlantData?$format=json&$filter=(Supplier%20eq%20'100058554'%20and%20Material%20eq%20'423111')&sap-client=300
 ###
 GET http://s4h-qas-cq5:50255/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV/A_PurchasingInfoRecord/$metadata
 
