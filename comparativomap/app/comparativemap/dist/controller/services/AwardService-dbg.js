@@ -141,10 +141,7 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
       percList.forEach(({ ix, p }) => {
         const r = gSel.rows[ix];
         if (p <= 0) return;
-        const fullInvitation = ensureInvitationResourceId(
-          r.invitationId,
-          r.invitationEmail,
-        );
+        const fullInvitation = r.invitationId
         if (!fullInvitation) {
           faltaIds.push(
             `${r.supplierName || "Fornecedor"} / #${itemId} (${metaAll?.label || gSel.label})`,
