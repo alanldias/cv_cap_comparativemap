@@ -91,7 +91,7 @@
                         }'>
 
                         <mdc:type>
-                            <mdct:GridTableType id="gridTableTypeConfig" rowCountMode="Auto" />
+                            <mdct:GridTableType id="gridTableTypeConfig" rowCountMode="Auto"  />
                         </mdc:type>
 
                         <mdc:layoutData>
@@ -100,6 +100,7 @@
                                 
                         <mdc:actions>
                             <Button id="btnSimular" text="Simular Compra" type="Ghost" press=".onSimularPress" />
+                            <Button id="btnSimularFake" text="Simular (Fake)" icon="sap-icon://lab" type="Transparent" press=".onSimularFake" />
                         </mdc:actions>
 
                         <mdc:columns>

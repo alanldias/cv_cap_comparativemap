@@ -1,83 +1,96 @@
-<core:FragmentDefinition xmlns="sap.m" xmlns:core="sap.ui.core">
-  <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="100%" draggable="true" resizable="true">
-  <customHeader>
-    <Toolbar id="_IDGenToolbar1">
-      <Title id="_IDGenTitle1" text="Resultado da Simulação"/>
-      <ToolbarSpacer id="_IDGenToolbarSpacer1"/>
-      <Button id="_IDGenButton1" icon="sap-icon://sort"   press=".onResSort"/>
-      <Button id="_IDGenButton2" icon="sap-icon://filter" press=".onResFilter"/>
-      <Button id="_IDGenButton3" icon="sap-icon://group-2" press=".onResGroup"/>
-    </Toolbar>
-  </customHeader>
-   <Table id="_IDGenTable2"
-       items="{res>/rows}"
-       sticky="ColumnHeaders"
-       mode="MultiSelect"
-       autoPopinMode="false"
-       growing="true"
-       growingThreshold="500"
-       growingScrollToLoad="false"
-       growingTriggerText="Carregar +500">
-           <infoToolbar>
-        <OverflowToolbar id="resVsdFilterBar" visible="false">
-          <Text id="resVsdFilterLabel"/>
-        </OverflowToolbar>
-      </infoToolbar>
-      <columns>
-        <Column id="_IDGenColumn14" width="10rem" hAlign="Center"><header><Text id="_IDGenText24" text="Fornecedor"/></header></Column>
-        <Column id="_IDGenColumn15" width="12rem" hAlign="Center"><header><Text id="_IDGenText25" text="Item"/></header></Column>
-        <Column id="_IDGenColumn30" width="6rem"  hAlign="Center"><header><Text id="_IDGenText47" text="Quantidade Inicial"/></header></Column>
-        <Column id="_IDGenColumn16" width="6rem"  hAlign="Center"><header><Text id="_IDGenText26" text="Quantidade Simulada"/></header></Column>
-        <Column id="_IDGenColumn29" width="7rem"  hAlign="Center"><header><Text id="_IDGenText46" text="Quantidade para premiar"/></header></Column>
-        <Column id="_IDGenColumn17" width="8rem"  hAlign="Center"><header><Text id="_IDGenText27" text="Preço"/></header></Column>
- 
-        <Column id="_IDGenColumn18" width="8rem"  hAlign="Center"><header><Text id="_IDGenText28" text="ICMS"/></header></Column>
-        <Column id="_IDGenColumn19" width="8rem"  hAlign="Center"><header><Text id="_IDGenText29" text="IPI"/></header></Column>
- 
-        <Column id="_IDGenColumn20" width="8rem"  hAlign="Center"><header><Text id="_IDGenText30" text="Total"/></header></Column>
-        <Column id="_IDGenColumn23" width="8rem"  hAlign="Center"><header><Text id="_IDGenText38" text="NCM"/></header></Column>
-        <Column id="_IDGenColumn24" width="5rem"  hAlign="Center"><header><Text id="_IDGenText39" text="PO Item"/></header></Column>
-        <Column id="_IDGenColumn25" width="8rem"  hAlign="Center"><header><Text id="_IDGenText40" text="Iva"/></header></Column>
+<core:FragmentDefinition 
+    xmlns="sap.m" 
+    xmlns:core="sap.ui.core"
+    xmlns:mdc="sap.ui.mdc"
+    xmlns:mdct="sap.ui.mdc.table">
 
-        <!-- DEBUG: IDs que serão levados para o diálogo de premiação -->
-        <Column id="_IDGenColumn21" width="8rem"><header><Text id="_IDGenText31" text="Item Id"/></header></Column>
-        <Column id="_IDGenColumn22" visible="false" width="18rem"><header><Text id="_IDGenText32" text="InvitationId (dbg)"/></header></Column>
-      </columns>
+    <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="85%" 
+         draggable="true" resizable="true">
+        
+        <content>
+            <mdc:Table id="tblRes"
+                width="100%"
+                selectionMode="Multi"
+                enableExport="true"
+                p13nMode="Column,Sort,Group,Filter"
+                delegate='{
+                    "name": "comparativemap/comparativemap/delegate/ResultTableDelegate",
+                    "payload": {
+                        "bindingPath": "res>/rows"
+                    }
+                }'
+                threshold="100">
 
-      <items>
-        <ColumnListItem id="_IDGenColumnListItem2">
-          <cells>
-            <Text id="_IDGenText33" text="{res>supplierName}"/>
-            <Text id="_IDGenText34" text="{res>materialCode}"/>
-            <ObjectNumber id="_IDGenObjectNumber12"  number="{res>originalQty}"/>
-            <ObjectNumber id="_IDGenObjectNumber4" number="{res>quantity}"/>
-            <Input id="_IDGenInput3" type="Number"
-                   value="{path:'res>qtyAward', type:'sap.ui.model.type.Integer'}"
-                   liveChange=".onAwardQtyChangeRes"
-                   width="4rem"/>
-            <ObjectNumber id="_IDGenObjectNumber5" number="{res>price}" unit="{res>currency}"/>
+                <mdc:type>
+                    <mdct:GridTableType rowCountMode="Auto"/>
+                </mdc:type>
 
-            <ObjectNumber id="_IDGenObjectNumber6" number="{= ${res>icms} === null || ${res>icms} === undefined || ${res>icms} === '' ? '–' : ${res>icms} }"/>
-            <ObjectNumber id="_IDGenObjectNumber7" number="{= ${res>ipi}  === null || ${res>ipi}  === undefined || ${res>ipi}  === '' ? '–' : ${res>ipi}  }"/>
+                <mdc:columns>
+                    <mdct:Column id="resColForn" propertyKey="supplierName" header="Fornecedor" width="15rem">
+                        <Text text="{res>supplierName}" />
+                    </mdct:Column>
 
-            <ObjectNumber id="_IDGenObjectNumber8" number="{res>total}" unit="{res>currency}"/>
-            <ObjectNumber id="_IDGenObjectNumber9" number="{res>ncm}"/>
-            <ObjectNumber id="_IDGenObjectNumber10" number="{res>poItem}"/>
-            <ObjectNumber id="_IDGenObjectNumber11" number="{res>taxCode}"/>
+                    <mdct:Column id="resColMat" propertyKey="materialCode" header="Material" width="10rem">
+                        <Text text="{res>materialCode}" />
+                    </mdct:Column>
 
-            <!-- DEBUG cells -->
-            <Text id="_IDGenText35" text="{res>itemId}"/>
-            <Text id="_IDGenText36" text="{res>invitationId}"/>
-          </cells>
-        </ColumnListItem>
-      </items>
-    </Table>
+                    <mdct:Column id="resColQtdOrig" propertyKey="originalQty" header="Qtd Original" width="7rem" hAlign="End">
+                        <Text text="{res>originalQty}" />
+                    </mdct:Column>
 
-    <!-- Em vez de beginButton/endButton, usamos 'buttons' para ter múltiplos -->
-    <buttons>
-      <Button id="_IDGenButton4" text="Premiar" type="Emphasized" press=".onAwardDirect"/>
-      <Button id="btnExportRes" text="Exportar" icon="sap-icon://excel-attachment" type="Transparent" press=".onExportExcelRes"/>
-      <Button id="_IDGenButton6" text="Fechar" press=".onCloseDialog"/>
-    </buttons>
-  </Dialog>
+                    <mdct:Column id="resColQtdSim" propertyKey="quantity" header="Qtd Simulada" width="7rem" hAlign="End">
+                        <Text text="{res>quantity}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColAward" propertyKey="qtyAward" header="Qtd Premiar" width="9rem">
+                        <mdct:template>
+                            <Input 
+                                type="Number"
+                                value="{path:'res>qtyAward', type:'sap.ui.model.type.Integer'}"
+                                liveChange=".onAwardQtyChangeRes" />
+                        </mdct:template>
+                    </mdct:Column>
+
+                    <mdct:Column id="resColPreco" propertyKey="price" header="Preço" width="8rem" hAlign="End">
+                        <Text text="{path: 'res>price', type:'sap.ui.model.type.Float', formatOptions: { minFractionDigits: 2 }}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColMoeda" propertyKey="currency" header="Moeda" width="5rem">
+                        <Text text="{res>currency}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColIcms" propertyKey="icms" header="ICMS" width="7rem" hAlign="End">
+                        <Text text="{path: 'res>icms', type:'sap.ui.model.type.Float', formatOptions: { minFractionDigits: 2 }}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColIpi" propertyKey="ipi" header="IPI" width="7rem" hAlign="End">
+                        <Text text="{path: 'res>ipi', type:'sap.ui.model.type.Float', formatOptions: { minFractionDigits: 2 }}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColTotal" propertyKey="total" header="Total" width="9rem" hAlign="End">
+                        <ObjectNumber number="{path: 'res>total', type:'sap.ui.model.type.Float', formatOptions: { minFractionDigits: 2 }}" unit="{res>currency}" />
+                    </mdct:Column>
+
+                     <mdct:Column id="resColNcm" propertyKey="ncm" header="NCM" width="7rem">
+                        <Text text="{res>ncm}" />
+                    </mdct:Column>
+
+                    <mdct:Column id="resColPoItem" propertyKey="poItem" header="Item PO" width="5rem">
+                        <Text text="{res>poItem}" />
+                    </mdct:Column>
+
+                     <mdct:Column id="resColTax" propertyKey="taxCode" header="IVA" width="4rem">
+                        <Text text="{res>taxCode}" />
+                    </mdct:Column>
+
+                </mdc:columns>
+            </mdc:Table>
+        </content>
+
+        <buttons>
+            <Button text="Premiar Selecionados" type="Emphasized" press=".onAwardDirect"/>
+            <Button text="Fechar" press=".onCloseDialog"/>
+        </buttons>
+
+    </Dialog>
 </core:FragmentDefinition>
