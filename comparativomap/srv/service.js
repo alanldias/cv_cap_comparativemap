@@ -71,6 +71,7 @@ module.exports = function () {
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
+
     const round = Number.isFinite(Number(ARIBA_EVENT_ROUND))
       ? Number(ARIBA_EVENT_ROUND)
       : 1;
@@ -78,6 +79,20 @@ module.exports = function () {
     LOG.infoL("[GetQuotes] START", { docId, round });
 
     try {
+
+      if (docId === "OFFLINE") {
+        // Simulamos um erro técnico feio (como se o Axios tivesse falhado)
+        const fakeError = new Error("Connection refused: ariba.api.com:443");
+        // Simulamos a estrutura de resposta de erro HTTP
+        fakeError.response = {
+          status: 502,
+          data: { message: "Bad Gateway: Unable to connect to remote host" }
+        };
+
+        // Jogamos o erro para cair no seu catch lá embaixo
+        throw fakeError;
+      }
+
       const { rows, results } = await fetchSupplierBids(docId);
       console.log(results)
       LOG.infoL("[GetQuotes] supplierBids", {
@@ -168,10 +183,21 @@ module.exports = function () {
       LOG.infoL("[GetQuotes] END", { items: itemsOut.length });
       return { header: headerWithDoc, items: itemsOut };
     } catch (e) {
-      const status = e.response?.status || 502;
-      const msg = e.response?.data?.message || e.response?.data || e.message;
-      LOG.errorL("[GetQuotes] ERROR", { status, msg });
-      return req.error(status, "Falha ao consultar supplierBids no Ariba.");
+      const status = e.response?.status || 500;
+
+      // Pega a mensagem técnica para LOG, mas não usamos ela para decidir a msg do usuário
+      const msgTecnica = e.response?.data?.message || e.response?.data || e.message;
+      LOG.errorL("[GetQuotes] ERROR", { status, msg: msgTecnica });
+
+      // 🟢 LÓGICA SEGURA:
+      // Apenas 400 (Bad Request) e 404 (Not Found) indicam com certeza erro de ID/Dados.
+      if (status === 400 || status === 404) {
+        return req.error(404, "DocId inválido. \n Corrija e tente novamente!");
+      }
+
+      // 🔴 QUALQUER OUTRO ERRO (500, 502, 503, Erro de Rede sem status, etc.)
+      // Retorna mensagem de falha técnica genérica.
+      return req.error(status || 502, "Falha técnica ao consultar Ariba ou indisponibilidade momentânea.");
     }
   });
 
@@ -439,106 +465,106 @@ module.exports = function () {
             return { __chunkError: true, __chunkIndex: cidx, message: e?.message || String(e) };
           }
 
-      });
+        });
 
-  // 4) executa os chunks com limite por fornecedor
-  const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
+        // 4) executa os chunks com limite por fornecedor
+        const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
 
-  return mergeChunkResults(chunkResults, header);
-};
+        return mergeChunkResults(chunkResults, header);
+      };
 
-// concorrência entre fornecedores 
-const results = await mapWithConcurrency(requests, LIMIT, mapper);
-LOG.infoL("[simularPO] END", { results: results.length });
-return results;
+      // concorrência entre fornecedores 
+      const results = await mapWithConcurrency(requests, LIMIT, mapper);
+      LOG.infoL("[simularPO] END", { results: results.length });
+      return results;
 
     } catch (e) {
-  const info = safeErr(e);
-  LOG.errorL("[simularPO] ERROR", { msg: info.message || info.code || "Erro", status: info.responseStatus });
-  return req.error(502, `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`);
-}
+      const info = safeErr(e);
+      LOG.errorL("[simularPO] ERROR", { msg: info.message || info.code || "Erro", status: info.responseStatus });
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`);
+    }
   });
 
-function chunkArray(arr, size) {
-  const out = [];
-  for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
-  return out;
-}
-
-// Executa uma lista de funções-async (tasks) com limite de paralelismo.
-// Se limit for Infinity/undefined/0/negativo, roda tudo em paralelo (Promise.all).
-async function runTasksWithLimit(tasks, limit) {
-  if (!Array.isArray(tasks) || tasks.length === 0) return [];
-  const n = Number(limit);
-  if (!Number.isFinite(n) || n <= 0 || n >= tasks.length) {
-    return Promise.all(tasks.map((t) => t()));
+  function chunkArray(arr, size) {
+    const out = [];
+    for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
+    return out;
   }
-  const out = new Array(tasks.length);
-  let i = 0;
-  const workers = Math.min(n, tasks.length);
-  async function worker() {
-    while (true) {
-      const idx = i++;
-      if (idx >= tasks.length) break;
-      try {
-        out[idx] = await tasks[idx]();
-      } catch (err) {
-        out[idx] = { __chunkError: true, __chunkIndex: idx, message: err?.message || String(err) };
+
+  // Executa uma lista de funções-async (tasks) com limite de paralelismo.
+  // Se limit for Infinity/undefined/0/negativo, roda tudo em paralelo (Promise.all).
+  async function runTasksWithLimit(tasks, limit) {
+    if (!Array.isArray(tasks) || tasks.length === 0) return [];
+    const n = Number(limit);
+    if (!Number.isFinite(n) || n <= 0 || n >= tasks.length) {
+      return Promise.all(tasks.map((t) => t()));
+    }
+    const out = new Array(tasks.length);
+    let i = 0;
+    const workers = Math.min(n, tasks.length);
+    async function worker() {
+      while (true) {
+        const idx = i++;
+        if (idx >= tasks.length) break;
+        try {
+          out[idx] = await tasks[idx]();
+        } catch (err) {
+          out[idx] = { __chunkError: true, __chunkIndex: idx, message: err?.message || String(err) };
+        }
       }
     }
+    await Promise.all(Array.from({ length: workers }, () => worker()));
+    return out;
   }
-  await Promise.all(Array.from({ length: workers }, () => worker()));
-  return out;
-}
 
-function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
-  if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
-  const norm = v => {
-    const s = String(v ?? "").trim();
-    if (!s) return null;
-    const n = Number(s.replace(/\D/g, ""));
-    return Number.isFinite(n) ? n : null;
-  };
-  const poSet = new Set(chunkItems.map(it => norm(it.poItem)).filter(v => v != null));
-  return allSchedules.filter(s => poSet.has(norm(s?.poItem)));
-}
+  function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
+    if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
+    const norm = v => {
+      const s = String(v ?? "").trim();
+      if (!s) return null;
+      const n = Number(s.replace(/\D/g, ""));
+      return Number.isFinite(n) ? n : null;
+    };
+    const poSet = new Set(chunkItems.map(it => norm(it.poItem)).filter(v => v != null));
+    return allSchedules.filter(s => poSet.has(norm(s?.poItem)));
+  }
 
-function pickHeaderFallback(headerIn) {
-  return {
-    empresa: headerIn.compCode,
-    orgCompras: headerIn.purchOrg,
-    grupoCompras: headerIn.purchGroup,
-    fornecedor: padLeft(String(headerIn.vendor || ""), 10, "0"),
-    moeda: headerIn.currency,
-    incoterms1: headerIn.incoterms1,
-    incoterms2: headerIn.incoterms2,
-    criadoEm: new Date().toISOString().slice(0, 10),
-    criadoPor: "INT_MAPA",
-    poNumber: ""
-  };
-}
+  function pickHeaderFallback(headerIn) {
+    return {
+      empresa: headerIn.compCode,
+      orgCompras: headerIn.purchOrg,
+      grupoCompras: headerIn.purchGroup,
+      fornecedor: padLeft(String(headerIn.vendor || ""), 10, "0"),
+      moeda: headerIn.currency,
+      incoterms1: headerIn.incoterms1,
+      incoterms2: headerIn.incoterms2,
+      criadoEm: new Date().toISOString().slice(0, 10),
+      criadoPor: "INT_MAPA",
+      poNumber: ""
+    };
+  }
 
-function mergeChunkResults(chunksNorm = [], headerIn) {
-  const ok = chunksNorm.filter(c => !c.__chunkError);
-  const err = chunksNorm.filter(c => c.__chunkError);
+  function mergeChunkResults(chunksNorm = [], headerIn) {
+    const ok = chunksNorm.filter(c => !c.__chunkError);
+    const err = chunksNorm.filter(c => c.__chunkError);
 
-  // header: usa do primeiro OK; senão um fallback com dados do header de entrada
-  const header = ok[0]?.header || pickHeaderFallback(headerIn);
+    // header: usa do primeiro OK; senão um fallback com dados do header de entrada
+    const header = ok[0]?.header || pickHeaderFallback(headerIn);
 
-  const itens = ok.flatMap(c => Array.isArray(c.itens) ? c.itens : []);
-  const msgsOk = ok.flatMap(c => Array.isArray(c.returnMessages) ? c.returnMessages : []);
-  const msgsErr = err.map(e => ({
-    type: "E", id: "CHUNK", number: "000",
-    message: e.message || "Falha ao processar chunk", logNo: null
-  }));
-  const mensagens = [...msgsOk, ...msgsErr];
+    const itens = ok.flatMap(c => Array.isArray(c.itens) ? c.itens : []);
+    const msgsOk = ok.flatMap(c => Array.isArray(c.returnMessages) ? c.returnMessages : []);
+    const msgsErr = err.map(e => ({
+      type: "E", id: "CHUNK", number: "000",
+      message: e.message || "Falha ao processar chunk", logNo: null
+    }));
+    const mensagens = [...msgsOk, ...msgsErr];
 
-  return {
-    testRun: true,
-    header,
-    itens,
-    returnMessages: mensagens,
-    mensagens
-  };
-}
+    return {
+      testRun: true,
+      header,
+      itens,
+      returnMessages: mensagens,
+      mensagens
+    };
+  }
 };

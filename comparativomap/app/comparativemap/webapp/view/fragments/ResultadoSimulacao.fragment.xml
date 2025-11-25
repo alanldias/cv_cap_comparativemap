@@ -4,14 +4,17 @@
     xmlns:mdc="sap.ui.mdc"
     xmlns:mdct="sap.ui.mdc.table">
 
-    <Dialog id="dlgRes" title="Resultado da Simulação" contentWidth="85%" 
+    <Dialog id="dlgRes" title="Resultado da Simulação" titleAlignment="Center" contentWidth="85%" 
          draggable="true" resizable="true">
         
         <content>
             <mdc:Table id="tblRes"
                 width="100%"
                 selectionMode="Multi"
+                class="
                 enableExport="true"
+                header="Dados Retornados da BAPI"
+                showRowCount="false"
                 p13nMode="Column,Sort,Group,Filter"
                 delegate='{
                     "name": "comparativemap/comparativemap/delegate/ResultTableDelegate",
@@ -88,7 +91,7 @@
         </content>
 
         <buttons>
-            <Button text="Premiar Selecionados" type="Emphasized" press=".onAwardDirect"/>
+            <Button text="Premiar" type="Emphasized" press=".onAwardDirect"/>
             <Button text="Fechar" press=".onCloseDialog"/>
         </buttons>
 
