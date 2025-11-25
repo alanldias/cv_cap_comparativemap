@@ -5,7 +5,8 @@
     xmlns:l="sap.ui.layout"
     xmlns:core="sap.ui.core"
     xmlns:mdc="sap.ui.mdc"
-    xmlns:mdct="sap.ui.mdc.table">
+    xmlns:mdct="sap.ui.mdc.table"
+    xmlns:vm="sap.ui.fl.variants">
 
     <Page id="page" showHeader="true" enableScrolling="false">
 
@@ -75,7 +76,10 @@
                         </items>
                     </Table>
 
+                    <vm:VariantManagement id="vmDocs" for="tblDocs" class="sapUiTinyMarginTop" />
+
                     <mdc:Table id="tblDocs"
+                        variant="vmDocs"
                         class="sapUiTinyMarginTop sapUiTinyMarginBottom bordaTabela"
                         width="100%"
                         selectionMode="Multi"

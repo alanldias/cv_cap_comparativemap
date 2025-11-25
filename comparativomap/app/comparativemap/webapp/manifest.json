@@ -57,7 +57,8 @@
         "sap.m": {},
         "sap.ui.core": {},
         "sap.ui.layout": {},
-        "sap.ui.mdc": {}
+        "sap.ui.mdc": {},
+        "sap.ui.fl": {}
       }
     },
     "contentDensities": {
