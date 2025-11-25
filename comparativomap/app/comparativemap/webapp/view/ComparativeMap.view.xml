@@ -80,9 +80,10 @@
 
                     <mdc:Table id="tblDocs"
                         variant="vmDocs"
-                        class="sapUiTinyMarginTop sapUiTinyMarginBottom bordaTabela"
+                        class="sapUiTinyMarginTop sapUiTinyMarginBottom bordaTabela tabelaTituloAzul"
                         width="100%"
                         selectionMode="Multi"
+                        header="Dados Carregados do Ariba"
                         enableExport="true"
                         p13nMode="Column,Sort,Group,Filter"
                         showRowCount="false"
@@ -95,7 +96,7 @@
                         }'>
 
                         <mdc:type>
-                            <mdct:GridTableType id="gridTableTypeConfig" rowCountMode="Auto"  />
+                            <mdct:GridTableType id="gridTableTypeConfig" rowCountMode="Auto" selectionLimit="1000"/>
                         </mdc:type>
 
                         <mdc:layoutData>
@@ -104,7 +105,6 @@
                                 
                         <mdc:actions>
                             <Button id="btnSimular" text="Simular Compra" type="Ghost" press=".onSimularPress" />
-                            <Button id="btnSimularFake" text="Simular (Fake)" icon="sap-icon://lab" type="Transparent" press=".onSimularFake" />
                         </mdc:actions>
 
                         <mdc:columns>
@@ -230,7 +230,7 @@
         <footer>
             <OverflowToolbar id="pageFooter">
                 <ToolbarSpacer id="spacerFooter1"/>
-                <Text id="txtNTT" text="Producted by © NTT DATA Business Solutions 2025"/>
+                <Text id="footerTxt" text=""/>
                 <ToolbarSpacer id="spacerFooter2"/>
             </OverflowToolbar>
         </footer>

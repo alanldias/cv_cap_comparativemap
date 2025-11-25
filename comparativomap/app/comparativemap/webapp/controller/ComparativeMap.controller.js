@@ -192,62 +192,6 @@ sap.ui.define(
         },
 
         // ===========================================================
-// 5. TESTE VISUAL (MOCK)
-// ===========================================================
-onSimularFake: function() {
-    const view = this.getView();
-    
-    // Dados Fakes apenas para preencher as colunas
-    const mockRows = [
-        {
-            supplierName: "Fornecedor Teste A",
-            materialCode: "MAT-1234",
-            originalQty: 100,
-            quantity: 100,
-            qtyAward: 100,
-            price: 50.00,
-            currency: "BRL",
-            icms: 12.00,
-            ipi: 5.00,
-            total: 5000.00,
-            ncm: "84818099",
-            poItem: "10",
-            taxCode: "C1",
-            itemId: "I1",
-            invitationId: "INV01"
-        },
-        {
-            supplierName: "Fornecedor Teste B",
-            materialCode: "MAT-5678",
-            originalQty: 20,
-            quantity: 20,
-            qtyAward: 0,
-            price: 150.50,
-            currency: "USD",
-            icms: 0,
-            ipi: 0,
-            total: 3010.00,
-            ncm: "85365090",
-            poItem: "20",
-            taxCode: "I0",
-            itemId: "I2",
-            invitationId: "INV02"
-        }
-    ];
-
-    // 1. Popula o modelo de resultados ('res')
-    const resModel = view.getModel("res");
-    if (resModel) {
-        resModel.setProperty("/header", { docId: "VISUAL-TEST" });
-        resModel.setProperty("/rows", mockRows);
-    }
-
-    // 2. Abre o fragmento usando seu serviço de Dialogs
-    // Passamos 'this' (o controller) para que os botões do fragmento (Fechar, Exportar) funcionem
-    Dialogs.openResultDialog(view, mockRows, this);
-},
-
-        // ===========================================================
         // 3. SIMULAÇÃO (ATUALIZADO PARA MDC)
         // ===========================================================
         async onSimularPress() {
@@ -268,26 +212,28 @@ onSimularFake: function() {
             const mdcTbl = this.byId("tblDocs");
             if (!mdcTbl) throw new Error("Tabela 'tblDocs' não encontrada na View.");
 
-            // --- Coleta Seleção (Estratégia Robusta MDC) ---
+            // --- Coleta Seleção (Estratégia Segura) ---
             let rows = [];
             let selectionSource = "Nenhuma";
 
-            // 1. Tenta API Nativa do MDC (Recomendado)
+            // 1. Tenta API Nativa do MDC (Prioridade Máxima)
             if (typeof mdcTbl.getSelectedContexts === "function") {
+              // Se essa função existe, ELA é a dona da verdade.
               const contexts = mdcTbl.getSelectedContexts();
-              if (contexts && contexts.length > 0) {
+              if (contexts) {
                 rows = contexts.map((c) => c.getObject()).filter(Boolean);
                 selectionSource = "MDC Direct API";
               }
             }
 
             // 2. Fallback: Acessa a tabela interna (Inner Table)
-            if (rows.length === 0 && mdcTbl.isA && mdcTbl.isA("sap.ui.mdc.Table")) {
-              console.warn("⚠️ [SIMULAR] API do MDC retornou vazio. Tentando Inner Table...");
+            // 🛑 CORREÇÃO: Só entra aqui se a fonte ainda for "Nenhuma".
+            // Se a API do MDC retornou 0 linhas, aceitamos que são 0 linhas e não tentamos "forçar" na interna.
+            if (selectionSource === "Nenhuma" && mdcTbl.isA && mdcTbl.isA("sap.ui.mdc.Table")) {
+              console.warn("⚠️ [SIMULAR] API do MDC não detectada. Tentando Inner Table...");
 
-              // O método getInnerTable pode não existir em versões muito novas, ou ser _getInnerTable
               const inner = (typeof mdcTbl.getInnerTable === "function" ? mdcTbl.getInnerTable() : null)
-                || mdcTbl._oTable; // Fallback agressivo
+                || mdcTbl._oTable;
 
               if (inner) {
                 if (inner.isA("sap.m.Table")) {
@@ -295,17 +241,29 @@ onSimularFake: function() {
                   rows = inner.getSelectedItems()
                     .map((it) => it.getBindingContext("vm")?.getObject?.())
                     .filter(Boolean);
-                } else if (inner.isA("sap.ui.table.Table")) {
+                }
+                else if (inner.isA("sap.ui.table.Table")) {
+                  // GridTable: Precisamos cuidar com o Plugin de Seleção
                   selectionSource = "Inner sap.ui.table.Table (Grid)";
-                  const idxs = inner.getSelectedIndices() || [];
-                  rows = idxs.map((i) => {
-                    const ctx = inner.getContextByIndex(i);
-                    return ctx ? ctx.getObject() : null;
-                  }).filter(Boolean);
+
+                  // Verifica se há plugins bloqueando o getSelectedIndices
+                  const hasSelectionPlugin = inner.getPlugins && inner.getPlugins().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"));
+
+                  if (hasSelectionPlugin) {
+                    console.warn("🚫 [SIMULAR] Plugin de seleção detectado na GridTable. getSelectedIndices ignorado para evitar crash.");
+                    // Se tem plugin e o MDC (passo 1) não resolveu, provavelmente não há seleção acessível via legacy.
+                    rows = [];
+                  } else {
+                    const idxs = inner.getSelectedIndices() || [];
+                    rows = idxs.map((i) => {
+                      const ctx = inner.getContextByIndex(i);
+                      return ctx ? ctx.getObject() : null;
+                    }).filter(Boolean);
+                  }
                 }
               }
-            } else if (rows.length === 0 && mdcTbl.isA("sap.m.Table")) {
-              // Caso você reverta para sap.m.Table pura sem MDC
+            } else if (selectionSource === "Nenhuma" && mdcTbl.isA("sap.m.Table")) {
+              // Caso legado puro (sem MDC)
               selectionSource = "Legacy sap.m.Table";
               rows = mdcTbl.getSelectedItems().map(it => it.getBindingContext("vm")?.getObject()).filter(Boolean);
             }
@@ -313,7 +271,20 @@ onSimularFake: function() {
             console.log(`📊 [SIMULAR] Fonte da seleção: ${selectionSource}`);
             console.log(`📦 [SIMULAR] Linhas brutas selecionadas: ${rows.length}`, rows);
 
-            if (!rows.length) throw new Error("Selecione pelo menos 1 item para simular.");
+            // AGORA SIM: Se rows estiver vazio, lançamos o erro amigável (sem crashar antes)
+            if (!rows.length) {
+              // Se for MDC, tenta limpar visualmente só pra garantir
+              if (mdcTbl.isA("sap.ui.mdc.Table")) {
+                const inner = mdcTbl.getInnerTable && mdcTbl.getInnerTable();
+                // Verifica se o método existe e se não vai dar conflito com plugin antes de chamar
+                if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
+                  try { inner.clearSelection(); } catch (e) { }
+                }
+              }const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
+              // Mensagem amigável para o usuário
+              MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
+              return; // Para a execução aqui de forma limpa
+            }
 
             // --- Validação de Integridade ---
             // Filtra linhas que não tenham ID de material ou ItemId (lixo de memória ou linha vazia)
@@ -347,7 +318,7 @@ onSimularFake: function() {
             const itemMissing = [];
             requests.forEach((req, ridx) => {
               const h = req.header || {};
-              const tag = `Req#${ridx + 1} (Forn: ${h.vendor || "?"})`;
+              const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
 
               // Validações básicas para não chamar BAPI à toa
               if (!h.docType) headerMissing.push(`${tag}: Tipo Pedido (docType)`);
@@ -356,8 +327,10 @@ onSimularFake: function() {
               if (!h.vendor) headerMissing.push(`${tag}: Fornecedor`);
 
               (req.items || []).forEach((it, i) => {
-                const itTag = `${tag} Item ${String((i + 1) * 10)}`;
-                if (!it.plant) itemMissing.push(`${itTag}: Centro (plant)`);
+                const itemRef = `Item ${(i + 1) * 10}`;
+                const itTag = `${nomeForn} > ${itemRef}`;
+                
+                if (!it.plant) itemMissing.push(`${itTag}: Falta Centro (plant)`);
                 if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Qtd inválida`);
               });
             });
@@ -440,8 +413,8 @@ onSimularFake: function() {
 
             // 🛑 FALTOU ISSO AQUI: Atualizar o Model para a tabela MDC ler
             if (resModel) {
-                resModel.setProperty("/rows", resRows);
-                resModel.setProperty("/header", resultsArr[0]?.header || {});
+              resModel.setProperty("/rows", resRows);
+              resModel.setProperty("/header", resultsArr[0]?.header || {});
             }
 
             Dialogs.openResultDialog(view, resRows, this);
@@ -492,19 +465,19 @@ onSimularFake: function() {
           // 1. PEGAR A TABELA CORRETAMENTE (Pelo ID do Fragmento)
           // Como o fragmento é carregado pelo controller, o ID é prefixado.
           let tbl = this.byId("tblRes");
-          
+
           // Fallback: Se não achar pelo this.byId (dependendo de como o Dialogs.js instancia), tenta o Core
           if (!tbl) {
-             tbl = sap.ui.getCore().byId("fragmentId--tblRes"); // Caso tenha ID de fragmento específico
-             if (!tbl && this._dlgRes) {
-                 // Última tentativa: Busca dentro do dialog (mais seguro que pegar índice 0)
-                 tbl = this._dlgRes.getContent().find(c => c.isA && c.isA("sap.ui.mdc.Table"));
-             }
+            tbl = sap.ui.getCore().byId("fragmentId--tblRes"); // Caso tenha ID de fragmento específico
+            if (!tbl && this._dlgRes) {
+              // Última tentativa: Busca dentro do dialog (mais seguro que pegar índice 0)
+              tbl = this._dlgRes.getContent().find(c => c.isA && c.isA("sap.ui.mdc.Table"));
+            }
           }
 
           if (!tbl) {
-             MessageBox.error("Erro interno: Tabela de resultados (tblRes) não encontrada.");
-             return;
+            MessageBox.error("Erro interno: Tabela de resultados (tblRes) não encontrada.");
+            return;
           }
 
           // 2. PEGAR SELEÇÃO (Usando seu helper que já trata MDC/Inner)
@@ -517,16 +490,16 @@ onSimularFake: function() {
           }
 
           // --- Daqui para baixo, a lógica de Negócio (AwardService) permanece IGUAL ---
-          
+
           const allRows = selected;
-          
+
           // O AwardSvc vai validar as somas, qtyAward vs original, etc.
           const supplierBids = AwardSvc.validarEMontarPayload(
-            allRows, 
-            selected, 
+            allRows,
+            selected,
             this._ensureInvitationResourceId.bind(this)
           );
-          
+
           if (!supplierBids) return; // AwardSvc já exibiu o erro/aviso se houve
 
           const sEventId = vm.getProperty("/header/docId") || resModel.getProperty("/header/docId");
