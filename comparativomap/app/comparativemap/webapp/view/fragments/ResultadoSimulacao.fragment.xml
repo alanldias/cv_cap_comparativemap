@@ -11,7 +11,7 @@
             <mdc:Table id="tblRes"
                 width="100%"
                 selectionMode="Multi"
-                class="
+                class="tabelaTituloAzul"
                 enableExport="true"
                 header="Dados Retornados da BAPI"
                 showRowCount="false"
