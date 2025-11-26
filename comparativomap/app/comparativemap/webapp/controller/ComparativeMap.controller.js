@@ -301,7 +301,7 @@ sap.ui.define(
                 if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
                   try { inner.clearSelection(); } catch (e) { }
                 }
-              }const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
+              } const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
               // Mensagem amigável para o usuário
               MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
               return; // Para a execução aqui de forma limpa
@@ -350,7 +350,7 @@ sap.ui.define(
               (req.items || []).forEach((it, i) => {
                 const itemRef = `Item ${(i + 1) * 10}`;
                 const itTag = `${nomeForn} > ${itemRef}`;
-                
+
                 if (!it.plant) itemMissing.push(`${itTag}: Falta Centro (plant)`);
                 if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Qtd inválida`);
               });
@@ -461,22 +461,42 @@ sap.ui.define(
           if (!ctx) return;
 
           const row = ctx.getObject() || {};
+
+          // Normaliza valor digitado
           let v = Math.floor(Number(input.getValue()));
-          if (!Number.isFinite(v) || v < 0) v = 0;
+          if (!Number.isFinite(v) || v < 0) {
+            v = 0;
+          }
+
           row.qtyAward = v;
           ctx.getModel().checkUpdate(true);
           input.setValue(String(row.qtyAward));
 
           const original = Math.floor(Number(row.originalQty) || 0);
-          if (original > 0 && v > original) {
-            input.setValueState(sap.ui.core.ValueState.Warning);
-            input.setValueStateText(`Quantidade acima da original (${original}).`);
-            sap.m.MessageToast.show(`Qtd premiada (${v}) > original (${original}).`);
-          } else {
-            input.setValueState(sap.ui.core.ValueState.None);
-            input.setValueStateText("");
+
+          // Reseta estados por padrão
+          input.setValueState(sap.ui.core.ValueState.None);
+          input.setValueStateText("");
+
+          if (original > 0) {
+            if (v > original) {
+              // 🔺 Acima da original
+              input.setValueState(sap.ui.core.ValueState.Warning);
+              input.setValueStateText(`Aviso: quantidade acima da original (${original}).`);
+              sap.m.MessageToast.show(
+                `Qtd premiada (${v}) maior que a original (${original}).`
+              );
+            } else if (v < original) {
+              // 🔻 Abaixo da original
+              input.setValueState(sap.ui.core.ValueState.Warning);
+              input.setValueStateText(`Aviso: quantidade abaixo da original (${original}).`);
+              sap.m.MessageToast.show(
+                `Qtd premiada (${v}) menor que a original (${original}).`
+              );
+            }
           }
         },
+
 
         async onAwardDirect() {
           const view = this.getView();
