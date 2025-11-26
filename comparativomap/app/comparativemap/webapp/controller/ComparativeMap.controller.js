@@ -15,6 +15,7 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
+        "sap/ui/core/UIComponent",                            
     "comparativemap/comparativemap/controller/prefs/DraftStore"
   ],
   function (
@@ -33,6 +34,7 @@ sap.ui.define(
     Build,
     Spreadsheet,
     exportLibrary,
+    UIComponent,
     Drafts
   ) {
     "use strict";
@@ -47,41 +49,63 @@ sap.ui.define(
         // 1. INICIALIZAÇÃO
         // ===========================================================
         onInit() {
-          // ===== Modelos base =====
-          this.getView().setModel(Models.createVM(), "vm");
-          this.getView().setModel(Models.createQM(), "qm");
+          const view = this.getView();
 
+          // Modelos base
+          view.setModel(Models.createVM(), "vm");
+          view.setModel(Models.createQM(), "qm");
+ 
           // Modelo de resultados
-          let res = this.getView().getModel("res");
+          let res = view.getModel("res");
           if (!res) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
-            this.getView().setModel(res, "res");
+            view.setModel(res, "res");
           }
-
-          // Layout Compacto
-          this.getView().addStyleClass("sapUiSizeCompact");
-
-          // 🟢 Drafts: Registra o estado padrão (XML) antes de qualquer alteração
+ 
+          // Layout compacto
+          view.addStyleClass("sapUiSizeCompact");
+ 
+          // Registra estado padrão da tabela (ordem de colunas)
           Drafts.registerDefaultState(this);
-
-          // Drafts: Pergunta se quer restaurar ao entrar
-          Drafts.offerRestoreOnEnter(this);
-
-          // Autosave ao sair/recarregar a página
-          this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
-          window.addEventListener("beforeunload", this._onUnloadSave);
-        },
-
-        onExit() {
-          if (this._dlgRes) {
-            this._dlgRes.destroy(true);
-            this._dlgRes = null;
-          }
-          if (this._onUnloadSave) {
-            window.removeEventListener("beforeunload", this._onUnloadSave);
-            this._onUnloadSave = null;
-          }
-        },
+ 
+          // 🔵 Liga handler na rota pra rodar SEMPRE que a tela for ativada
+          const oRouter = UIComponent.getRouterFor(this);
+          this._fnRouteMatched = this._onRouteMatched.bind(this);
+           oRouter.getRoute("RouteComparativeMap").attachPatternMatched(this._fnRouteMatched);
+ 
+           // Autosave ao sair/recarregar a página
+           this._onUnloadSave = () => {
+             try { Drafts.save(this); } catch (e) { }
+           };
+           window.addEventListener("beforeunload", this._onUnloadSave);
+         },
+ 
+         // Disparado toda vez que a rota "RouteComparativeMap" é ativada
+         _onRouteMatched() {
+           console.log("[ComparativeMap] route matched → offerRestoreOnEnter");
+           Drafts.offerRestoreOnEnter(this);
+         },
+ 
+         onExit() {
+           // Fecha dialog de resultado se ainda existir
+           if (this._dlgRes) {
+             this._dlgRes.destroy(true);
+             this._dlgRes = null;
+           }
+ 
+           // Remove o listener do beforeunload
+           if (this._onUnloadSave) {
+             window.removeEventListener("beforeunload", this._onUnloadSave);
+             this._onUnloadSave = null;
+           }
+ 
+           // Desliga o handler da rota pra não vazar memória
+           const oRouter = UIComponent.getRouterFor(this);
+           if (this._fnRouteMatched) {
+             oRouter.getRoute("RouteComparativeMap").detachPatternMatched(this._fnRouteMatched);
+             this._fnRouteMatched = null;
+           }
+         },
 
         // ===========================================================
         // 2. BUSCA PRINCIPAL
@@ -103,17 +127,14 @@ sap.ui.define(
               return;
             }
 
-            // 🔵 BUSY GLOBAL + TABELA
-            sap.ui.core.BusyIndicator.show(0);   // <<< NOVO
-            mdcTbl?.setBusy(true);               // (já existia, eu deixaria aqui em cima)
+            sap.ui.core.BusyIndicator.show(0);   
+            mdcTbl?.setBusy(true);               
 
-            // 1. Salva draft anterior se trocar de ID
             if (oldDocId && oldDocId !== newDocId) {
               console.log(`💾 Salvando draft anterior (${oldDocId}) antes de trocar...`);
               Drafts.save(this, true);
             }
 
-            // Limpa UI antiga
             view.byId("vsdFilterBar")?.setVisible(false);
             view.byId("vsdFilterLabel")?.setText("");
 
