@@ -1,4 +1,7 @@
-sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
+sap.ui.define(["sap/m/MessageBox", "sap/m/MessageToast"], function (
+  MessageBox,
+  MessageToast,
+) {
   "use strict";
 
   function validarEMontarPayload(
@@ -80,6 +83,7 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
       }
       g.rows.push(r);
     });
+
 
     // ===================================
     // 3) Validar somas e gerar avisos
@@ -193,17 +197,19 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
     }
 
     // ===================================
-    // 6) Exibir avisos (sem bloquear operação)
+    // 6) Exibir avisos como Toast (sem bloquear operação)
     // ===================================
     if (avisos.length) {
-      MessageBox.warning(
-        "Foram encontrados os seguintes avisos:\n\n" +
-          avisos.join("\n") +
-          "\n\nA operação continuará normalmente.",
+      // Toast não lida bem com texto muito grande/multilinha,
+      // então mostramos algo mais resumido:
+      MessageToast.show(
+        "Há itens com quantidade premiada acima da quantidade indicada.",
         {
-          title: "Avisos de quantidade",
+          duration: 5000, // 5s, se quiser pode ajustar
         },
       );
+      // se você quiser mostrar o detalhe do primeiro aviso, poderia usar:
+      // MessageToast.show(avisos[0]);
     }
 
     // Continua normalmente: controller não precisa mudar nada
