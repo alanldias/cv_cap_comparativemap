@@ -2,7 +2,7 @@ sap.ui.define([
     "sap/ui/util/Storage",
     "sap/m/MessageBox",
     "sap/m/SelectDialog",
-    "sap/m/StandardListItem",        
+    "sap/m/StandardListItem",
     "sap/ui/model/json/JSONModel",
     "sap/m/CustomListItem",
     "sap/m/Button",
@@ -10,63 +10,29 @@ sap.ui.define([
     "sap/m/VBox",
     "sap/m/Text",
     "sap/m/MessageToast"
-], function (  Storage,
+], function (
+    Storage,
     MessageBox,
     SelectDialog,
-    StandardListItem,                  // <- adiciona esse parâmetro aqui
+    StandardListItem,
     JSONModel,
     CustomListItem,
     Button,
     HBox,
     VBox,
     Text,
-    MessageToast) {
+    MessageToast
+) {
     "use strict";
 
     const storage = new Storage(Storage.Type.local, "comparativemap");
-    const PREFIX = "draft:";             // draft:<docId>
-    const INDEX_KEY = "draft:index";     // catálogo de drafts (datas, contagem de linhas)
-    const VERSION = 1;
+    const PREFIX = "draft:";
+    const INDEX_KEY = "draft:index";
+    const VERSION = 3;
+
+    let _defaultColumnOrder = null;
 
     function _now() { return new Date().toISOString(); }
-
-    function _hasValue(v) {
-        return v !== undefined && v !== null && String(v) !== "";
-    }
-    function _isRealCond(c) {
-        if (!c || c.isEmpty === true) return false;
-        const vals = Array.isArray(c.values) ? c.values : [];
-        if (c.operator === "BT") {
-            return _hasValue(vals[0]) && _hasValue(vals[1]);
-        }
-        // operadores de 1 valor (EQ, GE, LE, GT, LT, Contains, etc)
-        return _hasValue(vals[0]);
-    }
-    function _compactConditions(raw) {
-        const out = {};
-        Object.keys(raw || {}).forEach(k => {
-            const kept = (raw[k] || []).filter(_isRealCond);
-            if (kept.length) out[k] = kept;
-        });
-        return out;
-    }
-
-    function _shortIdFrom(col, view) {
-        const prefix = view.getId() + "--";
-        const longId = col.getId();
-        return longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
-    }
-
-    function _readColumnsState(ctrl) {
-        const view = ctrl.getView();
-        const ui = view.getModel("ui");
-        const tbl = view.byId("tblDocs");
-        if (!ui || !tbl) return { map: {}, order: [] };
-
-        const map = ui.getProperty("/columns") || {};
-        const order = (tbl.getColumns() || []).map(c => ({ id: _shortIdFrom(c, view) }));
-        return { map, order };
-    }
 
     function _getDocId(ctrl) {
         const view = ctrl.getView();
@@ -78,45 +44,98 @@ sap.ui.define([
     }
 
     function _indexGet() {
-        try { return JSON.parse(storage.get(INDEX_KEY) || "{}"); } catch (e) { return {}; }
+        try { return JSON.parse(storage.get(INDEX_KEY) || "{}"); }
+        catch (e) { return {}; }
     }
+
     function _indexPut(idx) {
-        try { storage.put(INDEX_KEY, JSON.stringify(idx)); } catch (e) { /* ignore */ }
+        try { storage.put(INDEX_KEY, JSON.stringify(idx)); }
+        catch (e) { }
     }
+
     function _key(docId) { return `${PREFIX}${docId}`; }
 
+    // ===========================================================
+    // REGISTRO DO ESTADO PADRÃO (ordem de colunas)
+    // ===========================================================
+    function registerDefaultState(ctrl) {
+        if (_defaultColumnOrder !== null) return;
+
+        const mdcTbl = ctrl.getView().byId("tblDocs");
+        if (mdcTbl && mdcTbl.isA("sap.ui.mdc.Table")) {
+            _defaultColumnOrder = mdcTbl.getColumns().map(col => col.getPropertyKey());
+        }
+    }
+
+    // ===========================================================
+    // RESET PARA O PADRÃO (sem largura, só ordem/visíveis)
+    // ===========================================================
+    function resetToDefault(ctrl) {
+        const mdcTbl = ctrl.getView().byId("tblDocs");
+        if (!mdcTbl || !mdcTbl.isA("sap.ui.mdc.Table")) return;
+
+        console.log("🧹 DraftStore: Resetando para o padrão (Bloqueando salvamento)...");
+
+        // 🔒 BLOQUEIA O SAVE ENQUANTO RESETAMOS
+        ctrl.__skipSave = true;
+
+        if (typeof mdcTbl.setFilterConditions === "function") {
+            mdcTbl.setFilterConditions({}); // sem filtros
+        }
+
+        if (typeof mdcTbl.setSortConditions === "function") {
+            mdcTbl.setSortConditions({ sorters: [] }); // sem ordenação
+        }
+
+        const finishReset = () => {
+            mdcTbl.rebind();
+            // 🔓 DESBLOQUEIA O SAVE depois de um tempo
+            setTimeout(() => {
+                ctrl.__skipSave = false;
+            }, 1500);
+        };
+
+        if (_defaultColumnOrder && Array.isArray(_defaultColumnOrder)) {
+            _restoreColumnsAsync(mdcTbl, _defaultColumnOrder).then(finishReset);
+        } else {
+            finishReset();
+        }
+    }
+
+    // ===========================================================
+    // SNAPSHOT: O QUE VAI PRO LOCALSTORAGE
+    // ===========================================================
     function _collectSnapshot(ctrl) {
         const view = ctrl.getView();
         const vm = view.getModel("vm");
-        const cm = view.getModel("cm");
-        const prefs = ctrl._prefs || {};
-
-        // 1) pega tudo do CM…
-        const rawConds = cm?.getAllConditions ? cm.getAllConditions() : {};
-        let conditions = _compactConditions(rawConds);
-
         const docId = _getDocId(ctrl);
+
         const header = vm?.getProperty("/header") || {};
         const headerRows = vm?.getProperty("/headerRows") || [];
         const rows = vm?.getProperty("/rows") || [];
 
-        // filtros no formato UI (direto do ConditionModel)
+        let mdcColumnOrder = [];
+        let mdcFilterConditions = {};
+        let mdcSortConditions = { sorters: [] };
 
-        // 1.1) "grudar" filtros: se ficou vazio e não houve reset explícito,
-        //     use o último conjunto válido (do controller ou do draft salvo).
-        if (!ctrl?.__allowEmptyFiltersOnce && Object.keys(conditions).length === 0) {
-            const prevFromCtrl = ctrl?.__lastAppliedConditions || {};
-            const prevFromDraft = load(docId)?.conditions || {};
-            const fallback = Object.keys(prevFromCtrl).length ? prevFromCtrl : prevFromDraft;
-            if (fallback && Object.keys(fallback).length) {
-                conditions = fallback;
+        const mdcTbl = view.byId("tblDocs");
+
+        if (mdcTbl && mdcTbl.isA("sap.ui.mdc.Table")) {
+            const cols = mdcTbl.getColumns();
+            mdcColumnOrder = cols.map(col => col.getPropertyKey());
+
+            if (typeof mdcTbl.getFilterConditions === "function") {
+                mdcFilterConditions = mdcTbl.getFilterConditions() || {};
+            }
+
+            if (typeof mdcTbl.getSortConditions === "function") {
+                const oSortState = mdcTbl.getSortConditions();
+                if (oSortState && Array.isArray(oSortState.sorters)) {
+                    mdcSortConditions = oSortState;
+                }
             }
         }
 
-        // colunas (visibilidade + ordem)
-        const uiColumns = _readColumnsState(ctrl);
-
-        // por padrão, guarda tudo:
         return {
             _version: VERSION,
             savedAt: _now(),
@@ -124,170 +143,191 @@ sap.ui.define([
             header,
             headerRows,
             rows,
-            conditions,
-            uiColumns,
-            uiSort: prefs.sort || {},
-            uiGroup: prefs.group || {}
+            mdcColumnOrder,
+            mdcFilterConditions,
+            mdcSortConditions
         };
     }
 
+    // ===========================================================
+    // RESTORE DO SNAPSHOT
+    // ===========================================================
     function _restoreSnapshot(ctrl, snap) {
         if (!snap) return;
+
         ctrl.__restoringDraft = true;
+        ctrl.__skipSave = true;
 
         const view = ctrl.getView();
         const vm = view.getModel("vm");
-        const ui = view.getModel("ui");
+        const mdcTbl = view.byId("tblDocs");
 
-        // 1) header + rows
         vm?.setProperty("/header", snap.header || {});
-        vm?.setProperty("/headerRows", Array.isArray(snap.headerRows) ? snap.headerRows : (snap.header ? [snap.header] : []));
+        vm?.setProperty("/headerRows",
+            Array.isArray(snap.headerRows)
+                ? snap.headerRows
+                : (snap.header ? [snap.header] : [])
+        );
         vm?.setProperty("/rows", Array.isArray(snap.rows) ? snap.rows : []);
 
-        // 2) colunas (sem mexer diretamente nas colunas do sap.m.Table)
-        if (ui && snap.uiColumns) {
-            ui.setProperty("/columns", { ...(snap.uiColumns.map || {}) });
+        if (mdcTbl && mdcTbl.isA("sap.ui.mdc.Table")) {
 
-            const orderIds = Array.isArray(snap.uiColumns.order)
-                ? snap.uiColumns.order.map(o => o.id)
-                : [];
+            if (typeof mdcTbl.setFilterConditions === "function") {
+                mdcTbl.setFilterConditions(snap.mdcFilterConditions || {});
+            }
 
-            if (orderIds.length) {
-                ui.setProperty("/columnOrder", orderIds);
-                try {
-                    const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
-                    Filtros && Filtros.applyColumnOrder(ctrl);
-                } catch (e) {
-                    console.warn("Não consegui carregar 'filtros' (orderIds):", e);
+            if (typeof mdcTbl.setSortConditions === "function") {
+                const oSortState = snap.mdcSortConditions;
+                if (oSortState && Array.isArray(oSortState.sorters)) {
+                    mdcTbl.setSortConditions(oSortState);
+                } else {
+                    mdcTbl.setSortConditions({ sorters: [] });
                 }
             }
-        }
 
-        try {
-            const Filtros = sap.ui.requireSync("comparativemap/comparativemap/controller/helpers/filtros");
-            if (Filtros) {
-                Filtros.captureColCellMap(ctrl);
-                Filtros.applyColumnOrder(ctrl);
-            }
-        } catch (e) {
-            console.warn("Não consegui carregar 'filtros' (capture+apply):", e);
-        }
-        // Condições compactadas (descarta placeholders que a UI possa ter salvo)
-        // Condições compactadas (tira placeholders) e memorizadas como "last good"
-        const cleanConds = _compactConditions(snap.conditions || {});
-        ctrl._pendingConditions = cleanConds;
-        ctrl.__lastAppliedConditions = cleanConds;
-
-        // 3) filtros (aplicando no ConditionModel e na tabela)
-        const cm = view.getModel("cm");
-        if (cm && typeof cm.setAllConditions === "function") {
-            cm.removeAllConditions();
-            cm.setAllConditions(cleanConds);
-            cm.checkUpdate(true);
-        }
-
-        // 4) re-aplica filtros no binding da tabela (FilterType.Application)
-        const binding = view.byId("tblDocs")?.getBinding("items");
-        if (binding) {
-            // converte as condições em UI5 Filters
-            const Filter = sap.ui.requireSync("sap/ui/model/Filter");
-            const FilterOperator = sap.ui.requireSync("sap/ui/model/FilterOperator");
-            const FO = {
-                EQ: FilterOperator.EQ, BT: FilterOperator.BT,
-                GE: FilterOperator.GE, LE: FilterOperator.LE,
-                GT: FilterOperator.GT, LT: FilterOperator.LT,
-                Contains: FilterOperator.Contains,
-                StartsWith: FilterOperator.StartsWith,
-                EndsWith: FilterOperator.EndsWith
-            };
-            const conds = cleanConds;
-            const filters = [];
-            Object.keys(conds).forEach(field => {
-                (conds[field] || []).forEach(c => {
-                    const op = FO[c.operator] || FilterOperator.EQ;
-                    if (op === FilterOperator.BT) {
-                        filters.push(new Filter(field, op, c.values?.[0], c.values?.[1]));
-                    } else {
-                        filters.push(new Filter(field, op, c.values?.[0]));
-                    }
+            if (Array.isArray(snap.mdcColumnOrder) && snap.mdcColumnOrder.length > 0) {
+                _restoreColumnsAsync(mdcTbl, snap.mdcColumnOrder).then(() => {
+                    mdcTbl.rebind();
+                    ctrl.__restoringDraft = false;
+                    setTimeout(() => { ctrl.__skipSave = false; }, 500);
                 });
-            });
-
-            binding.filter([], "Control");
-            binding.sort(null);
-            binding.filter(filters, "Application");
+            } else {
+                mdcTbl.rebind();
+                ctrl.__restoringDraft = false;
+                setTimeout(() => { ctrl.__skipSave = false; }, 500);
+            }
+        } else {
+            ctrl.__restoringDraft = false;
+            ctrl.__skipSave = false;
         }
 
-        // 5) sincronia de UI
         sap.ui.getCore().applyChanges();
-
-        // 6) sort e group (via seu ViewSettingsCmp)
-        if (ctrl._vs) {
-            // injeta no _prefs do controller e aplica
-            ctrl._prefs = Object.assign({}, ctrl._prefs || {}, {
-                sort: snap.uiSort || {},
-                group: snap.uiGroup || {}
-            });
-            ctrl._vs.setPrefs(ctrl._prefs);
-            ctrl._vs.applyGroupSortFromPrefs();
-        }
-        ctrl.__restoringDraft = false;
-        try { save(ctrl); } catch (e) { }
     }
 
-    function save(ctrl) {
+    // ===========================================================
+    // RECRIA COLUNAS NA ORDEM SALVA (sem largura)
+    // ===========================================================
+    async function _restoreColumnsAsync(mdcTbl, desiredOrder) {
+        const delegate = await mdcTbl.getControlDelegate();
+        const existingCols = mdcTbl.getColumns();
+
+        const colMap = new Map();
+        existingCols.forEach(c => colMap.set(c.getPropertyKey(), c));
+
+        const finalColumns = [];
+
+        for (const propKey of desiredOrder) {
+            let col = colMap.get(propKey);
+
+            if (!col) {
+                // Em caso de coluna ainda não criada, pede pro delegate
+                try {
+                    col = await delegate.addItem(mdcTbl, propKey);
+                } catch (err) {
+                    // Se der erro pra uma coluna específica, só ignora ela
+                }
+            }
+
+            if (col) {
+                finalColumns.push(col);
+                colMap.delete(propKey);
+            }
+        }
+
+        // Remove todas as colunas atuais e adiciona na ordem final
+        mdcTbl.removeAllColumns();
+        finalColumns.forEach(c => mdcTbl.addColumn(c));
+
+        return true;
+    }
+
+    // ===========================================================
+    // RESTORE COM NOVOS DADOS (quando troca DocID)
+    // ===========================================================
+    function restoreWithNewData(ctrl, docId, header, headerRows, rows) {
+        const snap = load(docId);
+        if (!snap) return false;
+
+        snap.header = header;
+        snap.headerRows = headerRows;
+        snap.rows = rows;
+
+        _restoreSnapshot(ctrl, snap);
+        return true;
+    }
+
+    // ===========================================================
+    // SAVE / AUTOSAVE
+    // ===========================================================
+    function save(ctrl, force = false) {
+        if (!force && (ctrl.__skipSave || ctrl.__restoringDraft)) return false;
+
         const snap = _collectSnapshot(ctrl);
         if (!snap.docId) return false;
 
         try {
             storage.put(_key(snap.docId), JSON.stringify(snap));
-            // atualiza índice
+
             const idx = _indexGet();
             idx.lastDocId = snap.docId;
             idx.items = idx.items || {};
+
             idx.items[snap.docId] = {
                 savedAt: snap.savedAt,
                 rows: Array.isArray(snap.rows) ? snap.rows.length : 0
             };
 
-            // politica de retenção: manter no máx. 5 drafts (mais antigos caem)
-            const entries = Object.entries(idx.items).sort((a, b) => String(b[1].savedAt).localeCompare(String(a[1].savedAt)));
+            const entries = Object.entries(idx.items).sort((a, b) => {
+                return new Date(b[1].savedAt).getTime() - new Date(a[1].savedAt).getTime();
+            });
+
             const keep = entries.slice(0, 5);
             const drop = entries.slice(5);
+
             idx.items = Object.fromEntries(keep);
-            drop.forEach(([docId]) => storage.remove(_key(docId)));
+
+            drop.forEach(([docId]) => {
+                storage.remove(_key(docId));
+                console.log("🗑️ DraftStore: Removendo draft antigo:", docId);
+            });
 
             _indexPut(idx);
             return true;
-        } catch (e) { return false; }
+        } catch (e) {
+            console.error("DraftStore erro ao salvar:", e);
+            return false;
+        }
     }
 
     let _debounce;
     function autoSave(ctrl, delay = 800) {
-        if (ctrl && ctrl.__restoringDraft) return;
+        if (ctrl && (ctrl.__restoringDraft || ctrl.__skipSave)) return;
+
         clearTimeout(_debounce);
         _debounce = setTimeout(() => {
-            if (ctrl && ctrl.__restoringDraft) return;
-            try { save(ctrl); } catch (e) { /* ignore */ }
+            if (ctrl && (ctrl.__restoringDraft || ctrl.__skipSave)) return;
+            try { save(ctrl); } catch (e) { }
         }, delay);
     }
 
+    // ===========================================================
+    // OPERAÇÕES DE GERÊNCIA
+    // ===========================================================
     function hasDraft(docId) {
         if (!docId) return false;
         return !!storage.get(_key(docId));
     }
 
     function load(docId) {
-        try { return JSON.parse(storage.get(_key(docId)) || ""); } catch (e) { return null; }
+        try { return JSON.parse(storage.get(_key(docId)) || ""); }
+        catch (e) { return null; }
     }
 
     function restore(ctrl, docId) {
         const snap = load(docId);
         if (!snap) return false;
         _restoreSnapshot(ctrl, snap);
-        // coloca o docId no input (qualquer que seja a origem)
-        const view = ctrl.getView();
-        view.byId("inputDoID")?.setValue(docId);
+        ctrl.getView().byId("inputDoID")?.setValue(docId);
         return true;
     }
 
@@ -298,17 +338,24 @@ sap.ui.define([
             if (idx?.items) delete idx.items[docId];
             if (idx?.lastDocId === docId) idx.lastDocId = undefined;
             _indexPut(idx);
-        } catch (e) { /* ignore */ }
+        } catch (e) { }
     }
 
+    // ===========================================================
+    // DIÁLOGO DE RESTORE
+    // ===========================================================
     function _formatSavedAtBR(isoString) {
         if (!isoString) return "";
         try {
             const dt = new Date(isoString);
             return new Intl.DateTimeFormat("pt-BR", {
                 timeZone: "America/Sao_Paulo",
-                day: "2-digit", month: "2-digit", year: "numeric",
-                hour: "2-digit", minute: "2-digit", second: "2-digit"
+                day: "2-digit",
+                month: "2-digit",
+                year: "numeric",
+                hour: "2-digit",
+                minute: "2-digit",
+                second: "2-digit"
             }).format(dt);
         } catch (e) {
             return String(isoString || "");
@@ -317,59 +364,44 @@ sap.ui.define([
 
     function offerRestoreOnEnter(ctrl) {
         const view = ctrl.getView();
+        registerDefaultState(ctrl);
+
         const current = _getDocId(ctrl);
         const idx = _indexGet();
         const items = idx?.items || {};
 
-        // caso 1: tem docId digitado e há draft específico
         if (current && hasDraft(current)) {
-            MessageBox.confirm(
-                `Existe um rascunho salvo para o DocID ${current}. Deseja restaurar e continuar de onde parou?`,
-                {
-                    actions: [MessageBox.Action.YES, MessageBox.Action.NO],
-                    emphasizedAction: MessageBox.Action.YES,
-                    onClose: (act) => { if (act === MessageBox.Action.YES) restore(ctrl, current); }
+            MessageBox.confirm(`Existe um rascunho salvo para o DocID ${current}. Restaurar?`, {
+                actions: [MessageBox.Action.YES, MessageBox.Action.NO],
+                emphasizedAction: MessageBox.Action.YES,
+                onClose: (act) => {
+                    if (act === MessageBox.Action.YES) restore(ctrl, current);
+                    else resetToDefault(ctrl);
                 }
-            );
+            });
             return;
         }
 
-        // caso 2: não tem docId digitado, mas há drafts no índice
         const docIds = Object.keys(items);
         if (!docIds.length) return;
 
-        // se só tem um, pergunta direto
-        if (docIds.length === 1) {
-            const only = docIds[0];
-            const savedAtBR = _formatSavedAtBR(items[only]?.savedAt);
-            MessageBox.confirm(
-                `Encontramos um rascunho de ${only} salvo em ${savedAtBR}. Deseja restaurar agora?`,
-                {
-                    actions: [MessageBox.Action.YES, MessageBox.Action.NO],
-                    emphasizedAction: MessageBox.Action.YES,
-                    onClose: (act) => { if (act === MessageBox.Action.YES) restore(ctrl, only); }
-                }
-            );
-            return;
-        }
-
-
-        const data = docIds
-            .map(d => ({
-                docId: d,
-                savedAt: items[d].savedAt,
-                savedAtBR: _formatSavedAtBR(items[d].savedAt), // ← hora formatada no BR
-                rows: items[d].rows
-            }))
-            .sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+        const data = docIds.map(d => ({
+            docId: d,
+            savedAt: items[d].savedAt,
+            savedAtBR: _formatSavedAtBR(items[d].savedAt),
+            rows: items[d].rows
+        })).sort((a, b) => String(b.savedAt).localeCompare(String(a.savedAt)));
 
         const mdl = new JSONModel(data);
+
         const dlg = new SelectDialog({
             title: "Restaurar rascunho",
             search: function (ev) {
                 const q = (ev.getParameter("value") || "").toLowerCase();
                 const base = data.slice();
-                const filtered = q ? base.filter(d => String(d.docId).toLowerCase().includes(q)) : base;
+                const filtered = q
+                    ? base.filter(d => String(d.docId).toLowerCase().includes(q))
+                    : base;
                 mdl.setData(filtered);
             },
             confirm: (ev) => {
@@ -380,26 +412,26 @@ sap.ui.define([
             cancel: () => setTimeout(() => dlg.destroy(), 0)
         });
 
-        // Template via factory para poder aplicar margens e “gap”
         dlg.bindAggregation("items", {
             path: "/",
             factory: function (sId, oCtx) {
                 const obj = oCtx.getObject();
 
-                // Linha 1 (DocID) + Linha 2 (data formatada + contagem)
-                const txtDoc = new Text({ text: obj.docId, wrapping: false });
-                txtDoc.addStyleClass("sapMTextStrong sapUiTinyMarginBottom"); // destaque + respiro
+                const txtDoc = new Text({
+                    text: obj.docId,
+                    wrapping: false
+                }).addStyleClass("sapMTextStrong sapUiTinyMarginBottom");
 
                 const txtMeta = new Text({
                     text: `Salvo em ${obj.savedAtBR} · ${obj.rows} linha(s)`,
                     wrapping: false
                 });
 
-                const left = new VBox({ items: [txtDoc, txtMeta], width: "100%" });
-                // Margem interna (padding visual) no item
-                left.addStyleClass("sapUiSmallMarginBeginEnd sapUiTinyMarginTopBottom");
+                const left = new VBox({
+                    items: [txtDoc, txtMeta],
+                    width: "100%"
+                }).addStyleClass("sapUiSmallMarginBeginEnd sapUiTinyMarginTopBottom");
 
-                // Botão “X” (excluir)
                 const btnDel = new Button({
                     icon: "sap-icon://decline",
                     type: "Transparent",
@@ -416,7 +448,8 @@ sap.ui.define([
                                 emphasizedAction: MessageBox.Action.YES,
                                 onClose: (act) => {
                                     if (act !== MessageBox.Action.YES) return;
-                                    try { clear(row.docId); } catch (e) { /* ignore */ }
+                                    try { clear(row.docId); } catch (e) { }
+
                                     const arr = (mdl.getData() || []).filter(x => x.docId !== row.docId);
                                     mdl.setData(arr);
                                     MessageToast.show(`Rascunho ${row.docId} removido.`);
@@ -425,30 +458,25 @@ sap.ui.define([
                             }
                         );
 
-                        // evita “selecionar” o item ao clicar no X
                         oEvent.preventDefault && oEvent.preventDefault();
                         oEvent.cancelBubble = true;
-                        oEvent.stopPropagation && oEvent.stopPropagation();
-                        oEvent.stopImmediatePropagation && oEvent.stopImmediatePropagation();
+                        if (oEvent.stopPropagation) oEvent.stopPropagation();
                     }
-                });
-                btnDel.addStyleClass("sapUiSmallMarginEnd"); // respiro na borda direita
+                }).addStyleClass("sapUiSmallMarginEnd");
 
-                // “Gap” visível entre a coluna de textos e o botão
                 const gap = new HBox({ width: "1rem" });
 
-                // Container horizontal com alinhamento e espaçamento
-                const row = new HBox({
+                const rowHBox = new HBox({
                     alignItems: "Center",
                     justifyContent: "SpaceBetween",
                     fitContainer: true,
                     items: [left, gap, btnDel]
                 });
 
-                // Item selecionável (tocar no item = selecionar)
-                const cli = new CustomListItem({ content: [row], type: "Active" });
-                // margem inferior pra separar um item do outro
-                cli.addStyleClass("sapUiSmallMarginBottom");
+                const cli = new CustomListItem({
+                    content: [rowHBox],
+                    type: "Active"
+                }).addStyleClass("sapUiSmallMarginBottom");
 
                 return cli;
             }
@@ -459,6 +487,9 @@ sap.ui.define([
         dlg.open();
     }
 
+    // ===========================================================
+    // EXPORTA A API
+    // ===========================================================
     return {
         save,
         autoSave,
@@ -466,6 +497,9 @@ sap.ui.define([
         restore,
         load,
         clear,
-        offerRestoreOnEnter
+        offerRestoreOnEnter,
+        registerDefaultState,
+        resetToDefault,
+        restoreWithNewData
     };
 });

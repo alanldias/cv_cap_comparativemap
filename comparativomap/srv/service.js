@@ -71,6 +71,7 @@ module.exports = function () {
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
+
     const round = Number.isFinite(Number(ARIBA_EVENT_ROUND))
       ? Number(ARIBA_EVENT_ROUND)
       : 1;
@@ -78,6 +79,20 @@ module.exports = function () {
     LOG.infoL("[GetQuotes] START", { docId, round });
 
     try {
+
+      if (docId === "OFFLINE") {
+        // Simulamos um erro técnico feio (como se o Axios tivesse falhado)
+        const fakeError = new Error("Connection refused: ariba.api.com:443");
+        // Simulamos a estrutura de resposta de erro HTTP
+        fakeError.response = {
+          status: 502,
+          data: { message: "Bad Gateway: Unable to connect to remote host" }
+        };
+
+        // Jogamos o erro para cair no seu catch lá embaixo
+        throw fakeError;
+      }
+
       const { rows, results } = await fetchSupplierBids(docId);
       console.log(results)
       LOG.infoL("[GetQuotes] supplierBids", {
@@ -168,10 +183,21 @@ module.exports = function () {
       LOG.infoL("[GetQuotes] END", { items: itemsOut.length });
       return { header: headerWithDoc, items: itemsOut };
     } catch (e) {
-      const status = e.response?.status || 502;
-      const msg = e.response?.data?.message || e.response?.data || e.message;
-      LOG.errorL("[GetQuotes] ERROR", { status, msg });
-      return req.error(status, "Falha ao consultar supplierBids no Ariba.");
+      const status = e.response?.status || 500;
+
+      // Pega a mensagem técnica para LOG, mas não usamos ela para decidir a msg do usuário
+      const msgTecnica = e.response?.data?.message || e.response?.data || e.message;
+      LOG.errorL("[GetQuotes] ERROR", { status, msg: msgTecnica });
+
+      // 🟢 LÓGICA SEGURA:
+      // Apenas 400 (Bad Request) e 404 (Not Found) indicam com certeza erro de ID/Dados.
+      if (status === 400 || status === 404) {
+        return req.error(404, "DocId inválido. \n Corrija e tente novamente!");
+      }
+
+      // 🔴 QUALQUER OUTRO ERRO (500, 502, 503, Erro de Rede sem status, etc.)
+      // Retorna mensagem de falha técnica genérica.
+      return req.error(status || 502, "Falha técnica ao consultar Ariba ou indisponibilidade momentânea.");
     }
   });
 

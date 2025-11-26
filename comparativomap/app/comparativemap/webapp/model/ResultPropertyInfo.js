@@ -1,0 +1,29 @@
+sap.ui.define([], function () {
+    "use strict";
+
+    return [
+        { name: "supplierName", label: "Fornecedor", dataType: "sap.ui.model.type.String", path: "supplierName" },
+        { name: "materialCode", label: "Material", dataType: "sap.ui.model.type.String", path: "materialCode" },
+        
+        // Numéricos
+        { name: "originalQty", label: "Qtd Original", dataType: "sap.ui.model.type.Float", path: "originalQty" },
+        { name: "quantity", label: "Qtd Simulada", dataType: "sap.ui.model.type.Float", path: "quantity" },
+        { name: "qtyAward", label: "Qtd Premiar", dataType: "sap.ui.model.type.Integer", path: "qtyAward" }, // Editável
+        
+        // Financeiro
+        { name: "price", label: "Preço Unit.", dataType: "sap.ui.model.type.Float", path: "price" },
+        { name: "currency", label: "Moeda", dataType: "sap.ui.model.type.String", path: "currency" },
+        { name: "icms", label: "ICMS", dataType: "sap.ui.model.type.Float", path: "icms" },
+        { name: "ipi", label: "IPI", dataType: "sap.ui.model.type.Float", path: "ipi" },
+        { name: "total", label: "Total", dataType: "sap.ui.model.type.Float", path: "total" },
+        
+        // Outros
+        { name: "ncm", label: "NCM", dataType: "sap.ui.model.type.String", path: "ncm" },
+        { name: "poItem", label: "Item PO", dataType: "sap.ui.model.type.String", path: "poItem" },
+        { name: "taxCode", label: "IVA", dataType: "sap.ui.model.type.String", path: "taxCode" },
+        
+        // Campos ocultos (úteis para payload de premiação)
+        { name: "itemId", label: "Item ID", dataType: "sap.ui.model.type.String", path: "itemId", visible: false },
+        { name: "invitationId", label: "Invitation ID", dataType: "sap.ui.model.type.String", path: "invitationId", visible: false }
+    ];
+});

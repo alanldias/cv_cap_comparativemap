@@ -10,15 +10,15 @@
 }
 
 .cabecalhoTexto {
-  color: #354b9d;
+  color: #003e87;
   font-size: 1.5rem;
   font-weight: bold;
 }
 
-.textoTabela {
-  color: #354b9d;
-  font-size: 1.1rem;
-  font-weight: 900;
+.tabelaTituloAzul .sapMTitle {
+    color: #003e87 !important; /* Azul SAP (exemplo) */
+    font-weight: bold;
+    font-size: 1.1rem;
 }
 
 .cabecalhoTabela {
@@ -35,4 +35,5 @@
 .bordaTabela {
   box-shadow: 0 0 1px #070f26;
   border-radius: 4px;
+  background-color: #ffffff
 }

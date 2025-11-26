@@ -133,6 +133,8 @@ function buildSmokePayload(header, items, schedules, testRun) {
     posched.push(s);
     poschedx.push(markX(s));
   });
+  
+  console.log("[buildSmokePayload] POITEM.item =", JSON.stringify(poitem, null, 2));
 
   return {
     TESTRUN: testRun ? "X" : "",
