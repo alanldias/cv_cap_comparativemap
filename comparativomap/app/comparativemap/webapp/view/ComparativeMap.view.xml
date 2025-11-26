@@ -13,19 +13,20 @@
         <customHeader>
             <Toolbar id="toolbarCabecalhoTopo" class="cabecalhoTopo">
                 <HBox id="hboxCabecalho" width="100%" alignItems="Center" justifyContent="SpaceBetween">
-                    <HBox id="hboxEsquerda" width="10%" alignItems="Center" class="fundologo">
+                    <HBox id="hboxEsquerda"  alignItems="Center" class="fundologo">
                         <Image id="logoTopo"
                             src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"
                             height="2rem"
                             width="auto"
                             class="sapUiTinyMarginBegin" />
                     </HBox>
-                    <HBox id="hboxCentro" width="80%" justifyContent="Center">
+                    <HBox id="hboxCentro"  justifyContent="Center">
                         <Text id="tituloCabecalho"
                             text="Mapa Comparativo"
                             class="cabecalhoTexto" />
                     </HBox>
-                    <HBox id="hboxDireita" width="10%" />
+                    <HBox id="hboxDireita">
+                    </HBox>
                 </HBox>
             </Toolbar>
         </customHeader>
@@ -37,8 +38,9 @@
                     <HBox id="searchHBox" alignItems="Center">
                         <Input id="inputDoID" placeholder="Digite o ID da Cotação" width="16rem" class="sapUiTinyMarginBegin" submit=".onBuscar" />
                         <Button id="btnBuscar" text="Buscar" icon="sap-icon://search" type="Emphasized"
-                            press=".onBuscar" class="sapUiTinyMarginBegin" />
+                            press=".onBuscar" class="sapUiTinyMarginBegin" />    
                     </HBox>
+                    
                 </VBox>
 
                 <VBox id="tableVBox" fitContainer="false" class="sapUiTinyMargin" renderType="Bare">
@@ -76,10 +78,9 @@
                         </items>
                     </Table>
 
-                    <vm:VariantManagement id="vmDocs" for="tblDocs" class="sapUiTinyMarginTop" />
+                    
 
                     <mdc:Table id="tblDocs"
-                        variant="vmDocs"
                         class="sapUiTinyMarginTop sapUiTinyMarginBottom bordaTabela tabelaTituloAzul"
                         width="100%"
                         selectionMode="Multi"

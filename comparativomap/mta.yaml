@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 2.1.2
+version: 2.2.4
 description: "A simple CAP project."
 
 modules:
@@ -44,11 +44,11 @@ modules:
       build-result: resources
       requires:
         - artifacts:
-            - comparativomapcomparativemap.zip
+            - comparativemapcomparativemap.zip
           name: comparativomap-ui
           target-path: resources/
 
-  - name: comparativomap
+  - name: comparativemap
     type: html5
     path: app/comparativemap
     build-parameters:
@@ -74,13 +74,6 @@ modules:
       - name: comparativomap-destination
         parameters:
           content-target: true
-
-      # gerar service key pro serviço de Flex (opcional mas bonitinho)
-      - name: comparativomap-keyuser
-        parameters:
-          service-key:
-            name: comparativomap-keyuser-key
-
     build-parameters:
       no-source: true
     parameters:
@@ -97,8 +90,6 @@ modules:
               ServiceInstanceName: comparativomap-auth
               ServiceKeyName: comparativomap-auth-key
               sap.cloud.service: comparativomap.service
-          # se algum dia vocês quiserem criar uma destination pro Flex via automation,
-          # dá pra usar a service key "comparativomap-keyuser-key" aqui também.
 
 resources:
   - name: comparativomap-auth
@@ -155,17 +146,9 @@ resources:
       service: html5-apps-repo
       service-plan: app-host
 
-  # : serviço de UI5 Flexibility for Key Users (IaC, por ambiente)
-  - name: comparativomap-keyuser
-    type: org.cloudfoundry.managed-service
-    parameters:
-      service: ui5-flexibility-keyuser
-      service-plan: free   # em PROD provavelmente vai virar 'keyuser'
-
 parameters:
   deploy_mode: html5-repo
   enable-parallel-deployments: true
-
 build-parameters:
   before-all:
     - builder: custom

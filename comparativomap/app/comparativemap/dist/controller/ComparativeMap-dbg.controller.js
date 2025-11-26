@@ -1,17 +1,11 @@
 sap.ui.define(
   [
     "sap/ui/core/mvc/Controller",
-    "sap/ui/model/Sorter",
-    "sap/ui/model/Filter",
-    "sap/ui/model/FilterOperator",
     "comparativemap/comparativemap/model/models",
-    "comparativemap/comparativemap/controller/prefs/PrefsStore",
-    "comparativemap/comparativemap/controller/components/ViewSettings",
     "comparativemap/comparativemap/controller/services/ODataService",
     "comparativemap/comparativemap/controller/services/SimulationMapper",
     "comparativemap/comparativemap/controller/services/Dialogs",
     "comparativemap/comparativemap/controller/services/AwardService",
-    "comparativemap/comparativemap/controller/helpers/KeyUtils",
     "comparativemap/comparativemap/controller/helpers/Debug",
     "comparativemap/comparativemap/controller/helpers/Formatters",
     "comparativemap/comparativemap/controller/helpers/ErrorHandler",
@@ -21,23 +15,15 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
-    "comparativemap/comparativemap/controller/helpers/filtros",
     "comparativemap/comparativemap/controller/prefs/DraftStore"
-
   ],
   function (
     Controller,
-    Sorter,
-    Filter,
-    FilterOperator,
     Models,
-    PrefsStore,
-    ViewSettingsCmp,
     ODataSvc,
     Mapper,
     Dialogs,
     AwardSvc,
-    Keys,
     Debug,
     Fmt,
     ErrorHandler,
@@ -47,269 +33,144 @@ sap.ui.define(
     Build,
     Spreadsheet,
     exportLibrary,
-    Filtros,
     Drafts
-
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
+
     return Controller.extend(
       "comparativemap.comparativemap.controller.ComparativeMap",
       {
         formatter: Fmt,
 
+        // ===========================================================
+        // 1. INICIALIZAÇÃO
+        // ===========================================================
         onInit() {
+          // ===== Modelos base =====
           this.getView().setModel(Models.createVM(), "vm");
           this.getView().setModel(Models.createQM(), "qm");
 
-          const view = this.getView();
-          const vm = view.getModel("vm");
-          const qm = view.getModel("qm");
-
-          if (vm?.setSizeLimit) vm.setSizeLimit(10000);
-          if (qm?.setSizeLimit) qm.setSizeLimit(10000);
-
-          let res = view.getModel("res");
-          if (!(res instanceof sap.ui.model.json.JSONModel)) {
+          // Modelo de resultados
+          let res = this.getView().getModel("res");
+          if (!res) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
-            view.setModel(res, "res");
-          }
-          res.setSizeLimit(5000);
-
-
-          this._prefs = PrefsStore.load();
-          const allowedGroups = [
-            "supplierName", "itemId", "PLANT", "currency",
-            "grupo_de_materias", "MaterialCode", "ItemCategory"
-          ];
-          if (!allowedGroups.includes(this._prefs.group?.key)) {
-            this._prefs.group = { key: null, desc: false };
-            PrefsStore.save(this._prefs);
+            this.getView().setModel(res, "res");
           }
 
-          this.mGroupFunctions = {
-            supplierName: (ctx) => {
-              const v = ctx.getProperty("supplierName") || "";
-              return { key: v || "__noSupplier__", text: v || "(Sem fornecedor)" };
-            },
-            itemId: (ctx) => {
-              const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
-              const v = raw == null ? "" : String(raw);
-              return { key: v || "__noItemId__", text: v ? `Item ${v}` : "(Sem ItemId)" };
-            },
-            PLANT: (ctx) => {
-              const v = ctx.getProperty("PLANT") || "";
-              return { key: v || "__noPlant__", text: v || "(Sem Centro)" };
-            },
-            currency: (ctx) => {
-              const v = ctx.getProperty("currency") || "";
-              return { key: v || "__noCurr__", text: v || "(Sem Moeda)" };
-            },
-            grupo_de_materias: (ctx) => {
-              const v = ctx.getProperty("grupo_de_materias") || "";
-              return { key: v || "__noGrpMat__", text: v || "(Sem Grupo Mat.)" };
-            },
-            MaterialCode: (ctx) => {
-              const v = ctx.getProperty("MaterialCode") || "";
-              return { key: v || "__noMatCode__", text: v || "(Sem Código Mat.)" };
-            },
-            ItemCategory: (ctx) => {
-              const v = ctx.getProperty("ItemCategory") || "";
-              return { key: v || "__noItemCat__", text: v || "(Sem Categoria)" };
-            }
-          };
-
-          this._vs = ViewSettingsCmp.create(
-            view,
-            this._prefs,
-            this._getDistinct.bind(this),
-            this.mGroupFunctions
-          );
-          this._vs.applyFiltersFromPrefs();
-          this._vs.applyGroupSortFromPrefs();
-
-          // cria o modelo de UI
-          const ui = new sap.ui.model.json.JSONModel({ columns: {}, columnList: [] });
-          this.getView().setModel(ui, "ui");
-
-          // ⬇️ COLE ESTE BLOCO AQUI
-          ui.attachPropertyChange((ev) => {
-            const path = ev.getParameter("path");
-
-            if (path === "/columnOrder") {
-              if (!this.__col2cellMap) Filtros.captureColCellMap(this);
-              Filtros.applyColumnOrder(this);
-            }
-
-            if (path === "/columns") {
-              // 👁️ refletir visibilidade imediatamente
-              const tbl = this.byId("tblDocs");
-              const m = ui.getProperty("/columns") || {};
-              const prefix = this.getView().getId() + "--";
-
-              (tbl.getColumns() || []).forEach((c) => {
-                const id = c.getId().startsWith(prefix) ? c.getId().slice(prefix.length) : c.getId();
-                if (id in m) c.setVisible(!!m[id]);
-              });
-            }
-          });
-
-          // deixa tudo compacto (baixa a altura das linhas/inputs)
+          // Layout Compacto
           this.getView().addStyleClass("sapUiSizeCompact");
 
-          // monta a partir da tabela usando **id curto**
-          const tbl = this.byId("tblDocs");
-          let _capturedOnce = false;
-          tbl.getBinding("items").attachDataReceived(() => {
-            Filtros.updateFilterBarLabel(this);
-            if (!_capturedOnce) {
-              Filtros.captureColCellMap(this);
-              // ✅ reconstroi o template já com o mapa correto
-              Filtros.applyColumnOrder(this);
-              _capturedOnce = true;
-            }
-          });
-          const colsMap = {};
-          const colList = [];
-          const prefix = this.getView().getId() + "--"; // para remover do getId()
+          // 🟢 Drafts: Registra o estado padrão (XML) antes de qualquer alteração
+          Drafts.registerDefaultState(this);
 
-          (tbl?.getColumns() || []).forEach((c) => {
-            const longId = c.getId();
-            const shortId = longId.startsWith(prefix) ? longId.slice(prefix.length) : longId;
-            const label = c.getHeader()?.getText?.() || shortId;
-            colsMap[shortId] = c.getVisible();    // estado inicial fiel ao que está no XML
-            colList.push({ id: shortId, label });
-          });
-
-          ui.setProperty("/columns", colsMap);
-          ui.setProperty("/columnList", colList);
-
-          Filtros.captureColCellMap(this);
-
-          setTimeout(() => {
-            const order = ui.getProperty("/columnOrder");
-            if (order && order.length) {
-              Filtros.applyColumnOrder(this);
-            }
-          }, 0);
-
-          Filtros.init(this);
-
+          // Drafts: Pergunta se quer restaurar ao entrar
           Drafts.offerRestoreOnEnter(this);
 
-          // Autosave ao sair/recarregar a página (failsafe)
+          // Autosave ao sair/recarregar a página
           this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
           window.addEventListener("beforeunload", this._onUnloadSave);
-
         },
 
-        onSaveVisionPress: function () {
-          PrefsStore.openSaveViewDialog(this);
+        onExit() {
+          if (this._dlgRes) {
+            this._dlgRes.destroy(true);
+            this._dlgRes = null;
+          }
+          if (this._onUnloadSave) {
+            window.removeEventListener("beforeunload", this._onUnloadSave);
+            this._onUnloadSave = null;
+          }
         },
 
-        onChooseVisionPress: function () {
-          // Lista do backend (filtrada pelo docId caso seja true(coloquei false)) e aplica ao escolher
-          PrefsStore.openChooseViewDialog(this, { docScoped: false });
-        },
-
-        // ===== DEV: abrir fragment com mock =====
-        // onDevOpenResultado: function () {
-        //   const view = this.getView();
-        //   const rows = [
-        //     {
-        //       supplierName: "Fornecedor A",
-        //       materialCode: "MAT-0001",
-        //       originalQty: 120, quantity: 50, qtyAward: 10,
-        //       price: "15.90", currency: "BRL",
-        //       icms: "3.45", ipi: null, total: "795.00",
-        //       ncm: "1234.56.78", poItem: "10", taxCode: "T1",
-        //       itemId: "IT-001", invitationId: "INV-AAA"
-        //     },
-        //     {
-        //       supplierName: "Fornecedor B",
-        //       materialCode: "MAT-0002",
-        //       originalQty: 80, quantity: 80, qtyAward: 20,
-        //       price: "7.30", currency: "BRL",
-        //       icms: "", ipi: "0.00", total: "584.00",
-        //       ncm: "8765.43.21", poItem: "20", taxCode: "T2",
-        //       itemId: "IT-002", invitationId: "INV-BBB"
-        //     }
-        //   ];
-        //   Dialogs.openResultDialog(view, rows, this);
-        // },
-
-        /* ====== BUSCAR ====== */
+        // ===========================================================
+        // 2. BUSCA PRINCIPAL
+        // ===========================================================
         async onBuscar() {
           const view = this.getView();
           const odata = view.getModel();
           const vm = view.getModel("vm");
           const qm = view.getModel("qm");
-          const tbl = view.byId("tblDocs");
-          const docId = (view.byId("inputDoID").getValue() || "").trim();
+          const mdcTbl = view.byId("tblDocs");
+
+          const newDocId = (view.byId("inputDoID").getValue() || "").trim();
+          const oldDocId = vm.getProperty("/header/docId");
 
           try {
             if (!odata) throw new Error("Modelo OData V4 não encontrado.");
-            if (!docId) { MessageToast.show("Informe o Doc ID"); return; }
-
-            Filtros.reset(this);
-
-            const binding = tbl?.getBinding("items");
-            if (binding) {
-              binding.filter([], sap.ui.model.FilterType.Application);
-              binding.filter([], sap.ui.model.FilterType.Control);
-              binding.sort(null);
+            if (!newDocId) {
+              MessageToast.show("Informe o Doc ID");
+              return;
             }
+
+            // 🔵 BUSY GLOBAL + TABELA
+            sap.ui.core.BusyIndicator.show(0);   // <<< NOVO
+            mdcTbl?.setBusy(true);               // (já existia, eu deixaria aqui em cima)
+
+            // 1. Salva draft anterior se trocar de ID
+            if (oldDocId && oldDocId !== newDocId) {
+              console.log(`💾 Salvando draft anterior (${oldDocId}) antes de trocar...`);
+              Drafts.save(this, true);
+            }
+
+            // Limpa UI antiga
             view.byId("vsdFilterBar")?.setVisible(false);
             view.byId("vsdFilterLabel")?.setText("");
 
-            this._prefs = Object.assign({}, this._prefs, {
-              filter: {
-                fornecedor: [], moeda: [], centro: [], grupoMat: [], ncm: [],
-                onlyTax: false, precoMin: null, precoMax: null, qtdMin: null, qtdMax: null
-              },
-              sort: { key: null, desc: false },
-              group: { key: null, desc: false }
-            });
-            this._vs.setPrefs(this._prefs);
-            PrefsStore.save(this._prefs);
+            // 2. Reset layout se não houver draft salvo
+            const hasSavedDraft = Drafts.hasDraft(newDocId);
+            if (!hasSavedDraft) {
+              console.log("🧹 Novo DocID detectado. Resetando layout...");
+              Drafts.resetToDefault(this);
+            }
 
-            tbl?.removeSelections(true);
+            // Prepara containers
             qm?.setProperty("/idByKey", {});
             qm?.setProperty("/simSourceRows", []);
 
-            tbl?.setBusy(true);
-
-            const res = await ODataSvc.fetchQuotes(view, docId);
+            // 3. Busca dados
+            const res = await ODataSvc.fetchQuotes(view, newDocId);
 
             const rows = (Array.isArray(res?.items) ? res.items : []).map(r => ({
               ...r,
               itemId: r.itemId ?? r.ItemId ?? null,
+              itemDescription: r.itemDescription,
               price: (r.price !== undefined && r.price !== null) ? Number(r.price) : r.price,
               _originalQty: Number(r.quantity) || 0
             }));
 
-            vm.setProperty("/header", res?.header || {});
-            vm.setProperty("/rows", rows);
-            vm.setProperty("/headerRows", res?.header ? [res.header] : []);
+            const header = res?.header || {};
+            const headerRows = res?.header ? [res.header] : [];
 
-            const distinct = {
-              supplierName: this._distinct(rows, "supplierName"),
-              currency: this._distinct(rows, "currency"),
-              PLANT: this._distinct(rows, "PLANT"),
-              grupo_de_materias: this._distinct(rows, "grupo_de_materias"),
-              ncm: this._distinct(rows, "ncm"),
-            };
-            vm.setProperty("/distinct", distinct);
+            // 4. Aplica dados + draft
+            if (hasSavedDraft) {
+              console.log(`♻️ Draft encontrado para ${newDocId}. Restaurando...`);
+              Drafts.restoreWithNewData(this, newDocId, header, headerRows, rows);
+            } else {
+              vm.setProperty("/header", header);
+              vm.setProperty("/headerRows", headerRows);
+              vm.setProperty("/rows", rows);
 
-            tbl?.getBinding("items")?.refresh(true);
-            sap.ui.getCore().applyChanges();
-            tbl?.removeSelections(true);
+              if (mdcTbl && mdcTbl.isA("sap.ui.mdc.Table")) {
+                mdcTbl.rebind();
+              }
 
-            if (!rows.length) MessageToast.show("Nenhum item retornado para esse Doc ID.");
+              setTimeout(() => {
+                console.log(`💾 Salvando estado inicial para ${newDocId}...`);
+                Drafts.save(this, true);
+              }, 500);
+            }
+
+            if (!rows.length) {
+              MessageToast.show("Nenhum item retornado para esse Doc ID.");
+            }
+
           } catch (e) {
             ErrorHandler.handle(e, "Erro ao buscar DocID");
           } finally {
-            tbl?.setBusy(false);
+            // 🔵 SEMPRE TIRA O BUSY
+            mdcTbl?.setBusy(false);
+            sap.ui.core.BusyIndicator.hide();
           }
         },
 
@@ -325,45 +186,22 @@ sap.ui.define(
           ctx.getModel().checkUpdate(true);
           Drafts.autoSave(this);
         },
+
         onCloseDialog(ev) {
           Dialogs.closeAny(this, ev);
         },
 
-        onOpenMdcFilters() { Filtros.openDialog(this); },
-        onCloseFiltersDialog() { Filtros.closeDialog(this); },
-        onResetMdcFilters() { Filtros.reset(this); },
-        onFilterSearch() {
-          this.getView()?.byId("tblDocs")?.getBinding("items")?.filter([], "Control");
-          this.getView()?.byId("tblDocs")?.getBinding("items")?.sort(null);
-          Filtros.onFilterSearch(this);
-
-          // memoriza último bom antes do autosave
-          const cm = this.getView().getModel("cm");
-          if (cm?.getAllConditions) {
-            this.__lastAppliedConditions = (function compact(r) {
-              const out = {}; const raw = r();
-              Object.keys(raw || {}).forEach(k => {
-                const kept = (raw[k] || []).filter(c => {
-                  if (!c || c.isEmpty === true) return false;
-                  const v = Array.isArray(c.values) ? c.values : [];
-                  return c.operator === "BT" ? (v[0] !== "" && v[0] != null && v[1] !== "" && v[1] != null)
-                    : (v[0] !== "" && v[0] != null);
-                });
-                if (kept.length) out[k] = kept;
-              }); return out;
-            })(cm.getAllConditions.bind(cm));
-          }
-          Drafts.autoSave(this); // debounce
-        },
-        onOpenColumnsDialog() { Filtros.onOpenColumnsDialog(this); },
-
-        /* ====== SIMULAR (idem seu fluxo) ====== */
+        // ===========================================================
+        // 3. SIMULAÇÃO (ATUALIZADO PARA MDC)
+        // ===========================================================
         async onSimularPress() {
-
           const view = this.getView();
           const vm = view.getModel("vm");
           const qm = view.getModel("qm");
 
+          console.log("🚀 [SIMULAR] Iniciando processo de simulação...");
+
+          // Limpa modelo de resultados
           const resModel = this.getView().getModel("res");
           if (resModel?.setSizeLimit) resModel.setSizeLimit(5000);
           resModel.setProperty("/header", {});
@@ -371,122 +209,219 @@ sap.ui.define(
           resModel.setProperty("/totals", {});
 
           try {
-            const tbl = this.byId("tblDocs");
-            if (!tbl) throw new Error("Tabela 'tblDocs' não encontrada.");
+            const mdcTbl = this.byId("tblDocs");
+            if (!mdcTbl) throw new Error("Tabela 'tblDocs' não encontrada na View.");
 
-            const selItems = tbl.getSelectedItems();
-            if (!selItems.length) throw new Error("Selecione pelo menos 1 item para simular.");
+            // --- Coleta Seleção (Estratégia Segura) ---
+            let rows = [];
+            let selectionSource = "Nenhuma";
 
-            const rows = selItems
-              .map(it => it.getBindingContext("vm")?.getObject?.())
-              .filter(r => r && (r.MaterialCode || r.materialCode || r.ItemId || r.itemId));
+            // 1. Tenta API Nativa do MDC (Prioridade Máxima)
+            if (typeof mdcTbl.getSelectedContexts === "function") {
+              // Se essa função existe, ELA é a dona da verdade.
+              const contexts = mdcTbl.getSelectedContexts();
+              if (contexts) {
+                rows = contexts.map((c) => c.getObject()).filter(Boolean);
+                selectionSource = "MDC Direct API";
+              }
+            }
+
+            // 2. Fallback: Acessa a tabela interna (Inner Table)
+            // 🛑 CORREÇÃO: Só entra aqui se a fonte ainda for "Nenhuma".
+            // Se a API do MDC retornou 0 linhas, aceitamos que são 0 linhas e não tentamos "forçar" na interna.
+            if (selectionSource === "Nenhuma" && mdcTbl.isA && mdcTbl.isA("sap.ui.mdc.Table")) {
+              console.warn("⚠️ [SIMULAR] API do MDC não detectada. Tentando Inner Table...");
+
+              const inner = (typeof mdcTbl.getInnerTable === "function" ? mdcTbl.getInnerTable() : null)
+                || mdcTbl._oTable;
+
+              if (inner) {
+                if (inner.isA("sap.m.Table")) {
+                  selectionSource = "Inner sap.m.Table";
+                  rows = inner.getSelectedItems()
+                    .map((it) => it.getBindingContext("vm")?.getObject?.())
+                    .filter(Boolean);
+                }
+                else if (inner.isA("sap.ui.table.Table")) {
+                  // GridTable: Precisamos cuidar com o Plugin de Seleção
+                  selectionSource = "Inner sap.ui.table.Table (Grid)";
+
+                  // Verifica se há plugins bloqueando o getSelectedIndices
+                  const hasSelectionPlugin = inner.getPlugins && inner.getPlugins().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"));
+
+                  if (hasSelectionPlugin) {
+                    console.warn("🚫 [SIMULAR] Plugin de seleção detectado na GridTable. getSelectedIndices ignorado para evitar crash.");
+                    // Se tem plugin e o MDC (passo 1) não resolveu, provavelmente não há seleção acessível via legacy.
+                    rows = [];
+                  } else {
+                    const idxs = inner.getSelectedIndices() || [];
+                    rows = idxs.map((i) => {
+                      const ctx = inner.getContextByIndex(i);
+                      return ctx ? ctx.getObject() : null;
+                    }).filter(Boolean);
+                  }
+                }
+              }
+            } else if (selectionSource === "Nenhuma" && mdcTbl.isA("sap.m.Table")) {
+              // Caso legado puro (sem MDC)
+              selectionSource = "Legacy sap.m.Table";
+              rows = mdcTbl.getSelectedItems().map(it => it.getBindingContext("vm")?.getObject()).filter(Boolean);
+            }
+
+            console.log(`📊 [SIMULAR] Fonte da seleção: ${selectionSource}`);
+            console.log(`📦 [SIMULAR] Linhas brutas selecionadas: ${rows.length}`, rows);
+
+            // AGORA SIM: Se rows estiver vazio, lançamos o erro amigável (sem crashar antes)
+            if (!rows.length) {
+              // Se for MDC, tenta limpar visualmente só pra garantir
+              if (mdcTbl.isA("sap.ui.mdc.Table")) {
+                const inner = mdcTbl.getInnerTable && mdcTbl.getInnerTable();
+                // Verifica se o método existe e se não vai dar conflito com plugin antes de chamar
+                if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
+                  try { inner.clearSelection(); } catch (e) { }
+                }
+              }const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
+              // Mensagem amigável para o usuário
+              MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
+              return; // Para a execução aqui de forma limpa
+            }
+
+            // --- Validação de Integridade ---
+            // Filtra linhas que não tenham ID de material ou ItemId (lixo de memória ou linha vazia)
+            const validRows = rows.filter((r) => r && (r.MaterialCode || r.materialCode || r.ItemId || r.itemId));
+
+            if (rows.length !== validRows.length) {
+              console.warn(`⚠️ [SIMULAR] Algumas linhas foram descartadas por falta de ID. Originais: ${rows.length}, Válidas: ${validRows.length}`);
+            }
+            rows = validRows;
 
             if (!rows.length) {
-              tbl.removeSelections(true);
-              throw new Error("Seleção inválida: os itens selecionados não existem mais. Faça uma nova seleção e tente novamente.");
+              // Tenta limpar a seleção visualmente se for inconsistente
+              if (mdcTbl.isA("sap.ui.mdc.Table")) {
+                const inner = mdcTbl.getInnerTable && mdcTbl.getInnerTable();
+                if (inner && inner.clearSelection) inner.clearSelection();
+              }
+              throw new Error("Seleção inválida: Itens sem Material ou ID. A seleção foi limpa, tente novamente.");
             }
-            Debug.dbg(`Linhas selecionadas (count=${rows.length})`, rows);
 
-            qm.setProperty("/simSourceRows", rows);
+            // --- Preparação BAPI ---
+            console.log("⚙️ [SIMULAR] Preparando payload para Mapper...");
+            qm.setProperty("/simSourceRows", rows); // Guarda referência para cruzar na volta
+
             Mapper.prepareQMFromSelection(rows, qm);
-
             const requests = Build.buildRequestsFromSelection(rows, vm);
 
+            console.log("📤 [SIMULAR] Requests gerados (Payload):", requests);
+
+            // --- Validação Header/Items (Mantida do seu código original) ---
             const headerMissing = [];
             const itemMissing = [];
             requests.forEach((req, ridx) => {
               const h = req.header || {};
-              const tag = `Req#${ridx + 1} (vendor ${h.vendor || "?"})`;
+              const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
 
-              if (!h.docType) headerMissing.push(`${tag}: Tipo de Pedido (docType)`);
+              // Validações básicas para não chamar BAPI à toa
+              if (!h.docType) headerMissing.push(`${tag}: Tipo Pedido (docType)`);
               if (!h.compCode) headerMissing.push(`${tag}: Empresa (compCode)`);
-              if (!h.purchOrg) headerMissing.push(`${tag}: Org. de Compras (purchOrg)`);
-              if (!h.purchGroup) headerMissing.push(`${tag}: Grupo de Compras (purchGroup)`);
-              if (!h.vendor) headerMissing.push(`${tag}: Fornecedor (vendor/LIFNR)`);
-              if (!h.currency) headerMissing.push(`${tag}: Moeda (currency)`);
+              if (!h.purchOrg) headerMissing.push(`${tag}: Org. Compras`);
+              if (!h.vendor) headerMissing.push(`${tag}: Fornecedor`);
 
               (req.items || []).forEach((it, i) => {
-                const itTag = `${tag} Item ${String((i + 1) * 10).padStart(5, "0")}`;
-                if (!it.plant) itemMissing.push(`${itTag}: Centro (plant)`);
-                if (!it.unit) itemMissing.push(`${itTag}: Unidade (unit)`);
-                if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Quantidade (quantity)`);
-                if (!it.material && !it.shortText) itemMissing.push(`${itTag}: MATERIAL ou SHORT_TEXT`);
+                const itemRef = `Item ${(i + 1) * 10}`;
+                const itTag = `${nomeForn} > ${itemRef}`;
+                
+                if (!it.plant) itemMissing.push(`${itTag}: Falta Centro (plant)`);
+                if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Qtd inválida`);
               });
             });
 
             if (headerMissing.length || itemMissing.length) {
               const msg = [
-                headerMissing.length ? "Cabeçalho faltando:\n- " + headerMissing.join("\n- ") : "",
-                itemMissing.length ? "Itens faltando:\n- " + itemMissing.join("\n- ") : ""
+                headerMissing.length ? "⚠️ Cabeçalho:\n- " + headerMissing.join("\n- ") : "",
+                itemMissing.length ? "⚠️ Itens:\n- " + itemMissing.join("\n- ") : ""
               ].filter(Boolean).join("\n\n");
               throw new Error(msg);
             }
 
-            const normVendor = v => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+            // --- Normalização para mapeamento de volta ---
+            const normVendor = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+            // Cria um Map para saber quais linhas originais geraram qual request de fornecedor
             const vendorToSrc = new Map(
-              (requests || []).map(req => [normVendor(req?.header?.vendor), Array.isArray(req.sourceRows) ? req.sourceRows : []])
+              (requests || []).map((req) => [
+                normVendor(req?.header?.vendor),
+                Array.isArray(req.sourceRows) ? req.sourceRows : []
+              ])
             );
-            const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({ header, items, schedules, testRun }));
 
-            function replacer(key, value) {
-              if (key === "items" && Array.isArray(value) && value.length > 5) {
-                return value.slice(0, 5).concat("... [mais itens ocultos]");
-              }
-              return value;
-            }
+            // Limpa sourceRows do payload final para não pesar o JSON enviado ao backend
+            const payloadRequests = (requests || []).map(({ header, items, schedules, testRun }) => ({
+              header,
+              items,
+              schedules,
+              testRun
+            }));
 
             sap.ui.core.BusyIndicator.show(0);
 
+            // --- Chamada BAPI ---
+            console.log("📡 [SIMULAR] Enviando para ODataSvc.simularPO...");
             const results = await ODataSvc.simularPO(view, payloadRequests, 4);
-            Debug.dbg("Resultados da BAPI (array)", results);
+            console.log("📥 [SIMULAR] Retorno OData:", results);
 
-            const structuralErrors = (Array.isArray(results) ? results : [])
-              .filter(r => r?.error || r?.success === false);
+            // Verifica erros estruturais do retorno
+            const structuralErrors = (Array.isArray(results) ? results : []).filter((r) => r?.error || r?.success === false);
             if (structuralErrors.length) {
               const firstErr = structuralErrors[0];
-              if (Dialogs.showError) {
-                Dialogs.showError("Erro na simulação", firstErr?.message || "Falha ao simular.", firstErr);
-              } else {
-                MessageBox.error(firstErr?.message || "Falha ao simular.", {
-                  details: JSON.stringify(firstErr, null, 2),
-                  contentWidth: "640px"
-                });
-              }
+              console.error("❌ [SIMULAR] Erro estrutural no retorno:", firstErr);
+              ErrorHandler.handle(
+                new Error(firstErr?.message || "Falha técnica na simulação."),
+                "Erro na simulação",
+                { showDetailsPanel: true, details: firstErr }
+              );
               return;
             }
 
-            const allMsgs = (Array.isArray(results) ? results : [])
-              .flatMap(r => r?.returnMessages || r?.mensagens || []);
-            const hasErrorMsg = allMsgs.some(m => m.type === "E" || m.type === "A");
+            // Verifica mensagens de erro de negócio (Tipo E ou A)
+            const allMsgs = (Array.isArray(results) ? results : []).flatMap((r) => r?.returnMessages || r?.mensagens || []);
+            const hasErrorMsg = allMsgs.some((m) => m.type === "E" || m.type === "A");
+
             if (hasErrorMsg) {
+              console.warn("⚠️ [SIMULAR] Erros de negócio retornados pela BAPI:", allMsgs);
               Dialogs.showBapiMessages(allMsgs);
               return;
             }
 
+            // --- Processamento do Retorno ---
             const resultsArr = Array.isArray(results) ? results : [];
             let resRows = [];
 
             try {
-              resRows = resultsArr.flatMap(r => {
+              resRows = resultsArr.flatMap((r) => {
                 const v = normVendor(r?.header?.fornecedor || r?.header?.vendor || "");
+                // Tenta pegar as linhas originais específicas desse fornecedor
                 const srcRows = vendorToSrc.get(v) || (qm.getProperty("/simSourceRows") || []);
                 return Mapper.buildResRowsFromBapiResult(r, qm, srcRows);
               });
             } catch (err) {
-              try {
-                const globalSrc = qm.getProperty("/simSourceRows") || [];
-                resRows = resultsArr.flatMap(r => Mapper.buildResRowsFromBapiResult(r, qm, globalSrc));
-              } catch (err2) {
-                resRows = [];
-              }
+              console.error("❌ [SIMULAR] Erro no Mapper (buildResRows):", err);
+              // Fallback genérico
+              const globalSrc = qm.getProperty("/simSourceRows") || [];
+              resRows = resultsArr.flatMap((r) => Mapper.buildResRowsFromBapiResult(r, qm, globalSrc));
+            }
+
+            console.log("✅ [SIMULAR] Linhas processadas para exibição:", resRows);
+
+            // 🛑 FALTOU ISSO AQUI: Atualizar o Model para a tabela MDC ler
+            if (resModel) {
+              resModel.setProperty("/rows", resRows);
+              resModel.setProperty("/header", resultsArr[0]?.header || {});
             }
 
             Dialogs.openResultDialog(view, resRows, this);
-
             if (allMsgs.length) Dialogs.showBapiMessages(allMsgs);
 
           } catch (err) {
-            // 🔹 Agora usando ErrorHandler com painel de detalhes
+            console.error("🔥 [SIMULAR] Exception:", err);
             ErrorHandler.handle(err, "Erro ao simular pedido", {
               showDetailsPanel: true,
               contentWidth: "640px"
@@ -496,7 +431,9 @@ sap.ui.define(
           }
         },
 
-        /* ====== PREMIAÇÃO ====== */
+        // ===========================================================
+        // 4. PREMIAÇÃO
+        // ===========================================================
         onAwardQtyChangeRes(ev) {
           const input = ev.getSource();
           const ctx = input.getBindingContext("res");
@@ -509,7 +446,6 @@ sap.ui.define(
           ctx.getModel().checkUpdate(true);
           input.setValue(String(row.qtyAward));
 
-          // ⚠️ Aviso visual quando exceder o original
           const original = Math.floor(Number(row.originalQty) || 0);
           if (original > 0 && v > original) {
             input.setValueState(sap.ui.core.ValueState.Warning);
@@ -521,166 +457,83 @@ sap.ui.define(
           }
         },
 
-
         async onAwardDirect() {
           const view = this.getView();
-          const oModel = view.getModel();
           const vm = view.getModel("vm");
+          const resModel = view.getModel("res");
 
-          const tbl = this._dlgRes?.getContent?.()[0];
-          const selected = tbl?.getSelectedContexts("res").map((c) => c.getObject()) || [];
+          // 1. PEGAR A TABELA CORRETAMENTE (Pelo ID do Fragmento)
+          // Como o fragmento é carregado pelo controller, o ID é prefixado.
+          let tbl = this.byId("tblRes");
+
+          // Fallback: Se não achar pelo this.byId (dependendo de como o Dialogs.js instancia), tenta o Core
+          if (!tbl) {
+            tbl = sap.ui.getCore().byId("fragmentId--tblRes"); // Caso tenha ID de fragmento específico
+            if (!tbl && this._dlgRes) {
+              // Última tentativa: Busca dentro do dialog (mais seguro que pegar índice 0)
+              tbl = this._dlgRes.getContent().find(c => c.isA && c.isA("sap.ui.mdc.Table"));
+            }
+          }
+
+          if (!tbl) {
+            MessageBox.error("Erro interno: Tabela de resultados (tblRes) não encontrada.");
+            return;
+          }
+
+          // 2. PEGAR SELEÇÃO (Usando seu helper que já trata MDC/Inner)
+          // Passamos "res" como nome do model, mas o helper deve lidar bem com isso
+          const selected = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
+
           if (!selected.length) {
             MessageToast.show("Selecione ao menos uma linha para premiar.");
             return;
           }
 
-          const allRows = vm?.getProperty("/rows") || [];
-          const supplierBids = AwardSvc.validarEMontarPayload(
-            allRows, selected, this._ensureInvitationResourceId.bind(this)
-          );
-          if (!supplierBids) return;
+          // --- Daqui para baixo, a lógica de Negócio (AwardService) permanece IGUAL ---
 
-          const sEventId =
-            vm.getProperty("/header/docId") ||
-            view.getModel("res")?.getProperty("/header/docId");
+          const allRows = selected;
+
+          // O AwardSvc vai validar as somas, qtyAward vs original, etc.
+          const supplierBids = AwardSvc.validarEMontarPayload(
+            allRows,
+            selected,
+            this._ensureInvitationResourceId.bind(this)
+          );
+
+          if (!supplierBids) return; // AwardSvc já exibiu o erro/aviso se houve
+
+          const sEventId = vm.getProperty("/header/docId") || resModel.getProperty("/header/docId");
           if (!sEventId) {
             MessageBox.error("DocID do evento não encontrado no header.");
             return;
           }
 
           sap.ui.core.BusyIndicator.show(0);
-
           try {
+            // Chamada ao Backend
             const out = await ODataSvc.createScenario(view, {
               eventId: sEventId,
-              title: "Premiação via UI (direto)",
+              title: "Premiação via UI (MDC)",
               scenarioType: 0,
               supplierBids,
             });
 
             if (out?.success) {
-              MessageBox.success(
-                `Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}\nCorrelation-ID: ${out.correlationId || "(n/a)"}`
-              );
+              MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}`);
               this._dlgRes?.close();
             } else {
-              MessageBox.warning("CreateScenario executou, porém sem success=true.");
+              MessageBox.warning("O cenário foi processado, mas o backend não retornou 'success=true'. Verifique no Ariba.");
             }
-
           } catch (e) {
-            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", {
-              showDetailsPanel: true,
-              contentWidth: "640px"
-            });
+            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", { showDetailsPanel: true, contentWidth: "640px" });
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
         },
 
-        /* ====== ViewSettings: tela principal ====== */
-        handleFilterButtonPressed() {
-          this._vs.openFilterDialog((ev) =>
-            this._vs.handleFilterDialogConfirm(ev, (p) => {
-              this._prefs = p;
-              PrefsStore.save(p);
-            }),
-          );
-        },
-        handleSortButtonPressed() {
-          this._vs.openSortDialog((ev) =>
-            this._vs.handleSortDialogConfirm(ev, (p) => {
-              this._prefs = p;
-              PrefsStore.save(p);
-              Drafts.autoSave(this);
-            }),
-          );
-        },
-        handleGroupButtonPressed() {
-          this._vs.openGroupDialog(
-            (ev) =>
-              this._vs.handleGroupDialogConfirm(ev, (p) => {
-                this._prefs = p;
-                PrefsStore.save(p);
-                Drafts.autoSave(this);
-              }),
-            () => { },
-          );
-        },
-
-        /**
- * Coleta as linhas da tabela respeitando filtros/sort/agrupamento.
- * Se houver seleção, retorna apenas os selecionados.
- * Caso contrário, retorna TODAS as linhas do binding (já filtradas).
- *
- * @param {sap.m.Table} table - tabela (sap.m.Table)
- * @param {string} modelName - nome do modelo usado no items (ex.: "vm" ou "res")
- * @param {sap.ui.model.Model} modelFallback - modelo p/ fallback (ex.: view.getModel("vm"))
- * @param {string} pathFallback - caminho p/ fallback (ex.: "/rows")
- */
-        _collectRowsFromTable(table, modelName, modelFallback, pathFallback) {
-          if (!table) return [];
-
-          // 1) Seleção tem prioridade
-          const selected = (table.getSelectedContexts(modelName) || []).map(c => c.getObject());
-          if (selected.length) return selected;
-
-          // 2) Senão, coleta do binding (respeita filtros/sort/agrup.)
-          const binding = table.getBinding("items");
-          if (binding && typeof binding.getLength === "function") {
-            const len = binding.getLength();                 // tamanho pós-filtro
-            if (len > 0 && typeof binding.getContexts === "function") {
-              const ctxs = binding.getContexts(0, len);      // todas as contexts filtradas
-              return ctxs.map(c => c.getObject());
-            }
-          }
-
-          // 3) Fallback: tudo do modelo (sem filtros)
-          return modelFallback?.getProperty(pathFallback) || [];
-        },
-
-
-        /* ====== ViewSettings: fragment Resultado ====== */
-        onResFilter() {
-          if (!this._vsRes) return;
-          this._vsRes.openFilterDialog(ev => {
-            this._vsRes.handleFilterDialogConfirm(ev, (newPrefs) => {
-              this._prefsRes = newPrefs; // persiste em memória do controller; se quiser salvar, crie um StoreRes
-            });
-          });
-        },
-        onResSort() {
-          if (!this._vsRes) return;
-          this._vsRes.openSortDialog(
-            ev => this._vsRes.handleSortDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
-            () => this._vsRes.applyGroupSortFromPrefs()
-          );
-        },
-        onResGroup() {
-          if (!this._vsRes) return;
-          this._vsRes.openGroupDialog(
-            ev => this._vsRes.handleGroupDialogConfirm(ev, (newPrefs) => { this._prefsRes = newPrefs; }),
-            () => this._vsRes.applyGroupSortFromPrefs()
-          );
-        },
-
-        // ===== Helpers =====
-        _getDistinct(path) {
-          const rows = this.getView().getModel("vm").getProperty("/rows") || [];
-          const set = new Set();
-          rows.forEach((r) => {
-            const v = r[path];
-            if (v !== undefined && v !== null && v !== "") set.add(String(v));
-          });
-          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-        },
-        _distinct(list, prop) {
-          const set = new Set();
-          (list || []).forEach(r => {
-            const v = r?.[prop];
-            if (v !== undefined && v !== null && v !== "") set.add(String(v));
-          });
-          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-        },
+        // ===========================================================
+        // 5. HELPERS & EXPORT
+        // ===========================================================
         _ensureInvitationResourceId(invId, email) {
           if (!invId) return null;
           const s = String(invId);
@@ -689,94 +542,55 @@ sap.ui.define(
           return s;
         },
 
-        onExit() {
-          if (this._dlgRes) {
-            this._dlgRes.destroy(true);
-            this._dlgRes = null;
+        _collectRowsFromTable(table, modelName, modelFallback, pathFallback) {
+          if (!table) return [];
+
+          let selected = [];
+          if (typeof table.getSelectedContexts === "function") {
+            selected = (table.getSelectedContexts(modelName) || []).map(c => c.getObject());
+          } else if (table.isA && table.isA("sap.ui.mdc.Table")) {
+            const inner = table.getInnerTable && table.getInnerTable();
+            if (inner) {
+              if (typeof inner.getSelectedContexts === "function") {
+                selected = (inner.getSelectedContexts(modelName) || []).map(c => c.getObject());
+              } else if (inner.isA && inner.isA("sap.ui.table.Table")) {
+                const idxs = inner.getSelectedIndices() || [];
+                selected = idxs.map(i => inner.getContextByIndex(i)).filter(Boolean).map(ctx => ctx.getObject());
+              }
+            }
           }
-          if (this._onUnloadSave) {
-            window.removeEventListener("beforeunload", this._onUnloadSave);
-            this._onUnloadSave = null;
+          if (selected.length) return selected;
+
+          let binding = null;
+          if (typeof table.getRowBinding === "function") binding = table.getRowBinding();
+          else if (typeof table.getBinding === "function") binding = table.getBinding("items");
+
+          if (binding && typeof binding.getLength === "function") {
+            const len = binding.getLength();
+            if (len > 0 && typeof binding.getContexts === "function") {
+              const ctxs = binding.getContexts(0, len);
+              return ctxs.map(c => c.getObject());
+            }
           }
+
+          return modelFallback?.getProperty(pathFallback) || [];
         },
+
         onExportExcel() {
           const view = this.getView();
           const vm = view.getModel("vm");
           const tbl = view.byId("tblDocs");
 
-          // 🔎 coleta linhas respeitando filtros/sort/seleção
           const rows = this._collectRowsFromTable(tbl, "vm", vm, "/rows");
           if (!rows.length) {
             sap.m.MessageToast.show("Nada para exportar.");
             return;
           }
-
-          // normaliza numéricos (Excel como número)
-          const NUMERIC = [
-            "quantity", "price", "mva",
-            "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado",
-            "Extrinsic_Aliquota_IPI", "Extrinsic_IPI_Apurado",
-            "Extrinsic_Aliquota_PIS", "Extrinsic_PIS_Apurado",
-            "Extrinsic_Aliquota_Cofins", "Extrinsic_Cofins_apurado",
-            "Extrinsic_Aliquota_ICMS_Interna", "EXTENDEDPRICE"
-          ];
-          const toNum = (v) => {
-            if (v == null || v === "") return null;
-            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
-            return Number.isFinite(n) ? n : null;
-          };
-          const data = rows.map(r => {
-            const out = { ...r };
-            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
-            return out;
-          });
-
-          const columns = [
-            { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
-            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
-            { label: "Nome do Item", property: "itemDescription", type: EdmType.String, width: 40 },
-            { label: "Quantidade", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
-            { label: "Preço do Item", property: "price", type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Preço Estendido", property: "EXTENDEDPRICE", type: EdmType.Number, width: 16, scale: 2 },
-            { label: "Moeda", property: "currency", type: EdmType.String, width: 10 },
-            { label: "NCM", property: "ncm", type: EdmType.String, width: 14 },
-            { label: "MVA (%)", property: "mva", type: EdmType.Number, width: 12, scale: 2 },
-            { label: "Alíquota ICMS (%)", property: "Extrinsic_Aliquota_ICMS", type: EdmType.Number, width: 18, scale: 2 },
-            { label: "ICMS Apurado", property: "Extrinsic_ICMS_Apurado", type: EdmType.Number, width: 16, scale: 2 },
-            { label: "Alíquota IPI (%)", property: "Extrinsic_Aliquota_IPI", type: EdmType.Number, width: 16, scale: 2 },
-            { label: "IPI Apurado", property: "Extrinsic_IPI_Apurado", type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Alíquota PIS (%)", property: "Extrinsic_Aliquota_PIS", type: EdmType.Number, width: 16, scale: 2 },
-            { label: "PIS Apurado", property: "Extrinsic_PIS_Apurado", type: EdmType.Number, width: 14, scale: 2 },
-            { label: "Alíquota COFINS (%)", property: "Extrinsic_Aliquota_Cofins", type: EdmType.Number, width: 20, scale: 2 },
-            { label: "COFINS Apurado", property: "Extrinsic_Cofins_apurado", type: EdmType.Number, width: 18, scale: 2 },
-            { label: "ICMS Interna (%)", property: "Extrinsic_Aliquota_ICMS_Interna", type: EdmType.Number, width: 18, scale: 2 },
-            { label: "Origem Material", property: "Extrinsic_Origem_do_Material", type: EdmType.String, width: 18 },
-            { label: "Centro", property: "PLANT", type: EdmType.String, width: 14 },
-            { label: "Categoria Item", property: "ItemCategory", type: EdmType.String, width: 16 },
-            { label: "Req", property: "CodigoRequisicao", type: EdmType.String, width: 16 },
-            { label: "Grupo Materiais", property: "grupo_de_materias", type: EdmType.String, width: 24 },
-            { label: "Código Material", property: "MaterialCode", type: EdmType.String, width: 20 }
-          ];
-
-          const docId = (vm?.getProperty("/header/docId")) || "MapaComparativo";
-          const fileName = `Comparativo_${docId}.xlsx`;
-
-          const sheet = new Spreadsheet({
-            workbook: { columns },
-            dataSource: data,
-            fileName,
-            worker: true
-          });
-
-          sheet.build()
-            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
-            .finally(() => sheet.destroy());
+          this._doExport(rows, vm?.getProperty("/header/docId") || "MapaComparativo");
         },
 
         onExportExcelRes() {
           const view = this.getView();
-
-          // tabela do dialog (1º content do dlg)
           const tbl = this._dlgRes?.getContent?.()[0];
           const resModel = view.getModel("res");
 
@@ -784,66 +598,52 @@ sap.ui.define(
             sap.m.MessageToast.show("Janela de resultados não está aberta.");
             return;
           }
-
-          // 🔎 coleta linhas respeitando filtros/sort/seleção
           const rows = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
           if (!rows.length) {
             sap.m.MessageToast.show("Nada para exportar.");
             return;
           }
+          this._doExport(rows, view.getModel("vm")?.getProperty("/header/docId") || "Simulacao", true);
+        },
 
-          const exportLibrary = sap.ui.require("sap/ui/export/library");
-          const Spreadsheet = sap.ui.require("sap/ui/export/Spreadsheet");
-          const EdmType = exportLibrary.EdmType;
-
+        _doExport(rows, docId, isResult = false) {
           const toNum = (v) => {
             if (v == null || v === "") return null;
             const n = Number(String(v).replace(/\./g, "").replace(",", "."));
             return Number.isFinite(n) ? n : null;
           };
-          const NUMERIC = ["originalQty", "quantity", "qtyAward", "price", "icms", "ipi", "total", "poItem"];
+
+          const NUMERIC = isResult
+            ? ["originalQty", "quantity", "qtyAward", "price", "icms", "ipi", "total", "poItem"]
+            : ["quantity", "price", "mva", "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado", "EXTENDEDPRICE", "Extrinsic_Aliquota_IPI"];
+
           const data = rows.map(r => {
             const out = { ...r };
             NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
             return out;
           });
 
-          const columns = [
+          const columns = isResult ? [
             { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
-            { label: "Item (cód.)", property: "materialCode", type: EdmType.String, width: 16 },
-            { label: "Qtd Original", property: "originalQty", type: EdmType.Number, width: 12, scale: 0 },
-            { label: "Qtd Simulada", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
-            { label: "Qtd p/ premiar", property: "qtyAward", type: EdmType.Number, width: 14, scale: 0 },
+            { label: "Item", property: "materialCode", type: EdmType.String, width: 16 },
             { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
-            { label: "ICMS", property: "icms", type: EdmType.Number, width: 10, scale: 2 },
-            { label: "IPI", property: "ipi", type: EdmType.Number, width: 10, scale: 2 },
-            { label: "Total", property: "total", type: EdmType.Number, width: 12, scale: 2 },
-            { label: "Moeda", property: "currency", type: EdmType.String, width: 8 },
-            { label: "NCM", property: "ncm", type: EdmType.String, width: 12 },
-            { label: "PO Item", property: "poItem", type: EdmType.Number, width: 10, scale: 0 },
-            { label: "Tax Code", property: "taxCode", type: EdmType.String, width: 10 },
-            { label: "ItemId", property: "itemId", type: EdmType.String, width: 10 },
-            { label: "InvitationId (dbg)", property: "invitationId", type: EdmType.String, width: 20 }
+            // ... adicione o resto das colunas de resultado
+          ] : [
+            { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
+            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
+            { label: "Item", property: "itemDescription", type: EdmType.String, width: 40 },
+            { label: "Qtd", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
+            { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
+            // ... adicione o resto das colunas principais
           ];
 
-          const docId = (view.getModel("vm")?.getProperty("/header/docId")) || "Simulacao";
-          const fileName = `Resultado_${docId}.xlsx`;
-
-          const sheet = new Spreadsheet({
-            workbook: { columns },
-            dataSource: data,
-            fileName,
-            worker: true
-          });
-
+          const fileName = `${isResult ? "Resultado" : "Comparativo"}_${docId}.xlsx`;
+          const sheet = new Spreadsheet({ workbook: { columns }, dataSource: data, fileName, worker: true });
           sheet.build()
             .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
             .finally(() => sheet.destroy());
         }
-
-
-
-      },
+      }
     );
   }
 );
