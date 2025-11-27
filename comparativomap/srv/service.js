@@ -340,6 +340,18 @@ module.exports = function () {
           );
         }
 
+        for (const it of items) {
+          // Garante conversão para number (aceita price ou netPrice dependendo do seu payload)
+          const p = Number(it.price !== undefined ? it.price : it.netPrice);
+          
+          if (!Number.isFinite(p) || p <= 0.000001) {
+            throw new Error(
+              `Bloqueio de Segurança: O item (Material: ${it.material || 'N/A'}, PO Item: ${it.poItem}) ` +
+              `do fornecedor ${header.vendor} está com preço zerado (0.00).`
+            );
+          }
+        }
+
         // 1.3) ordena por poItem (mantemos essa regra)
         items.sort((a, b) => a.poItem - b.poItem);
 

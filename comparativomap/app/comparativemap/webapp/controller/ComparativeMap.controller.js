@@ -15,7 +15,7 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
-        "sap/ui/core/UIComponent",                            
+    "sap/ui/core/UIComponent",
     "comparativemap/comparativemap/controller/prefs/DraftStore"
   ],
   function (
@@ -54,58 +54,58 @@ sap.ui.define(
           // Modelos base
           view.setModel(Models.createVM(), "vm");
           view.setModel(Models.createQM(), "qm");
- 
+
           // Modelo de resultados
           let res = view.getModel("res");
           if (!res) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
             view.setModel(res, "res");
           }
- 
+
           // Layout compacto
           view.addStyleClass("sapUiSizeCompact");
- 
+
           // Registra estado padrão da tabela (ordem de colunas)
           Drafts.registerDefaultState(this);
- 
+
           // 🔵 Liga handler na rota pra rodar SEMPRE que a tela for ativada
           const oRouter = UIComponent.getRouterFor(this);
           this._fnRouteMatched = this._onRouteMatched.bind(this);
-           oRouter.getRoute("RouteComparativeMap").attachPatternMatched(this._fnRouteMatched);
- 
-           // Autosave ao sair/recarregar a página
-           this._onUnloadSave = () => {
-             try { Drafts.save(this); } catch (e) { }
-           };
-           window.addEventListener("beforeunload", this._onUnloadSave);
-         },
- 
-         // Disparado toda vez que a rota "RouteComparativeMap" é ativada
-         _onRouteMatched() {
-           console.log("[ComparativeMap] route matched → offerRestoreOnEnter");
-           Drafts.offerRestoreOnEnter(this);
-         },
- 
-         onExit() {
-           // Fecha dialog de resultado se ainda existir
-           if (this._dlgRes) {
-             this._dlgRes.destroy(true);
-             this._dlgRes = null;
-           }
- 
-           // Remove o listener do beforeunload
-           if (this._onUnloadSave) {
-             window.removeEventListener("beforeunload", this._onUnloadSave);
-             this._onUnloadSave = null;
-           }
- 
-           // Desliga o handler da rota pra não vazar memória
-           const oRouter = UIComponent.getRouterFor(this);
-           if (this._fnRouteMatched) {
-             oRouter.getRoute("RouteComparativeMap").detachPatternMatched(this._fnRouteMatched);
-             this._fnRouteMatched = null;
-           }
-         },
+          oRouter.getRoute("RouteComparativeMap").attachPatternMatched(this._fnRouteMatched);
+
+          // Autosave ao sair/recarregar a página
+          this._onUnloadSave = () => {
+            try { Drafts.save(this); } catch (e) { }
+          };
+          window.addEventListener("beforeunload", this._onUnloadSave);
+        },
+
+        // Disparado toda vez que a rota "RouteComparativeMap" é ativada
+        _onRouteMatched() {
+          console.log("[ComparativeMap] route matched → offerRestoreOnEnter");
+          Drafts.offerRestoreOnEnter(this);
+        },
+
+        onExit() {
+          // Fecha dialog de resultado se ainda existir
+          if (this._dlgRes) {
+            this._dlgRes.destroy(true);
+            this._dlgRes = null;
+          }
+
+          // Remove o listener do beforeunload
+          if (this._onUnloadSave) {
+            window.removeEventListener("beforeunload", this._onUnloadSave);
+            this._onUnloadSave = null;
+          }
+
+          // Desliga o handler da rota pra não vazar memória
+          const oRouter = UIComponent.getRouterFor(this);
+          if (this._fnRouteMatched) {
+            oRouter.getRoute("RouteComparativeMap").detachPatternMatched(this._fnRouteMatched);
+            this._fnRouteMatched = null;
+          }
+        },
 
         // ===========================================================
         // 2. BUSCA PRINCIPAL
@@ -127,8 +127,8 @@ sap.ui.define(
               return;
             }
 
-            sap.ui.core.BusyIndicator.show(0);   
-            mdcTbl?.setBusy(true);               
+            sap.ui.core.BusyIndicator.show(0);
+            mdcTbl?.setBusy(true);
 
             if (oldDocId && oldDocId !== newDocId) {
               console.log(`💾 Salvando draft anterior (${oldDocId}) antes de trocar...`);
@@ -323,6 +323,30 @@ sap.ui.define(
                 if (inner && inner.clearSelection) inner.clearSelection();
               }
               throw new Error("Seleção inválida: Itens sem Material ou ID. A seleção foi limpa, tente novamente.");
+            }
+
+            const zeroPriceRows = rows.filter(r => {
+              const p = Number(r.price); // Garante que é number (vinha do onBuscar)
+              return !p || p <= 0.000001; // Verifica se é 0, negativo ou NaN
+            });
+
+            if (zeroPriceRows.length > 0) {
+              // Monta lista amigável para o usuário saber qual item corrigir
+              const listaItens = zeroPriceRows
+                .map(r => `• ${r.itemDescription || r.materialCode || "Item sem nome"}`)
+                .join("\n");
+
+              MessageBox.error(
+                "Atenção: A simulação não pode ser realizada com preços zerados (0,00).",
+                {
+                  details: "Os seguintes itens estão com preço R$ 0,00:\n\n" + listaItens,
+                  contentWidth: "400px"
+                }
+              );
+
+              // Tira o busy e para a execução aqui
+              mdcTbl?.setBusy(false);
+              return;
             }
 
             // --- Preparação BAPI ---
