@@ -2,12 +2,7 @@
 const cds = require("@sap/cds");
 const { LOG } = require("./lib/util/log");
 const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
-const {
-  DEST,
-  HTTP_TIMEOUT_MS,
-  ARIBA_EVENT_ROUND,
-  SERVICE_TAXCODE_DEFAULT,
-} = require("./lib/config");
+const { DEST, HTTP_TIMEOUT_MS, ARIBA_EVENT_ROUND, SERVICE_TAXCODE_DEFAULT } = require("./lib/config");
 const { createSemaphore } = require("./lib/util/throttle");
 
 const { destPost } = require("./lib/http/destination");
@@ -31,18 +26,15 @@ const {
 } = require("./lib/soap/bapi-po-create");
 const { mapWithConcurrency } = require("./lib/util/concurrency");
 
-const POITEM_START = 1000; // 01000
-const POITEM_STEP = 10; // de 10 em 10
-const POITEM_WIDTH = 5; // 5 dígitos com zero à esquerda
+const POITEM_START = 1000;  // 01000
+const POITEM_STEP = 10;    // de 10 em 10
+const POITEM_WIDTH = 5;     // 5 dígitos com zero à esquerda
 const makePoItem = (idx) =>
   String(POITEM_START + idx * POITEM_STEP).padStart(POITEM_WIDTH, "0");
 
 module.exports = function () {
   const { FilterViews } = this.entities;
 
-  // ==========================================================
-  // SaveView
-  // ==========================================================
   this.on("SaveView", async (req) => {
     const {
       name,
@@ -62,34 +54,20 @@ module.exports = function () {
       docId,
       userId,
       isPublic: true,
-      filtersJSON:
-        typeof filtersJSON === "string"
-          ? filtersJSON
-          : JSON.stringify(filtersJSON || {}),
-      uiSortJSON:
-        typeof uiSortJSON === "string"
-          ? uiSortJSON
-          : JSON.stringify(uiSortJSON || {}),
-      uiGroupJSON:
-        typeof uiGroupJSON === "string"
-          ? uiGroupJSON
-          : JSON.stringify(uiGroupJSON || {}),
-      uiColumnsJSON:
-        typeof uiColumnsJSON === "string"
-          ? uiColumnsJSON
-          : JSON.stringify(uiColumnsJSON || {}),
+      filtersJSON: typeof filtersJSON === "string" ? filtersJSON : JSON.stringify(filtersJSON || {}),
+      uiSortJSON: typeof uiSortJSON === "string" ? uiSortJSON : JSON.stringify(uiSortJSON || {}),
+      uiGroupJSON: typeof uiGroupJSON === "string" ? uiGroupJSON : JSON.stringify(uiGroupJSON || {}),
+      uiColumnsJSON: typeof uiColumnsJSON === "string" ? uiColumnsJSON : JSON.stringify(uiColumnsJSON || {})
     };
 
-    console.log(entry + "dados");
+    console.log(entry + "dados")
 
     const inserted = await INSERT.into(FilterViews).entries(entry);
+    // seleciona com managed preenchido
     const saved = await SELECT.one.from(FilterViews).where({ ID: inserted.ID });
     return saved;
   });
 
-  // ==========================================================
-  // GetQuotes
-  // ==========================================================
   this.on("GetQuotes", async (req) => {
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
@@ -101,17 +79,22 @@ module.exports = function () {
     LOG.infoL("[GetQuotes] START", { docId, round });
 
     try {
+
       if (docId === "OFFLINE") {
+        // Simulamos um erro técnico feio (como se o Axios tivesse falhado)
         const fakeError = new Error("Connection refused: ariba.api.com:443");
+        // Simulamos a estrutura de resposta de erro HTTP
         fakeError.response = {
           status: 502,
-          data: { message: "Bad Gateway: Unable to connect to remote host" },
+          data: { message: "Bad Gateway: Unable to connect to remote host" }
         };
+
+        // Jogamos o erro para cair no seu catch lá embaixo
         throw fakeError;
       }
 
       const { rows, results } = await fetchSupplierBids(docId);
-      console.log(results);
+      console.log(results)
       LOG.infoL("[GetQuotes] supplierBids", {
         rows: rows.length,
         results: results.length,
@@ -168,13 +151,13 @@ module.exports = function () {
       let parentProjectId = null;
       try {
         parentProjectId = await fetchParentProjectId(docId);
-      } catch {}
+      } catch { }
       LOG.infoL("[GetQuotes] parentProjectId", { parentProjectId });
 
       let header = null;
       try {
         if (parentProjectId) header = await fetchAribaHeader(parentProjectId);
-      } catch {}
+      } catch { }
       LOG.infoL("[GetQuotes] header", { hasHeader: !!header });
 
       const headerWithDoc = Object.assign({ docId }, header || {}, {
@@ -188,7 +171,7 @@ module.exports = function () {
         const email = invId ? emailByInvId.get(invId) || null : null;
 
         return {
-          poItem: makePoItem(idx),
+          poItem: makePoItem(idx),           //  novo campo gerado no backend
           ...pub,
           supplierName,
           SupplierCode: supplierIdSap,
@@ -202,24 +185,22 @@ module.exports = function () {
     } catch (e) {
       const status = e.response?.status || 500;
 
-      const msgTecnica =
-        e.response?.data?.message || e.response?.data || e.message;
+      // Pega a mensagem técnica para LOG, mas não usamos ela para decidir a msg do usuário
+      const msgTecnica = e.response?.data?.message || e.response?.data || e.message;
       LOG.errorL("[GetQuotes] ERROR", { status, msg: msgTecnica });
 
+      // 🟢 LÓGICA SEGURA:
+      // Apenas 400 (Bad Request) e 404 (Not Found) indicam com certeza erro de ID/Dados.
       if (status === 400 || status === 404) {
         return req.error(404, "DocId inválido. \n Corrija e tente novamente!");
       }
 
-      return req.error(
-        status || 502,
-        "Falha técnica ao consultar Ariba ou indisponibilidade momentânea.",
-      );
+      // 🔴 QUALQUER OUTRO ERRO (500, 502, 503, Erro de Rede sem status, etc.)
+      // Retorna mensagem de falha técnica genérica.
+      return req.error(status || 502, "Falha técnica ao consultar Ariba ou indisponibilidade momentânea.");
     }
   });
 
-  // ==========================================================
-  // CreateScenario (ajustado para permitir vários cenários)
-  // ==========================================================
   this.on("CreateScenario", async (req) => {
     const { eventId, title, scenarioType, supplierBids } = req.data || {};
     if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
@@ -230,33 +211,16 @@ module.exports = function () {
       );
     }
 
-    // 🔹 Título base (se vier do front, usamos; senão, padrão)
-    const baseTitle =
-      title && String(title).trim().length
-        ? String(title).trim()
-        : "Cenário via API";
-
-    // 🔹 Se NÃO veio title do front (estamos usando o padrão),
-    //     geramos um sufixo com data/hora para garantir que seja único.
-    let finalTitle = baseTitle;
-    if (!title || !String(title).trim().length) {
-      const now = new Date();
-      const iso = now.toISOString(); // 2025-11-27T15:32:10.123Z
-      const stamp = iso.slice(0, 19).replace("T", " "); // 2025-11-27 15:32:10
-      finalTitle = `${baseTitle} - ${stamp}`;
-    }
-
     LOG.infoL("[CreateScenario] START", {
       eventId,
-      baseTitle,
-      finalTitle,
+      title,
       scenarioType,
       bids: supplierBids.length,
     });
 
     const payload = {
       eventId,
-      title: finalTitle,
+      title: title || "Cenário via API",
       scenarioType: Number.isFinite(+scenarioType) ? +scenarioType : 0,
       supplierBids: supplierBids.map((it) => ({
         eventId,
@@ -296,91 +260,74 @@ module.exports = function () {
     }
   });
 
-  // ==========================================================
-  // simularPO
-  // ==========================================================
   this.on("simularPO", async (req) => {
     const {
       requests = [],
-      concurrency,
-      chunkSize,
-      vendorParallel,
-      globalParallel,
+      concurrency,       // concorrência entre fornecedores (mapWithConcurrency)
+      chunkSize,         // tamanhos dos lotes por fornecedor
+      vendorParallel,    // paralelo por fornecedor (quantos chunks simultâneos dentro do fornecedor)
+      globalParallel     // limite global de chamadas SOAP simultâneas
     } = req.data || {};
 
-    const LIMIT = Number.isFinite(+concurrency)
-      ? +concurrency
-      : Number.isFinite(+process.env.CONCURRENCY)
-        ? +process.env.CONCURRENCY
-        : Infinity;
+    // Defaults + ENV overrides
+    const LIMIT = Number.isFinite(+concurrency) ? +concurrency :
+      Number.isFinite(+process.env.CONCURRENCY) ? +process.env.CONCURRENCY : Infinity;
 
-    const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize)
-      ? +chunkSize
-      : Number.isFinite(+process.env.CHUNK_SIZE)
-        ? +process.env.CHUNK_SIZE
-        : 5;
+    const PER_VENDOR_CHUNK = Number.isFinite(+chunkSize) ? +chunkSize :
+      Number.isFinite(+process.env.CHUNK_SIZE) ? +process.env.CHUNK_SIZE : 5;
 
-    const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel)
-      ? +vendorParallel
-      : Number.isFinite(+process.env.VENDOR_PARALLEL)
-        ? +process.env.VENDOR_PARALLEL
-        : Infinity;
+    const PER_VENDOR_PARALLEL = Number.isFinite(+vendorParallel) ? +vendorParallel :
+      Number.isFinite(+process.env.VENDOR_PARALLEL) ? +process.env.VENDOR_PARALLEL : Infinity;
 
-    const GLOBAL_PARALLEL = Number.isFinite(+globalParallel)
-      ? +globalParallel
-      : Number.isFinite(+process.env.GLOBAL_PARALLEL)
-        ? +process.env.GLOBAL_PARALLEL
-        : Infinity;
+    const GLOBAL_PARALLEL = Number.isFinite(+globalParallel) ? +globalParallel :
+      Number.isFinite(+process.env.GLOBAL_PARALLEL) ? +process.env.GLOBAL_PARALLEL : Infinity;
 
     LOG.infoL("[simularPO] START", {
       requests: requests.length,
       limit: LIMIT,
       chunk: PER_VENDOR_CHUNK,
       vendorParallel: PER_VENDOR_PARALLEL,
-      globalParallel: GLOBAL_PARALLEL,
+      globalParallel: GLOBAL_PARALLEL
     });
 
     try {
       if (!Array.isArray(requests) || requests.length === 0) return [];
 
+      // cria cliente SOAP 1x
       const client = await getBapiClient();
+      // semáforo global opcional
       const globalSem = createSemaphore(GLOBAL_PARALLEL);
 
+      // mapeia 1 fornecedor
       const mapper = async (r, idxReq) => {
-        const {
-          header = {},
-          items: rawItems = [],
-          schedules = [],
-          testRun = true,
-        } = r || {};
+        const { header = {}, items: rawItems = [], schedules = [], testRun = true } = r || {};
         LOG.infoL("[mapper] header", {
           idx: idxReq,
-          vendor: header.vendor,
-          purchOrg: header.purchOrg,
-          compCode: header.compCode,
-          items: rawItems.length,
-          testRun,
+          vendor: header.vendor, purchOrg: header.purchOrg, compCode: header.compCode,
+          items: rawItems.length, testRun
         });
 
-        const normPo = (v) => {
+        // normalizador do PO_ITEM vindo do front
+        const normPo = v => {
           const s = String(v ?? "").trim();
           if (!s) return null;
-          const n = Number(s.replace(/\D/g, ""));
+          const n = Number(s.replace(/\D/g, "")); // aceita "01000" -> 1000
           return Number.isFinite(n) ? n : null;
         };
 
-        const items = rawItems.map((it) => ({ ...it }));
+        // 1) copiamos itens mantendo campos que precisamos; NÃO confiamos no taxCode do front
+        const items = rawItems.map(it => ({ ...it }));
 
+        // 1.1) valida poItem
         for (const [i, it] of items.entries()) {
           const n = normPo(it.poItem);
           if (n == null) {
-            throw new Error(
-              `Item sem poItem no request #${idxReq + 1} (idx=${i + 1}). Envie poItem a partir do front.`,
-            );
+            throw new Error(`Item sem poItem no request #${idxReq + 1} (idx=${i + 1}). Envie poItem a partir do front.`);
           }
-          it.poItem = n;
+          it.poItem = n; // garante número
         }
 
+        // 1.2) checa duplicados
         const seen = new Set();
         const dups = [];
         for (const it of items) {
@@ -389,40 +336,36 @@ module.exports = function () {
         }
         if (dups.length) {
           throw new Error(
-            `poItem duplicado no request do fornecedor ${header.vendor}: ${Array.from(
-              new Set(dups),
-            ).join(", ")}`,
+            `poItem duplicado no request do fornecedor ${header.vendor}: ${Array.from(new Set(dups)).join(", ")}`
           );
         }
 
         for (const it of items) {
-          const p = Number(
-            it.price !== undefined ? it.price : it.netPrice,
-          );
-
+          // Garante conversão para number (aceita price ou netPrice dependendo do seu payload)
+          const p = Number(it.price !== undefined ? it.price : it.netPrice);
+          
           if (!Number.isFinite(p) || p <= 0.000001) {
             throw new Error(
-              `Bloqueio de Segurança: O item (Material: ${
-                it.material || "N/A"
-              }, PO Item: ${
-                it.poItem
-              }) do fornecedor ${
-                header.vendor
-              } está com preço zerado (0.00).`,
+              `Bloqueio de Segurança: O item (Material: ${it.material || 'N/A'}, PO Item: ${it.poItem}) ` +
+              `do fornecedor ${header.vendor} está com preço zerado (0.00).`
             );
           }
         }
 
+        // 1.3) ordena por poItem (mantemos essa regra)
         items.sort((a, b) => a.poItem - b.poItem);
 
-        const isService = (it) =>
-          String(it.itemCat || "").trim().toUpperCase() === "D";
+        // 2) Determina quais itens são serviço (não consultar S/4)
+        const isService = (it) => String(it.itemCat || "").trim().toUpperCase() === "D";
 
         const vendor10 = padLeft(String(header.vendor || ""), 10, "0");
 
+
+        // Separe os itens que precisam de consulta no S/4
         const needsTaxFetch = [];
         items.forEach((it, idx) => {
           if (isService(it)) {
+            // serviço: usa fixo e não consulta
             it.taxCode = SERVICE_TAXCODE_DEFAULT;
             it.purchasingInfoRecord = undefined;
           } else {
@@ -431,68 +374,49 @@ module.exports = function () {
               Supplier: vendor10,
               Material: it.material || "",
               PurchasingOrganization: header.purchOrg,
-              Plant: it.plant,
+              Plant: it.plant
             });
           }
         });
 
+        // Só chama o OData se realmente houver itens não-serviço
         if (needsTaxFetch.length) {
           const enriched = await enrichWithTaxCode(needsTaxFetch, {
             headerVendor: vendor10,
-            throwIfMissing: true,
+            throwIfMissing: true
           });
           for (const row of enriched) {
             if (row?.__idx != null) {
               items[row.__idx].taxCode = row.TaxCode ?? undefined;
-              items[row.__idx].purchasingInfoRecord =
-                row.PurchasingInfoRecord ?? undefined;
+              items[row.__idx].purchasingInfoRecord = row.PurchasingInfoRecord ?? undefined;
             }
           }
         }
 
-        const missing = items.filter((x) => !x.taxCode).length;
+        const missing = items.filter(x => !x.taxCode).length;
         LOG.infoL("[mapper] taxcode (service-skip)", {
           idx: idxReq,
           total: items.length,
           serviceFixed: items.filter(isService).length,
           fetched: needsTaxFetch.length,
-          missing,
+          missing
         });
-        if (missing)
-          throw new Error(
-            `Não foi possível obter TaxCode para ${missing} item(ns).`,
-          );
+        if (missing) throw new Error(`Não foi possível obter TaxCode para ${missing} item(ns).`);
 
+        // 4) Quebra em chunks por fornecedor (sem mudanças)
         const chunks = chunkArray(items, PER_VENDOR_CHUNK);
-        LOG.infoL("[mapper] chunks", {
-          idx: idxReq,
-          chunks: chunks.length,
-          chunkSize: PER_VENDOR_CHUNK,
-        });
+        LOG.infoL("[mapper] chunks", { idx: idxReq, chunks: chunks.length, chunkSize: PER_VENDOR_CHUNK });
 
         const tasks = chunks.map((chunkItems, cidx) => async () => {
           const t0 = Date.now();
           try {
-            const schedForChunk = filterSchedulesForChunk(
-              schedules,
-              chunkItems,
-            );
+            const schedForChunk = filterSchedulesForChunk(schedules, chunkItems);
 
-            const inputPoPad = chunkItems.map((it) =>
-              padLeft(String(it.poItem), 5, "0"),
-            );
+            const inputPoPad = chunkItems.map(it => padLeft(String(it.poItem), 5, '0'));
 
-            const payload = buildSmokePayload(
-              header,
-              chunkItems,
-              schedForChunk,
-              testRun,
-            );
+            const payload = buildSmokePayload(header, chunkItems, schedForChunk, testRun);
 
-            LOG.infoL("[mapper] chunk IN", {
-              idx: `${idxReq}.${cidx + 1}`,
-              poItems: inputPoPad,
-            });
+            LOG.infoL("[mapper] chunk IN", { idx: `${idxReq}.${cidx + 1}`, poItems: inputPoPad });
 
             const resp = await globalSem.run(async () => {
               const rSoap = await client.BAPI_PO_CREATE1Async(payload);
@@ -501,16 +425,14 @@ module.exports = function () {
 
             const out = normalizeBapiResult(resp, !!payload.TESTRUN);
 
-            const before = (out.itens || []).map((i) => i.poItem);
-            out.itens = (out.itens || []).map((i, k) => ({
-              ...i,
-              poItem: inputPoPad[k] || i.poItem,
-            }));
+            // >>> REMAPEIA: substitui o poItem retornado pela BAPI pelo que veio do front (mesma ordem)
+            const before = (out.itens || []).map(i => i.poItem);
+            out.itens = (out.itens || []).map((i, k) => ({ ...i, poItem: inputPoPad[k] || i.poItem }));
 
             LOG.infoL("[mapper] chunk OUT remap", {
               idx: `${idxReq}.${cidx + 1}`,
               from: before,
-              to: out.itens.map((i) => i.poItem),
+              to: out.itens.map(i => i.poItem)
             });
 
             LOG.infoL("[mapper] CHUNK SOAP OK", {
@@ -518,7 +440,7 @@ module.exports = function () {
               itens: out.itens?.length || 0,
               ms: Date.now() - t0,
               inflight: globalSem.stats().inFlight,
-              queued: globalSem.stats().queued,
+              queued: globalSem.stats().queued
             });
             return out;
           } catch (e) {
@@ -536,9 +458,7 @@ module.exports = function () {
                 console.error(resp.data.slice(0, 4000));
               } else {
                 console.error("body (non-string):");
-                console.error(
-                  JSON.stringify(resp.data, null, 2).slice(0, 4000),
-                );
+                console.error(JSON.stringify(resp.data, null, 2).slice(0, 4000));
               }
             } else {
               console.error("no resp.data, full error object:");
@@ -554,49 +474,37 @@ module.exports = function () {
               name: e?.name,
             });
 
-            return {
-              __chunkError: true,
-              __chunkIndex: cidx,
-              message: e?.message || String(e),
-            };
+            return { __chunkError: true, __chunkIndex: cidx, message: e?.message || String(e) };
           }
+
         });
 
-        const chunkResults = await runTasksWithLimit(
-          tasks,
-          PER_VENDOR_PARALLEL,
-        );
+        // 4) executa os chunks com limite por fornecedor
+        const chunkResults = await runTasksWithLimit(tasks, PER_VENDOR_PARALLEL);
 
         return mergeChunkResults(chunkResults, header);
       };
 
+      // concorrência entre fornecedores 
       const results = await mapWithConcurrency(requests, LIMIT, mapper);
       LOG.infoL("[simularPO] END", { results: results.length });
       return results;
+
     } catch (e) {
       const info = safeErr(e);
-      LOG.errorL("[simularPO] ERROR", {
-        msg: info.message || info.code || "Erro",
-        status: info.responseStatus,
-      });
-      return req.error(
-        502,
-        `Falha na simulação em lote: ${
-          info.message || info.code || "Erro desconhecido"
-        }`,
-      );
+      LOG.errorL("[simularPO] ERROR", { msg: info.message || info.code || "Erro", status: info.responseStatus });
+      return req.error(502, `Falha na simulação em lote: ${info.message || info.code || "Erro desconhecido"}`);
     }
   });
 
-  // ==========================================================
-  // Helpers
-  // ==========================================================
   function chunkArray(arr, size) {
     const out = [];
     for (let i = 0; i < arr.length; i += size) out.push(arr.slice(i, i + size));
     return out;
   }
 
+  // Executa uma lista de funções-async (tasks) com limite de paralelismo.
+  // Se limit for Infinity/undefined/0/negativo, roda tudo em paralelo (Promise.all).
   async function runTasksWithLimit(tasks, limit) {
     if (!Array.isArray(tasks) || tasks.length === 0) return [];
     const n = Number(limit);
@@ -613,11 +521,7 @@ module.exports = function () {
         try {
           out[idx] = await tasks[idx]();
         } catch (err) {
-          out[idx] = {
-            __chunkError: true,
-            __chunkIndex: idx,
-            message: err?.message || String(err),
-          };
+          out[idx] = { __chunkError: true, __chunkIndex: idx, message: err?.message || String(err) };
         }
       }
     }
@@ -627,16 +531,14 @@ module.exports = function () {
 
   function filterSchedulesForChunk(allSchedules = [], chunkItems = []) {
     if (!Array.isArray(allSchedules) || !allSchedules.length) return [];
-    const norm = (v) => {
+    const norm = v => {
       const s = String(v ?? "").trim();
       if (!s) return null;
       const n = Number(s.replace(/\D/g, ""));
       return Number.isFinite(n) ? n : null;
     };
-    const poSet = new Set(
-      chunkItems.map((it) => norm(it.poItem)).filter((v) => v != null),
-    );
-    return allSchedules.filter((s) => poSet.has(norm(s?.poItem)));
+    const poSet = new Set(chunkItems.map(it => norm(it.poItem)).filter(v => v != null));
+    return allSchedules.filter(s => poSet.has(norm(s?.poItem)));
   }
 
   function pickHeaderFallback(headerIn) {
@@ -650,28 +552,22 @@ module.exports = function () {
       incoterms2: headerIn.incoterms2,
       criadoEm: new Date().toISOString().slice(0, 10),
       criadoPor: "INT_MAPA",
-      poNumber: "",
+      poNumber: ""
     };
   }
 
   function mergeChunkResults(chunksNorm = [], headerIn) {
-    const ok = chunksNorm.filter((c) => !c.__chunkError);
-    const err = chunksNorm.filter((c) => c.__chunkError);
+    const ok = chunksNorm.filter(c => !c.__chunkError);
+    const err = chunksNorm.filter(c => c.__chunkError);
 
+    // header: usa do primeiro OK; senão um fallback com dados do header de entrada
     const header = ok[0]?.header || pickHeaderFallback(headerIn);
 
-    const itens = ok.flatMap((c) =>
-      Array.isArray(c.itens) ? c.itens : [],
-    );
-    const msgsOk = ok.flatMap((c) =>
-      Array.isArray(c.returnMessages) ? c.returnMessages : [],
-    );
-    const msgsErr = err.map((e) => ({
-      type: "E",
-      id: "CHUNK",
-      number: "000",
-      message: e.message || "Falha ao processar chunk",
-      logNo: null,
+    const itens = ok.flatMap(c => Array.isArray(c.itens) ? c.itens : []);
+    const msgsOk = ok.flatMap(c => Array.isArray(c.returnMessages) ? c.returnMessages : []);
+    const msgsErr = err.map(e => ({
+      type: "E", id: "CHUNK", number: "000",
+      message: e.message || "Falha ao processar chunk", logNo: null
     }));
     const mensagens = [...msgsOk, ...msgsErr];
 
@@ -680,7 +576,7 @@ module.exports = function () {
       header,
       itens,
       returnMessages: mensagens,
-      mensagens,
+      mensagens
     };
   }
 };

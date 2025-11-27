@@ -522,20 +522,17 @@ sap.ui.define(
         },
 
 
-        async onAwardDirect() {
+                async onAwardDirect() {
           const view = this.getView();
           const vm = view.getModel("vm");
           const resModel = view.getModel("res");
 
           // 1. PEGAR A TABELA CORRETAMENTE (Pelo ID do Fragmento)
-          // Como o fragmento é carregado pelo controller, o ID é prefixado.
           let tbl = this.byId("tblRes");
 
-          // Fallback: Se não achar pelo this.byId (dependendo de como o Dialogs.js instancia), tenta o Core
           if (!tbl) {
-            tbl = sap.ui.getCore().byId("fragmentId--tblRes"); // Caso tenha ID de fragmento específico
+            tbl = sap.ui.getCore().byId("fragmentId--tblRes");
             if (!tbl && this._dlgRes) {
-              // Última tentativa: Busca dentro do dialog (mais seguro que pegar índice 0)
               tbl = this._dlgRes.getContent().find(c => c.isA && c.isA("sap.ui.mdc.Table"));
             }
           }
@@ -545,8 +542,7 @@ sap.ui.define(
             return;
           }
 
-          // 2. PEGAR SELEÇÃO (Usando seu helper que já trata MDC/Inner)
-          // Passamos "res" como nome do model, mas o helper deve lidar bem com isso
+          // 2. SELEÇÃO
           const selected = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
 
           if (!selected.length) {
@@ -554,43 +550,57 @@ sap.ui.define(
             return;
           }
 
-          // --- Daqui para baixo, a lógica de Negócio (AwardService) permanece IGUAL ---
-
           const allRows = selected;
 
-          // O AwardSvc vai validar as somas, qtyAward vs original, etc.
           const supplierBids = AwardSvc.validarEMontarPayload(
             allRows,
             selected,
             this._ensureInvitationResourceId.bind(this)
           );
 
-          if (!supplierBids) return; // AwardSvc já exibiu o erro/aviso se houve
+          if (!supplierBids) return;
 
-          const sEventId = vm.getProperty("/header/docId") || resModel.getProperty("/header/docId");
+          const sEventId =
+            vm.getProperty("/header/docId") ||
+            resModel.getProperty("/header/docId");
           if (!sEventId) {
             MessageBox.error("DocID do evento não encontrado no header.");
             return;
           }
 
+          const baseTitle = "Premiação via UI (MDC)";
+          const now = new Date();
+          const iso = now.toISOString();                     // 2025-11-27T18:23:45.123Z
+          const stamp = iso.slice(0, 19).replace("T", " ");  // 2025-11-27 18:23:45
+          const rand = Math.floor(Math.random() * 1000);     // 0–999
+          const finalTitle = `${baseTitle} - ${stamp} #${rand}`;
+
           sap.ui.core.BusyIndicator.show(0);
           try {
-            // Chamada ao Backend
             const out = await ODataSvc.createScenario(view, {
               eventId: sEventId,
-              title: "Premiação via UI (MDC)",
+              title: finalTitle,      // 👈 agora SEMPRE diferente
               scenarioType: 0,
               supplierBids,
             });
 
             if (out?.success) {
-              MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}`);
+              MessageBox.success(
+                `Cenário criado com sucesso!\n` +
+                `Título: ${finalTitle}\n` +
+                `Scenario ID: ${out.scenarioId || "(n/a)"}`
+              );
               this._dlgRes?.close();
             } else {
-              MessageBox.warning("O cenário foi processado, mas o backend não retornou 'success=true'. Verifique no Ariba.");
+              MessageBox.warning(
+                "O cenário foi processado, mas o backend não retornou 'success=true'. Verifique no Ariba."
+              );
             }
           } catch (e) {
-            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", { showDetailsPanel: true, contentWidth: "640px" });
+            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", {
+              showDetailsPanel: true,
+              contentWidth: "640px",
+            });
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
