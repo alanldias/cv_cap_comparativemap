@@ -23,6 +23,9 @@ sap.ui.define([
 
     const msgOriginal = _getOriginalMessage(e);
     
+    // 🟢 CORREÇÃO: Define a variável 'lower' aqui para usar mais abaixo
+    const lower = msgOriginal.toLowerCase();
+
     // --- 1. DETECÇÃO DE FALHA DE INFRAESTRUTURA / CONEXÃO (PRODUÇÃO & LOCAL) ---
     // Palavras-chave que indicam que o SAP/BAPI está inacessível
     const isConnectionError = 
@@ -54,21 +57,29 @@ sap.ui.define([
     }
     // -----------------------------------------------------------------------------
 
-    // --- 2. TRATAMENTO DE BATCH/SESSÃO ---
-    const lower = msgOriginal.toLowerCase();
-    if (lower.includes("http request was not processed because $batch failed")) {
+    // --- 2. TRATAMENTO DE SESSÃO EXPIRADA (RELOAD OBRIGATÓRIO) ---
+    const isSessionExpired = 
+        lower.includes("$batch failed") ||           
+        lower.includes("401") ||                      
+        msgOriginal.includes("Unauthorized") ||       
+        msgOriginal.includes("Could not load metadata"); 
+
+    if (isSessionExpired) {
       MessageBox.warning(
-        "Sua sessão expirou ou a conexão com o servidor foi perdida.\n\n" +
-        "Clique em OK para recarregar a aplicação.",
-        { onClose: () => location.reload() }
+        "Sua sessão expirou por inatividade.\n\n" +
+        "Para continuar, é necessário recarregar a aplicação.",
+        { 
+            title: "Sessão Expirada",
+            actions: [MessageBox.Action.OK],
+            onClose: () => location.reload() 
+        }
       );
       return;
     }
-
+    
     // --- 3. MENSAGENS LIMPAS (VALIDAÇÕES DE NEGÓCIO) ---
     
     // Lista de palavras ou símbolos que indicam "Erro de Negócio" (Dados, Validação, etc)
-    // Adicionamos 'TaxCode' e o bullet '•' na verificação
     const isBusinessError = msgOriginal.includes("⚠️") || 
                             msgOriginal.includes("TaxCode") || 
                             msgOriginal.includes("•");
@@ -82,15 +93,13 @@ sap.ui.define([
     let text = "";
 
     if (isBusinessError) {
-       // 🟢 LIMPEZA VISUAL EXTRA (Opcional, mas recomendado):
-       // Troca os "pipes" (|) e códigos técnicos por algo mais legível
-       // Ex: "MAT=000..." vira "Material: 000..."
+       // Limpeza visual
        let msgLimpa = msgOriginal
            .replace(/MAT=/g, "Material: ")
            .replace(/Plant=/g, "Centro: ")
            .replace(/POrg=/g, "Org: ")
            .replace(/Supplier=/g, "Fornecedor: ")
-           .replace(/\|/g, "   "); // Troca a barra vertical por espaços para respirar
+           .replace(/\|/g, "   "); 
 
        // Monta o texto final
        text = sContextMsg ? `${sContextMsg}\n\n${msgLimpa}` : msgLimpa;

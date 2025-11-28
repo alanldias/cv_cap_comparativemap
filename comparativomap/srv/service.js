@@ -1,5 +1,3 @@
-// srv/service.js
-const util = require('util');
 const cds = require("@sap/cds");
 const { LOG } = require("./lib/util/log");
 const { formatAribaScenarioError, safeErr } = require("./lib/util/errors");
@@ -423,48 +421,6 @@ module.exports = function () {
               const rSoap = await client.BAPI_PO_CREATE1Async(payload);
               return Array.isArray(rSoap) ? rSoap[0] : rSoap;
             });
-
-            // ==================================================================
-            // INÍCIO DO TESTE DE LOG VISUAL
-            // ==================================================================
-            const bannerTitle = `[DEBUG BAPI] Chunk ${idxReq}.${cidx + 1}`;
-            
-            console.log("\n\n" + "=".repeat(60));
-            console.log(`🚀 ${bannerTitle} - INÍCIO DA COMPARAÇÃO`);
-            console.log("=".repeat(60) + "\n");
-
-            // --- MÉTODO 1: JSON.stringify ---
-            console.log("📝 OPÇÃO 1: JSON.stringify");
-            console.log("   (Vantagem: Formato JSON válido, fácil de copiar e colar no VS Code)");
-            console.log("-".repeat(40));
-            
-            try {
-                // null, 2 garante a indentação bonita
-                console.log(JSON.stringify(resp, null, 2)); 
-            } catch (err) {
-                console.log("[Erro ao converter JSON]:", err.message);
-            }
-
-            console.log("\n" + "-".repeat(60) + "\n");
-
-            // --- MÉTODO 2: util.inspect ---
-            console.log("🔍 OPÇÃO 2: util.inspect");
-            console.log("   (Vantagem: Mostra tipos reais (Number vs String), cores e tudo que é oculto)");
-            console.log("-".repeat(40));
-
-            console.log(util.inspect(resp, { 
-                showHidden: false,   // Mostra propriedades não enumeráveis se true
-                depth: null,         // null = expande TUDO (cuidado se for objeto gigante)
-                colors: true,        // Usa cores do terminal
-                maxArrayLength: null // Não corta arrays grandes (mostra todos os itens)
-            }));
-
-            console.log("\n" + "=".repeat(60));
-            console.log(`🏁 ${bannerTitle} - FIM DA COMPARAÇÃO`);
-            console.log("=".repeat(60) + "\n\n");
-            // ==================================================================
-            // FIM DO TESTE
-            // ==================================================================
 
             const out = normalizeBapiResult(resp, !!payload.TESTRUN);
 

@@ -301,8 +301,8 @@ sap.ui.define(
                 if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
                   try { inner.clearSelection(); } catch (e) { }
                 }
-              } const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
-              // Mensagem amigável para o usuário
+              } 
+              
               MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
               return; // Para a execução aqui de forma limpa
             }
