@@ -89,8 +89,9 @@ function buildSmokePayload(header, items, schedules, testRun) {
       throw new Error(`buildSmokePayload: item sem poItem válido (idx=${i + 1}).`);
     }
     const PO_ITEM = padLeft(String(_po), 5, "0");
-    const rec = {
+    const rec = {            
       PO_ITEM,
+      PO_PRICE: "1",                          
       PLANT: it.plant,
       QUANTITY: String(Number(it.quantity ?? 0)),
       PO_UNIT: it.unit,
