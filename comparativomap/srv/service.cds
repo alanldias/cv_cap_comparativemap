@@ -167,6 +167,8 @@ service service {
     ncm        : String(20); // BRAS_NBM
     priceDate  : Date; // PRICE_DATE
     schedules  : array of SimulacaoPOSchedule;
+    icmsValue  : Decimal(15, 2);
+    ipiValue   : Decimal(15, 2);
   }
 
   type ReturnMessage {

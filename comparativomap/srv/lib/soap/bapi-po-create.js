@@ -182,6 +182,17 @@ function normalizeBapiResult(r0, testRunFlag) {
   // Lê a tabela de condições
   const condRaw = toArray(r0?.POCOND?.item);
 
+  // >>> LOG INTELIGENTE (Só mostra o que importa) <<<
+  const condResumida = condRaw
+    .map(c => ({
+      Item: Number(c.PO_ITEM),      // Remove zeros à esquerda (00010 -> 10)
+      Code: c.COND_TYPE,            // A sigla que precisamos (ex: ICM2, PB00)
+      Valor: Number(c.COND_VALUE)   // O valor monetário
+    }))
+    .filter(c => c.Valor !== 0);    // <--- O TRUQUE: Remove tudo que é 0.00
+
+  console.log(">>> CONDIÇÕES ATIVAS (Quem alterou o preço):", JSON.stringify(condResumida, null, 2));
+
   // Agrupa condições por Item
   const conditionsByItem = condRaw.reduce((acc, c) => {
     const key = String(c.PO_ITEM || "").padStart(5, "0");
