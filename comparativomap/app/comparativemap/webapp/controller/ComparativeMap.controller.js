@@ -757,6 +757,14 @@ sap.ui.define(
           return oFloatFormat.format(fValue);
         },
 
+        formatCleanMaterial: function (sValue) {
+          if (!sValue) {
+            return "-";
+          }
+          
+          return sValue.replace(/^\d+\s+/, "");
+        },
+
         _doExport(rows, docId, isResult = false) {
           const toNum = (v) => {
             if (v == null || v === "") return null;
