@@ -182,32 +182,31 @@ function normalizeBapiResult(r0, testRunFlag) {
   // Lê a tabela de condições
   const condRaw = toArray(r0?.POCOND?.item);
 
-  // >>> LOG INTELIGENTE (Só mostra o que importa) <<<
-  const condResumida = condRaw
-    .map(c => ({
-      Item: Number(c.PO_ITEM),      // Remove zeros à esquerda (00010 -> 10)
-      Code: c.COND_TYPE,            // A sigla que precisamos (ex: ICM2, PB00)
-      Valor: Number(c.COND_VALUE)   // O valor monetário
-    }))
-    .filter(c => c.Valor !== 0);    // <--- O TRUQUE: Remove tudo que é 0.00
-
-  console.log(">>> CONDIÇÕES ATIVAS (Quem alterou o preço):", JSON.stringify(condResumida, null, 2));
+  // Log para conferência (pode comentar depois)
+  console.log(">>> DEBUG CONDITIONS:", JSON.stringify(condRaw.filter(c => Number(c.COND_VALUE) !== 0).map(c => ({
+      k: c.PO_ITEM || c.ITM_NUMBER, // Vamos ver qual chave aparece
+      t: c.COND_TYPE,
+      v: c.COND_VALUE
+  })), null, 2));
 
   // Agrupa condições por Item
   const conditionsByItem = condRaw.reduce((acc, c) => {
-    const key = String(c.PO_ITEM || "").padStart(5, "0");
+    // >>> CORREÇÃO AQUI: Usa PO_ITEM ou ITM_NUMBER <<<
+    const rawKey = String(c.PO_ITEM || c.ITM_NUMBER || "").replace(/\D/g, ""); 
+    const key = rawKey.padStart(5, "0"); 
+    
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
     const val = Number(c.COND_VALUE || 0);
     const type = (c.COND_TYPE || "").toUpperCase();
 
-    // Sua lista correta de ICMS
-    if (['BICM', 'BX13', 'ICM1', 'ICM2', 'ICM3', 'ICMS', 'MWST', 'ICOF', 'ZCM8', 'ZINB'].includes(type)) {
+    // Lista de ICMS (Baseado no seu log: ICM2, ICOF, ZICO...)
+    if (['BICM', 'BX13', 'ICM1', 'ICM2', 'ICM3', 'ICMS', 'MWST', 'ICOF', 'ZCM8', 'ZINB', 'ZICO', 'ZRED', 'ZREI'].includes(type)) {
       acc[key].icms += val;
     }
     
-    // Sua lista correta de IPI
-    if (['BIPI', 'BX23', 'IPI1', 'IPI2', 'IPIS', 'IPI'].includes(type)) {
+    // Lista de IPI (Baseado no seu log: IPI2, IPIS, ZIPI...)
+    if (['BIPI', 'BX23', 'IPI1', 'IPI2', 'IPIS', 'IPI', 'ZIPI'].includes(type)) {
       acc[key].ipi += val;
     }
 
@@ -215,7 +214,7 @@ function normalizeBapiResult(r0, testRunFlag) {
   }, {});
 
   const schedByItem = schedRaw.reduce((acc, s) => {
-    const key = String(s.PO_ITEM || "").padStart(5, "0");
+    const key = String(s.PO_ITEM || "").replace(/\D/g, "").padStart(5, "0");
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
       deliveryDate: s.DELIV_DATE,
@@ -225,11 +224,13 @@ function normalizeBapiResult(r0, testRunFlag) {
   }, {});
 
   const itens = itensRaw.map((i) => {
-    const key = String(i.PO_ITEM || "").padStart(5, "0");
+    const key = String(i.PO_ITEM || "").replace(/\D/g, "").padStart(5, "0");
     
+    // Agora a chave 'key' (ex: 01000) vai bater com a chave do reduce acima
     const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
 
-    console.log(`[TAX DEBUG] Item ${key} - Material: ${i.MATERIAL} | ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
+    // Log de prova real
+    console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
 
     return {
       poItem: key,
