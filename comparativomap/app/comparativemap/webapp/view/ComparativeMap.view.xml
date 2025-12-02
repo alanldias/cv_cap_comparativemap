@@ -117,11 +117,12 @@
                                 <Text text="{= ${vm>itemDescription} || '-' }" wrapping="true" maxLines="2" tooltip="{vm>itemDescription}"/>
                             </mdct:Column>
 
-                            <mdct:Column id="colQuantidade" propertyKey="quantity" header="Quantidade" width="7.5rem">
+                            <mdct:Column id="colQuantidade" propertyKey="quantity" header="Quantidade" width="10rem" hAlign="Center">
                                 <mdct:template>
                                     <StepInput 
                                         value="{ path: 'vm>quantity', type: 'sap.ui.model.type.Float' }" 
-                                        width="100%" 
+                                        width="75%" 
+                                        textAlign="Center"
                                         change=".onQtyInlineChange"
                                         placeholder="-" />
                                 </mdct:template>

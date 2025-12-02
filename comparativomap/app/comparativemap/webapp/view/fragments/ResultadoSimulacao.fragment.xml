@@ -37,19 +37,20 @@
                         <Text text="{path: 'res>materialCode', formatter: '.formatCleanMaterial'}" tooltip="{res>materialCode}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColQtdOrig" propertyKey="originalQty" header="Quantidade Original" width="9rem" hAlign="End">
+                    <mdct:Column id="resColQtdOrig" propertyKey="originalQty" header="Quantidade Original" width="9rem" hAlign="Center">
                         <Text text="{path: 'res>originalQty', formatter: '.formatNumberOrDash'}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColQtdSim" propertyKey="quantity" header="Quantidade Simulada" width="9rem" hAlign="End">
+                    <mdct:Column id="resColQtdSim" propertyKey="quantity" header="Quantidade Simulada" width="10rem" hAlign="Center">
                         <Text text="{path: 'res>quantity', formatter: '.formatNumberOrDash'}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColAward" propertyKey="qtyAward" header="Quantidade p/ Premiar" width="10rem">
+                    <mdct:Column id="resColAward" propertyKey="qtyAward" header="Quantidade p/ Premiar" width="10rem" hAlign="Center">
                         <mdct:template>
                             <StepInput 
                                 value="{path:'res>qtyAward', type:'sap.ui.model.type.Integer'}" 
-                                width="80%" 
+                                width="75%" 
+                                textAlign="Center"
                                 change=".onAwardQtyChangeRes" 
                                 placeholder="-" />
                         </mdct:template>
