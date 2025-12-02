@@ -772,7 +772,7 @@ sap.ui.define(
             minFractionDigits: 0,
             maxFractionDigits: 0,
             groupingEnabled: true,
-            groupingSeparator: "." 
+            groupingSeparator: "."
           });
 
           return oIntegerFormat.format(fValue);
@@ -783,7 +783,15 @@ sap.ui.define(
             return "-";
           }
 
-          return sValue.replace(/^\d+\s+/, "");
+          const match = sValue.match(/^(\d+)\s+(.+)/);
+
+          if (match) {
+            const sCodigo = match[1];
+            const sDescricao = match[2];
+            return `${sDescricao} (${sCodigo})`;
+          }
+
+          return sValue;
         },
 
         _doExport(rows, docId, isResult = false) {
