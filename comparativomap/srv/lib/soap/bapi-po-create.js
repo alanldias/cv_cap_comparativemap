@@ -91,7 +91,7 @@ function buildSmokePayload(header, items, schedules, testRun) {
     const PO_ITEM = padLeft(String(_po), 5, "0");
     const rec = {            
       PO_ITEM,
-      PO_PRICE: "1",                          
+      PO_PRICE: "1",                           
       PLANT: it.plant,
       QUANTITY: String(Number(it.quantity ?? 0)),
       PO_UNIT: it.unit,
@@ -106,7 +106,7 @@ function buildSmokePayload(header, items, schedules, testRun) {
     poitemx.push(markX(rec, { PO_ITEM }));
   });
 
-  const today = isoDate(new Date()); // só usado no fallback antigo
+  const today = isoDate(new Date()); 
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
@@ -118,7 +118,6 @@ function buildSmokePayload(header, items, schedules, testRun) {
             return padLeft(String(_po), 5, "0");
           })(),
           SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          // >>> campo correto + sem parse ambíguo
           DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
           QUANTITY: String(s.quantity ?? "0"),
         }))
@@ -154,11 +153,43 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itensRaw = toArray(r0?.POITEM?.item);
   const schedRaw = toArray(r0?.POSCHEDULE?.item);
 
+  // >>> NOVO: Ler a tabela de condições (Impostos e Preços calculados pelo SAP)
+  const condRaw = toArray(r0?.POCOND?.item);
+
+  // >>> LOG IMPORTANTE: Veja no console quais códigos (COND_TYPE) estão vindo
+  if (condRaw.length > 0) {
+    console.log(">>> DEBUG POCOND (Conditions):", JSON.stringify(condRaw, null, 2));
+  } else {
+    console.log(">>> DEBUG POCOND: Vazio (O SAP não retornou cálculo de preço).");
+  }
+
+  // Agrupa condições por Item
+  const conditionsByItem = condRaw.reduce((acc, c) => {
+    const key = String(c.PO_ITEM || "").padStart(5, "0");
+    if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
+
+    const val = Number(c.COND_VALUE || 0);
+    const type = (c.COND_TYPE || "").toUpperCase();
+
+    // LÓGICA DE SOMA DE IMPOSTOS
+    // Obs: Adicione os códigos reais que você ver no console (ex: BX13, IPI1, etc)
+    if (['BICM', 'BX13', 'ICM1', 'ICMS', 'MWST'].includes(type)) {
+      acc[key].icms += val;
+    }
+    
+    if (['BIPI', 'BX23', 'IPI1', 'IPI'].includes(type)) {
+      acc[key].ipi += val;
+    }
+
+    return acc;
+  }, {});
+  // <<< FIM NOVO
+
   const schedByItem = schedRaw.reduce((acc, s) => {
     const key = String(s.PO_ITEM || "").padStart(5, "0");
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
-      deliveryDate: s.DELIV_DATE, // <— ler o campo correto
+      deliveryDate: s.DELIV_DATE,
       qty: Number(s.QUANTITY || 0),
     });
     return acc;
@@ -166,6 +197,10 @@ function normalizeBapiResult(r0, testRunFlag) {
 
   const itens = itensRaw.map((i) => {
     const key = String(i.PO_ITEM || "").padStart(5, "0");
+    
+    // Recupera os impostos calculados para este item
+    const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
+
     return {
       poItem: key,
       material: i.MATERIAL_LONG || i.MATERIAL,
@@ -179,6 +214,10 @@ function normalizeBapiResult(r0, testRunFlag) {
       ncm: i.BRAS_NBM,
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
+      
+      // >>> Passa para o retorno final
+      icmsValue: taxes.icms,
+      ipiValue: taxes.ipi
     };
   });
 
