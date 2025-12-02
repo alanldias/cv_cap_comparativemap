@@ -82,16 +82,20 @@ function buildSmokePayload(header, items, schedules, testRun) {
           },
         ];
 
+  // Arrays para Itens e as novas CONDIÇÕES (POCOND)
   const poitem = [], poitemx = [];
+  const pocond = [], pocondx = []; // <--- Isso faltava no seu código
+
   itemList.forEach((it, i) => {
     const _po = Number(String(it.poItem ?? "").replace(/\D/g, ""));
     if (!Number.isFinite(_po)) {
       throw new Error(`buildSmokePayload: item sem poItem válido (idx=${i + 1}).`);
     }
     const PO_ITEM = padLeft(String(_po), 5, "0");
+    
     const rec = {            
       PO_ITEM,
-      PO_PRICE: "1",                           
+      PO_PRICE: "1", // Importante ser 1 quando enviamos conditions manuais like PB00                           
       PLANT: it.plant,
       QUANTITY: String(Number(it.quantity ?? 0)),
       PO_UNIT: it.unit,
@@ -104,6 +108,25 @@ function buildSmokePayload(header, items, schedules, testRun) {
     };
     poitem.push(rec);
     poitemx.push(markX(rec, { PO_ITEM }));
+
+    // >>> REINSERINDO A LÓGICA DO PB00 (ESSENCIAL PARA O CÁLCULO)
+    if (it.netPrice != null) {
+        const condRec = {
+            PO_ITEM: PO_ITEM,
+            COND_TYPE: "PB00", // Código do preço bruto
+            COND_VALUE: String(it.netPrice),
+            CURRENCY: header.currency || "BRL",
+            CHANGE_ID: "I" 
+        };
+        pocond.push(condRec);
+        pocondx.push({
+            PO_ITEM: PO_ITEM,
+            COND_TYPE: "X",
+            COND_VALUE: "X",
+            CHANGE_ID: "X"
+        });
+    }
+    // <<< FIM LÓGICA PB00
   });
 
   const today = isoDate(new Date()); 
@@ -134,7 +157,7 @@ function buildSmokePayload(header, items, schedules, testRun) {
     poschedx.push(markX(s));
   });
   
-  console.log("[buildSmokePayload] POITEM.item =", JSON.stringify(poitem, null, 2));
+  // console.log("[buildSmokePayload] CONDITIONS (PB00):", JSON.stringify(pocond, null, 2));
 
   return {
     TESTRUN: testRun ? "X" : "",
@@ -144,6 +167,9 @@ function buildSmokePayload(header, items, schedules, testRun) {
     POITEMX: { item: poitemx },
     POSCHEDULE: { item: posched },
     POSCHEDULEX: { item: poschedx },
+    // >>> Importante: Enviar as condições para o SAP
+    POCOND: { item: pocond },
+    POCONDX: { item: pocondx }
   };
 }
 
@@ -153,15 +179,8 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itensRaw = toArray(r0?.POITEM?.item);
   const schedRaw = toArray(r0?.POSCHEDULE?.item);
 
-  // >>> NOVO: Ler a tabela de condições (Impostos e Preços calculados pelo SAP)
+  // Lê a tabela de condições
   const condRaw = toArray(r0?.POCOND?.item);
-
-  // >>> LOG IMPORTANTE: Veja no console quais códigos (COND_TYPE) estão vindo
-  if (condRaw.length > 0) {
-    console.log(">>> DEBUG POCOND (Conditions):", JSON.stringify(condRaw, null, 2));
-  } else {
-    console.log(">>> DEBUG POCOND: Vazio (O SAP não retornou cálculo de preço).");
-  }
 
   // Agrupa condições por Item
   const conditionsByItem = condRaw.reduce((acc, c) => {
@@ -171,19 +190,18 @@ function normalizeBapiResult(r0, testRunFlag) {
     const val = Number(c.COND_VALUE || 0);
     const type = (c.COND_TYPE || "").toUpperCase();
 
-    // LÓGICA DE SOMA DE IMPOSTOS
-    // Obs: Adicione os códigos reais que você ver no console (ex: BX13, IPI1, etc)
-    if (['BICM', 'BX13', 'ICM1', 'ICMS', 'MWST'].includes(type)) {
+    // Sua lista correta de ICMS
+    if (['BICM', 'BX13', 'ICM1', 'ICM2', 'ICM3', 'ICMS', 'MWST', 'ICOF', 'ZCM8', 'ZINB'].includes(type)) {
       acc[key].icms += val;
     }
     
-    if (['BIPI', 'BX23', 'IPI1', 'IPI'].includes(type)) {
+    // Sua lista correta de IPI
+    if (['BIPI', 'BX23', 'IPI1', 'IPI2', 'IPIS', 'IPI'].includes(type)) {
       acc[key].ipi += val;
     }
 
     return acc;
   }, {});
-  // <<< FIM NOVO
 
   const schedByItem = schedRaw.reduce((acc, s) => {
     const key = String(s.PO_ITEM || "").padStart(5, "0");
@@ -198,8 +216,9 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itens = itensRaw.map((i) => {
     const key = String(i.PO_ITEM || "").padStart(5, "0");
     
-    // Recupera os impostos calculados para este item
     const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
+
+    console.log(`[TAX DEBUG] Item ${key} - Material: ${i.MATERIAL} | ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
 
     return {
       poItem: key,
@@ -214,8 +233,7 @@ function normalizeBapiResult(r0, testRunFlag) {
       ncm: i.BRAS_NBM,
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
-      
-      // >>> Passa para o retorno final
+
       icmsValue: taxes.icms,
       ipiValue: taxes.ipi
     };

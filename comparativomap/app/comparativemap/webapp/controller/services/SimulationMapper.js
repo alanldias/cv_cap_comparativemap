@@ -69,10 +69,10 @@ sap.ui.define(
       // Normaliza Unicode e remove caracteres invisíveis (zero-width, BOM etc.)
       const cleaned = raw
         .normalize("NFKC")
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
-        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "") 
-        .replace(/[\u00A0\u202F\u2007]/g, " ") 
-        .replace(/[\s_-]+/g, " ") 
+        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
+        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "")
+        .replace(/[\u00A0\u202F\u2007]/g, " ")
+        .replace(/[\s_-]+/g, " ")
         .trim()
         .toUpperCase();
 
@@ -307,8 +307,10 @@ sap.ui.define(
           netPrice: price,
           grossPrice: grossPrice,
           currency,
-          icms: null,
-          ipi: null,
+
+          icms: it.icmsValue || 0,
+          ipi: it.ipiValue || 0,
+
           total,
           itemId,
           invitationId,
