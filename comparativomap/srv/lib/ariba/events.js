@@ -143,7 +143,9 @@ function pickSimple(byMap, ...keys) {
   return null;
 }
 
-const keyOf = (invId, altId, itemId) => `${String(invId)}::${String(altId || itemId)}`;
+
+const keyOf = (invId, altId, itemId) => `${String(invId)}::${String(altId)}::${String(itemId)}`;
+
 function hasQty(b) {
   return !!(b?.QUANTITY?.value?.quantityValue?.amount);
 }
@@ -221,11 +223,12 @@ async function fetchSupplierBids(docId) {
     }
 
     // 3) chave do grupo dependendo da categoria
-    // - material => ignora alternativeId (um grupo por itemId)
-    // - service  => usa alternativeId para colapsar pai + sublinhas
-    const groupKey = cat === "service"
-      ? keyOf(invId, altId, itemId)
-      : keyOf(invId, "", itemId); // força ignorar altId
+    //  FIX: O alternativeId estava vindo igual para itens diferentes, causando agrupamento indevido.
+    // Vamos agrupar estritamente por itemId (passando string vazia no lugar do altId).
+    // Antes era: const groupKey = cat === "service" ? keyOf(invId, altId, itemId) : keyOf(invId, "", itemId);
+    const groupKey = keyOf(invId, altId, itemId);
+
+    console.log(`[DEBUG] Row ItemId: ${itemId} | AltId: ${altId} | GroupKey Gerada: ${groupKey}`);
 
     let g = groups.get(groupKey);
     if (!g) {
