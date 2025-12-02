@@ -72,15 +72,15 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-          {
-            poItem: 10,
-            plant: "BR01",
-            shortText: "Teste chamada BAPI",
-            quantity: 1,
-            unit: "PC",
-            taxCode: "I1",
-          },
-        ];
+        {
+          poItem: 10,
+          plant: "BR01",
+          shortText: "Teste chamada BAPI",
+          quantity: 1,
+          unit: "PC",
+          taxCode: "I1",
+        },
+      ];
 
   // Arrays para Itens e as novas CONDIÇÕES (POCOND)
   const poitem = [], poitemx = [];
@@ -92,8 +92,8 @@ function buildSmokePayload(header, items, schedules, testRun) {
       throw new Error(`buildSmokePayload: item sem poItem válido (idx=${i + 1}).`);
     }
     const PO_ITEM = padLeft(String(_po), 5, "0");
-    
-    const rec = {            
+
+    const rec = {
       PO_ITEM,
       PO_PRICE: "1", // Importante ser 1 quando enviamos conditions manuais like PB00                           
       PLANT: it.plant,
@@ -111,52 +111,52 @@ function buildSmokePayload(header, items, schedules, testRun) {
 
     // >>> REINSERINDO A LÓGICA DO PB00 (ESSENCIAL PARA O CÁLCULO)
     if (it.netPrice != null) {
-        const condRec = {
-            PO_ITEM: PO_ITEM,
-            COND_TYPE: "PB00", // Código do preço bruto
-            COND_VALUE: String(it.netPrice),
-            CURRENCY: header.currency || "BRL",
-            CHANGE_ID: "I" 
-        };
-        pocond.push(condRec);
-        pocondx.push({
-            PO_ITEM: PO_ITEM,
-            COND_TYPE: "X",
-            COND_VALUE: "X",
-            CHANGE_ID: "X"
-        });
+      const condRec = {
+        PO_ITEM: PO_ITEM,
+        COND_TYPE: "PB00", // Código do preço bruto
+        COND_VALUE: String(it.netPrice),
+        CURRENCY: header.currency || "BRL",
+        CHANGE_ID: "I"
+      };
+      pocond.push(condRec);
+      pocondx.push({
+        PO_ITEM: PO_ITEM,
+        COND_TYPE: "X",
+        COND_VALUE: "X",
+        CHANGE_ID: "X"
+      });
     }
     // <<< FIM LÓGICA PB00
   });
 
-  const today = isoDate(new Date()); 
+  const today = isoDate(new Date());
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-          PO_ITEM: (() => {
-            const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
-            if (!Number.isFinite(_po)) {
-              throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
-            }
-            return padLeft(String(_po), 5, "0");
-          })(),
-          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
-          QUANTITY: String(s.quantity ?? "0"),
-        }))
+        PO_ITEM: (() => {
+          const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+          if (!Number.isFinite(_po)) {
+            throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
+          }
+          return padLeft(String(_po), 5, "0");
+        })(),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+        DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
+        QUANTITY: String(s.quantity ?? "0"),
+      }))
       : poitem.map((p) => ({
-          PO_ITEM: p.PO_ITEM,
-          SCHED_LINE: "0001",
-          DELIV_DATE: todayDATS(),
-          QUANTITY: p.QUANTITY,
-        }));
+        PO_ITEM: p.PO_ITEM,
+        SCHED_LINE: "0001",
+        DELIV_DATE: todayDATS(),
+        QUANTITY: p.QUANTITY,
+      }));
 
   const posched = [], poschedx = [];
   schedList.forEach((s) => {
     posched.push(s);
     poschedx.push(markX(s));
   });
-  
+
   console.log("[buildSmokePayload] CONDITIONS (PB00):", JSON.stringify(pocond, null, 2));
 
   return {
@@ -173,6 +173,14 @@ function buildSmokePayload(header, items, schedules, testRun) {
   };
 }
 
+function normalizeItemKey(v) {
+  const s = String(v ?? "").trim();
+  if (!s) return "";
+  const n = Number(s.replace(/\D/g, ""));
+  if (!Number.isFinite(n)) return "";
+  return String(n).padStart(5, "0");
+}
+
 function normalizeBapiResult(r0, testRunFlag) {
   const toArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
   const headerRaw = r0?.EXPHEADER || {};
@@ -183,30 +191,43 @@ function normalizeBapiResult(r0, testRunFlag) {
   const condRaw = toArray(r0?.POCOND?.item);
 
   // Log para conferência (pode comentar depois)
-  console.log(">>> DEBUG CONDITIONS:", JSON.stringify(condRaw.filter(c => Number(c.COND_VALUE) !== 0).map(c => ({
-      k: c.PO_ITEM || c.ITM_NUMBER, // Vamos ver qual chave aparece
-      t: c.COND_TYPE,
-      v: c.COND_VALUE
-  })), null, 2));
+  console.log(">>> DEBUG CONDITIONS:", JSON.stringify(
+    condRaw
+      .filter(c => Number(c.COND_VALUE) !== 0)
+      .map(c => ({
+        kRaw: c.PO_ITEM || c.ITM_NUMBER,
+        k: normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER),
+        t: c.COND_TYPE,
+        v: c.COND_VALUE
+      })),
+    null,
+    2
+  ));
 
   // Agrupa condições por Item
   const conditionsByItem = condRaw.reduce((acc, c) => {
-    // >>> CORREÇÃO AQUI: Usa PO_ITEM ou ITM_NUMBER <<<
-    const rawKey = String(c.PO_ITEM || c.ITM_NUMBER || "").replace(/\D/g, ""); 
-    const key = rawKey.padStart(5, "0"); 
-    
+    const key = normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER);
+    if (!key) return acc;
+
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
     const val = Number(c.COND_VALUE || 0);
+    if (!Number.isFinite(val)) return acc;
+
     const type = (c.COND_TYPE || "").toUpperCase();
 
-    // Lista de ICMS (Baseado no seu log: ICM2, ICOF, ZICO...)
-    if (['BICM', 'BX13', 'ICM1', 'ICM2', 'ICM3', 'ICMS', 'MWST', 'ICOF', 'ZCM8', 'ZINB', 'ZICO', 'ZRED', 'ZREI'].includes(type)) {
+    // ICMS
+    if ([
+      "BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS",
+      "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"
+    ].includes(type)) {
       acc[key].icms += val;
     }
-    
-    // Lista de IPI (Baseado no seu log: IPI2, IPIS, ZIPI...)
-    if (['BIPI', 'BX23', 'IPI1', 'IPI2', 'IPIS', 'IPI', 'ZIPI'].includes(type)) {
+
+    // IPI
+    if ([
+      "BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"
+    ].includes(type)) {
       acc[key].ipi += val;
     }
 
@@ -214,7 +235,9 @@ function normalizeBapiResult(r0, testRunFlag) {
   }, {});
 
   const schedByItem = schedRaw.reduce((acc, s) => {
-    const key = String(s.PO_ITEM || "").replace(/\D/g, "").padStart(5, "0");
+    const key = normalizeItemKey(s.PO_ITEM);
+    if (!key) return acc;
+
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
       deliveryDate: s.DELIV_DATE,
@@ -224,12 +247,10 @@ function normalizeBapiResult(r0, testRunFlag) {
   }, {});
 
   const itens = itensRaw.map((i) => {
-    const key = String(i.PO_ITEM || "").replace(/\D/g, "").padStart(5, "0");
-    
-    // Agora a chave 'key' (ex: 01000) vai bater com a chave do reduce acima
+    const key = normalizeItemKey(i.PO_ITEM);
+
     const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
 
-    // Log de prova real
     console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
 
     return {
