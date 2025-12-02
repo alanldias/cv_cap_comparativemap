@@ -157,7 +157,7 @@ function buildSmokePayload(header, items, schedules, testRun) {
     poschedx.push(markX(s));
   });
   
-  // console.log("[buildSmokePayload] CONDITIONS (PB00):", JSON.stringify(pocond, null, 2));
+  console.log("[buildSmokePayload] CONDITIONS (PB00):", JSON.stringify(pocond, null, 2));
 
   return {
     TESTRUN: testRun ? "X" : "",
