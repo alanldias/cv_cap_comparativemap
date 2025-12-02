@@ -1,4 +1,7 @@
-sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
+sap.ui.define(["sap/m/MessageBox", "sap/m/MessageToast"], function (
+  MessageBox,
+  MessageToast,
+) {
   "use strict";
 
   function validarEMontarPayload(
@@ -40,7 +43,8 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
     const byItem = new Map();
     const faltaIds = [];
     const problemas = [];
-    const avisos = []; // 👈 acumula avisos (ex.: soma > original)
+    const avisosAcima = []; 
+    const avisosAbaixo = [];
     const supplierBids = [];
 
     (selectedRows || []).forEach((r) => {
@@ -107,11 +111,17 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
         continue;
       }
 
-      // ✅ Apenas aviso se estiver acima do original (não bloqueia)
-      if (Number.isFinite(original) && original > 0 && sum > original) {
-        avisos.push(
-          `Item #${itemId} (${metaAll?.label || gSel.label}): quantidade premiada (${sum}) está ACIMA da quantidade indicada (${original}).`,
-        );
+      // ✅ Avisos para cima/abaixo do original (sem bloquear)
+      if (Number.isFinite(original) && original > 0) {
+        if (sum > original) {
+          avisosAcima.push(
+            `Item #${itemId} (${metaAll?.label || gSel.label}): quantidade premiada (${sum}) está ACIMA da quantidade indicada (${original}).`,
+          );
+        } else if (sum < original) {
+          avisosAbaixo.push(
+            `Item #${itemId} (${metaAll?.label || gSel.label}): quantidade premiada (${sum}) está ABAIXO da quantidade indicada (${original}).`,
+          );
+        }
       }
     }
 
@@ -193,17 +203,29 @@ sap.ui.define(["sap/m/MessageBox"], function (MessageBox) {
     }
 
     // ===================================
-    // 6) Exibir avisos (sem bloquear operação)
+    // 6) Exibir avisos como Toast (acima / abaixo)
     // ===================================
-    if (avisos.length) {
-      MessageBox.warning(
-        "Foram encontrados os seguintes avisos:\n\n" +
-          avisos.join("\n") +
-          "\n\nA operação continuará normalmente.",
-        {
-          title: "Avisos de quantidade",
-        },
-      );
+    if (avisosAcima.length || avisosAbaixo.length) {
+      let msg;
+
+      if (avisosAcima.length && avisosAbaixo.length) {
+        msg =
+          "Há itens com quantidade premiada acima e abaixo da quantidade indicada.";
+      } else if (avisosAcima.length) {
+        msg =
+          "Há itens com quantidade premiada acima da quantidade indicada.";
+      } else {
+        msg =
+          "Há itens com quantidade premiada abaixo da quantidade indicada.";
+      }
+
+      MessageToast.show(msg, {
+        duration: 5000, // ajusta se quiser mais/menos tempo
+      });
+
+      // Se em algum momento você quiser ver detalhes em log:
+      // console.log("[Avisos acima]", avisosAcima);
+      // console.log("[Avisos abaixo]", avisosAbaixo);
     }
 
     // Continua normalmente: controller não precisa mudar nada

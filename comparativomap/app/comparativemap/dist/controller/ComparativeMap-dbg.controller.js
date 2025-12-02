@@ -15,6 +15,7 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
+    "sap/ui/core/UIComponent",
     "comparativemap/comparativemap/controller/prefs/DraftStore"
   ],
   function (
@@ -33,6 +34,7 @@ sap.ui.define(
     Build,
     Spreadsheet,
     exportLibrary,
+    UIComponent,
     Drafts
   ) {
     "use strict";
@@ -47,39 +49,61 @@ sap.ui.define(
         // 1. INICIALIZAÇÃO
         // ===========================================================
         onInit() {
-          // ===== Modelos base =====
-          this.getView().setModel(Models.createVM(), "vm");
-          this.getView().setModel(Models.createQM(), "qm");
+          const view = this.getView();
+
+          // Modelos base
+          view.setModel(Models.createVM(), "vm");
+          view.setModel(Models.createQM(), "qm");
 
           // Modelo de resultados
-          let res = this.getView().getModel("res");
+          let res = view.getModel("res");
           if (!res) {
             res = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
-            this.getView().setModel(res, "res");
+            view.setModel(res, "res");
           }
 
-          // Layout Compacto
-          this.getView().addStyleClass("sapUiSizeCompact");
+          // Layout compacto
+          view.addStyleClass("sapUiSizeCompact");
 
-          // 🟢 Drafts: Registra o estado padrão (XML) antes de qualquer alteração
+          // Registra estado padrão da tabela (ordem de colunas)
           Drafts.registerDefaultState(this);
 
-          // Drafts: Pergunta se quer restaurar ao entrar
-          Drafts.offerRestoreOnEnter(this);
+          // 🔵 Liga handler na rota pra rodar SEMPRE que a tela for ativada
+          const oRouter = UIComponent.getRouterFor(this);
+          this._fnRouteMatched = this._onRouteMatched.bind(this);
+          oRouter.getRoute("RouteComparativeMap").attachPatternMatched(this._fnRouteMatched);
 
           // Autosave ao sair/recarregar a página
-          this._onUnloadSave = () => { try { Drafts.save(this); } catch (e) { } };
+          this._onUnloadSave = () => {
+            try { Drafts.save(this); } catch (e) { }
+          };
           window.addEventListener("beforeunload", this._onUnloadSave);
         },
 
+        // Disparado toda vez que a rota "RouteComparativeMap" é ativada
+        _onRouteMatched() {
+          console.log("[ComparativeMap] route matched → offerRestoreOnEnter");
+          Drafts.offerRestoreOnEnter(this);
+        },
+
         onExit() {
+          // Fecha dialog de resultado se ainda existir
           if (this._dlgRes) {
             this._dlgRes.destroy(true);
             this._dlgRes = null;
           }
+
+          // Remove o listener do beforeunload
           if (this._onUnloadSave) {
             window.removeEventListener("beforeunload", this._onUnloadSave);
             this._onUnloadSave = null;
+          }
+
+          // Desliga o handler da rota pra não vazar memória
+          const oRouter = UIComponent.getRouterFor(this);
+          if (this._fnRouteMatched) {
+            oRouter.getRoute("RouteComparativeMap").detachPatternMatched(this._fnRouteMatched);
+            this._fnRouteMatched = null;
           }
         },
 
@@ -103,17 +127,14 @@ sap.ui.define(
               return;
             }
 
-            // 🔵 BUSY GLOBAL + TABELA
-            sap.ui.core.BusyIndicator.show(0);   // <<< NOVO
-            mdcTbl?.setBusy(true);               // (já existia, eu deixaria aqui em cima)
+            sap.ui.core.BusyIndicator.show(0);
+            mdcTbl?.setBusy(true);
 
-            // 1. Salva draft anterior se trocar de ID
             if (oldDocId && oldDocId !== newDocId) {
               console.log(`💾 Salvando draft anterior (${oldDocId}) antes de trocar...`);
               Drafts.save(this, true);
             }
 
-            // Limpa UI antiga
             view.byId("vsdFilterBar")?.setVisible(false);
             view.byId("vsdFilterLabel")?.setText("");
 
@@ -280,8 +301,8 @@ sap.ui.define(
                 if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
                   try { inner.clearSelection(); } catch (e) { }
                 }
-              }const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
-              // Mensagem amigável para o usuário
+              } 
+              
               MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
               return; // Para a execução aqui de forma limpa
             }
@@ -302,6 +323,30 @@ sap.ui.define(
                 if (inner && inner.clearSelection) inner.clearSelection();
               }
               throw new Error("Seleção inválida: Itens sem Material ou ID. A seleção foi limpa, tente novamente.");
+            }
+
+            const zeroPriceRows = rows.filter(r => {
+              const p = Number(r.price); // Garante que é number (vinha do onBuscar)
+              return !p || p <= 0.000001; // Verifica se é 0, negativo ou NaN
+            });
+
+            if (zeroPriceRows.length > 0) {
+              // Monta lista amigável para o usuário saber qual item corrigir
+              const listaItens = zeroPriceRows
+                .map(r => `• ${r.itemDescription || r.materialCode || "Item sem nome"}`)
+                .join("\n");
+
+              MessageBox.error(
+                "Atenção: A simulação não pode ser realizada com preços zerados (0,00).",
+                {
+                  details: "Os seguintes itens estão com preço R$ 0,00:\n\n" + listaItens,
+                  contentWidth: "400px"
+                }
+              );
+
+              // Tira o busy e para a execução aqui
+              mdcTbl?.setBusy(false);
+              return;
             }
 
             // --- Preparação BAPI ---
@@ -329,7 +374,7 @@ sap.ui.define(
               (req.items || []).forEach((it, i) => {
                 const itemRef = `Item ${(i + 1) * 10}`;
                 const itTag = `${nomeForn} > ${itemRef}`;
-                
+
                 if (!it.plant) itemMissing.push(`${itTag}: Falta Centro (plant)`);
                 if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Qtd inválida`);
               });
@@ -440,37 +485,54 @@ sap.ui.define(
           if (!ctx) return;
 
           const row = ctx.getObject() || {};
+
+          // Normaliza valor digitado
           let v = Math.floor(Number(input.getValue()));
-          if (!Number.isFinite(v) || v < 0) v = 0;
+          if (!Number.isFinite(v) || v < 0) {
+            v = 0;
+          }
+
           row.qtyAward = v;
           ctx.getModel().checkUpdate(true);
           input.setValue(String(row.qtyAward));
 
           const original = Math.floor(Number(row.originalQty) || 0);
-          if (original > 0 && v > original) {
-            input.setValueState(sap.ui.core.ValueState.Warning);
-            input.setValueStateText(`Quantidade acima da original (${original}).`);
-            sap.m.MessageToast.show(`Qtd premiada (${v}) > original (${original}).`);
-          } else {
-            input.setValueState(sap.ui.core.ValueState.None);
-            input.setValueStateText("");
+
+          // Reseta estados por padrão
+          input.setValueState(sap.ui.core.ValueState.None);
+          input.setValueStateText("");
+
+          if (original > 0) {
+            if (v > original) {
+              // 🔺 Acima da original
+              input.setValueState(sap.ui.core.ValueState.Warning);
+              input.setValueStateText(`Aviso: quantidade acima da original (${original}).`);
+              sap.m.MessageToast.show(
+                `Qtd premiada (${v}) maior que a original (${original}).`
+              );
+            } else if (v < original) {
+              // 🔻 Abaixo da original
+              input.setValueState(sap.ui.core.ValueState.Warning);
+              input.setValueStateText(`Aviso: quantidade abaixo da original (${original}).`);
+              sap.m.MessageToast.show(
+                `Qtd premiada (${v}) menor que a original (${original}).`
+              );
+            }
           }
         },
 
-        async onAwardDirect() {
+
+                async onAwardDirect() {
           const view = this.getView();
           const vm = view.getModel("vm");
           const resModel = view.getModel("res");
 
           // 1. PEGAR A TABELA CORRETAMENTE (Pelo ID do Fragmento)
-          // Como o fragmento é carregado pelo controller, o ID é prefixado.
           let tbl = this.byId("tblRes");
 
-          // Fallback: Se não achar pelo this.byId (dependendo de como o Dialogs.js instancia), tenta o Core
           if (!tbl) {
-            tbl = sap.ui.getCore().byId("fragmentId--tblRes"); // Caso tenha ID de fragmento específico
+            tbl = sap.ui.getCore().byId("fragmentId--tblRes");
             if (!tbl && this._dlgRes) {
-              // Última tentativa: Busca dentro do dialog (mais seguro que pegar índice 0)
               tbl = this._dlgRes.getContent().find(c => c.isA && c.isA("sap.ui.mdc.Table"));
             }
           }
@@ -480,8 +542,7 @@ sap.ui.define(
             return;
           }
 
-          // 2. PEGAR SELEÇÃO (Usando seu helper que já trata MDC/Inner)
-          // Passamos "res" como nome do model, mas o helper deve lidar bem com isso
+          // 2. SELEÇÃO
           const selected = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
 
           if (!selected.length) {
@@ -489,43 +550,57 @@ sap.ui.define(
             return;
           }
 
-          // --- Daqui para baixo, a lógica de Negócio (AwardService) permanece IGUAL ---
-
           const allRows = selected;
 
-          // O AwardSvc vai validar as somas, qtyAward vs original, etc.
           const supplierBids = AwardSvc.validarEMontarPayload(
             allRows,
             selected,
             this._ensureInvitationResourceId.bind(this)
           );
 
-          if (!supplierBids) return; // AwardSvc já exibiu o erro/aviso se houve
+          if (!supplierBids) return;
 
-          const sEventId = vm.getProperty("/header/docId") || resModel.getProperty("/header/docId");
+          const sEventId =
+            vm.getProperty("/header/docId") ||
+            resModel.getProperty("/header/docId");
           if (!sEventId) {
             MessageBox.error("DocID do evento não encontrado no header.");
             return;
           }
 
+          const baseTitle = "Premiação via UI (MDC)";
+          const now = new Date();
+          const iso = now.toISOString();                     // 2025-11-27T18:23:45.123Z
+          const stamp = iso.slice(0, 19).replace("T", " ");  // 2025-11-27 18:23:45
+          const rand = Math.floor(Math.random() * 1000);     // 0–999
+          const finalTitle = `${baseTitle} - ${stamp} #${rand}`;
+
           sap.ui.core.BusyIndicator.show(0);
           try {
-            // Chamada ao Backend
             const out = await ODataSvc.createScenario(view, {
               eventId: sEventId,
-              title: "Premiação via UI (MDC)",
+              title: finalTitle,      // 👈 agora SEMPRE diferente
               scenarioType: 0,
               supplierBids,
             });
 
             if (out?.success) {
-              MessageBox.success(`Cenário criado com sucesso!\nScenario ID: ${out.scenarioId || "(n/a)"}`);
+              MessageBox.success(
+                `Cenário criado com sucesso!\n` +
+                `Título: ${finalTitle}\n` +
+                `Scenario ID: ${out.scenarioId || "(n/a)"}`
+              );
               this._dlgRes?.close();
             } else {
-              MessageBox.warning("O cenário foi processado, mas o backend não retornou 'success=true'. Verifique no Ariba.");
+              MessageBox.warning(
+                "O cenário foi processado, mas o backend não retornou 'success=true'. Verifique no Ariba."
+              );
             }
           } catch (e) {
-            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", { showDetailsPanel: true, contentWidth: "640px" });
+            ErrorHandler.handle(e, "Erro ao criar cenário de premiação", {
+              showDetailsPanel: true,
+              contentWidth: "640px",
+            });
           } finally {
             sap.ui.core.BusyIndicator.hide();
           }
