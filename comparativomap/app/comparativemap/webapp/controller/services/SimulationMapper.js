@@ -1,344 +1,261 @@
-sap.ui.define(
-  ["comparativemap/comparativemap/controller/helpers/KeyUtils"],
-  function (Keys) {
-    "use strict";
+const { getSoapService } = require("../../soap-destination");
+const { SOAP } = require("../config");
+const { dbg } = require("../util/log");
 
-    function toEdmDate(d) {
-      const y = d.getFullYear(),
-        m = String(d.getMonth() + 1).padStart(2, "0"),
-        day = String(d.getDate()).padStart(2, "0");
-      return `${y}-${m}-${day}`;
+function padLeft(str, len, ch = "0") {
+  str = String(str ?? "");
+  return str.length >= len ? str : ch.repeat(len - str.length) + str;
+}
+function isoDate(d) {
+  const y = d.getFullYear(),
+    m = String(d.getMonth() + 1).padStart(2, "0"),
+    day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function markX(obj, extra = {}) {
+  const x = { ...extra };
+  for (const [k, v] of Object.entries(obj)) {
+    if (k === "PO_ITEM" || k === "SCHED_LINE") {
+      x[k] = obj[k];
+      continue;
     }
-    function normalizeDate(val) {
-      if (!val) return toEdmDate(new Date());
-      const s =
-        typeof val === "object" && val.dateValue
-          ? val.dateValue
-          : String(val).trim();
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-      if (/^\d{8}$/.test(s))
-        return `${s.slice(0, 4)}-${s.slice(4, 6)}-${s.slice(6, 8)}`;
-      const d = new Date(s);
-      if (!isNaN(d)) return toEdmDate(d);
-      throw new Error("Data inválida: " + val);
+    if (v !== undefined && v !== null && String(v) !== "") x[k] = "X";
+  }
+  return x;
+}
+
+function toDATS(edm /* "YYYY-MM-DD" */) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(edm)) {
+    throw new Error("Edm.Date inválida (YYYY-MM-DD): " + edm);
+  }
+  return edm.replace(/-/g, ""); // "YYYYMMDD"
+}
+function todayDATS() {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  return `${y}${m}${d}`;
+}
+
+async function getBapiClient() {
+  const endpoint = { url: null };
+  dbg("[getBapiClient] WSDL_PATH (resolved) =", SOAP.WSDL_PATH);
+  const client = await getSoapService(
+    "BAPI_PO_CREATE",
+    SOAP.WSDL_PATH,
+    endpoint,
+    "POST",
+  );
+  if (typeof client.BAPI_PO_CREATE1Async !== "function") {
+    throw new Error(
+      "Método SOAP BAPI_PO_CREATE1Async indisponível no port/endereço atual.",
+    );
+  }
+  return client;
+}
+
+function buildSmokePayload(header, items, schedules, testRun) {
+  const hdr = {
+    DOC_TYPE: header.docType || "NB",
+    COMP_CODE: header.compCode || "1000",
+    PURCH_ORG: header.purchOrg || "1000",
+    PUR_GROUP: header.purchGroup || "001",
+    VENDOR: padLeft(String(header.vendor || "123456"), 10, "0"),
+    CURRENCY: header.currency || "BRL",
+    ...(header.incoterms1 ? { INCOTERMS1: header.incoterms1 } : {}),
+    ...(header.incoterms2 ? { INCOTERMS2: header.incoterms2 } : {}),
+  };
+  const hdrX = markX(hdr);
+
+  const itemList =
+    Array.isArray(items) && items.length > 0
+      ? items
+      : [
+          {
+            poItem: 10,
+            plant: "BR01",
+            shortText: "Teste chamada BAPI",
+            quantity: 1,
+            unit: "PC",
+            taxCode: "I1",
+          },
+        ];
+
+  const poitem = [], poitemx = [];
+  itemList.forEach((it, i) => {
+    const _po = Number(String(it.poItem ?? "").replace(/\D/g, ""));
+    if (!Number.isFinite(_po)) {
+      throw new Error(`buildSmokePayload: item sem poItem válido (idx=${i + 1}).`);
     }
-    function getDeliveryDateFromRow(r) {
-      // Prioriza o campo técnico que já vem do back como "YYYY-MM-DD"
-      const raw = r?.DeliveryDateEdm || r?.DeliveryDate || null;
-      return normalizeDate(raw || new Date());
+    const PO_ITEM = padLeft(String(_po), 5, "0");
+    const rec = {            
+      PO_ITEM,
+      PO_PRICE: "1",                           
+      PLANT: it.plant,
+      QUANTITY: String(Number(it.quantity ?? 0)),
+      PO_UNIT: it.unit,
+      ...(it.material
+        ? { MATERIAL: padLeft(String(it.material).trim(), 18, "0").slice(-18) }
+        : {}),
+      ...(it.shortText ? { SHORT_TEXT: String(it.shortText).slice(0, 40) } : {}),
+      ...(it.taxCode ? { TAX_CODE: String(it.taxCode).slice(0, 2) } : {}),
+      ...(it.netPrice != null ? { NET_PRICE: String(it.netPrice) } : {}),
+    };
+    poitem.push(rec);
+    poitemx.push(markX(rec, { PO_ITEM }));
+  });
+
+  const today = isoDate(new Date()); 
+  const schedList =
+    Array.isArray(schedules) && schedules.length > 0
+      ? schedules.map((s, idx) => ({
+          PO_ITEM: (() => {
+            const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+            if (!Number.isFinite(_po)) {
+              throw new Error(`buildSmokePayload: schedule sem poItem válido (idx=${idx + 1}).`);
+            }
+            return padLeft(String(_po), 5, "0");
+          })(),
+          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+          DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
+          QUANTITY: String(s.quantity ?? "0"),
+        }))
+      : poitem.map((p) => ({
+          PO_ITEM: p.PO_ITEM,
+          SCHED_LINE: "0001",
+          DELIV_DATE: todayDATS(),
+          QUANTITY: p.QUANTITY,
+        }));
+
+  const posched = [], poschedx = [];
+  schedList.forEach((s) => {
+    posched.push(s);
+    poschedx.push(markX(s));
+  });
+  
+  console.log("[buildSmokePayload] POITEM.item =", JSON.stringify(poitem, null, 2));
+
+  return {
+    TESTRUN: testRun ? "X" : "",
+    POHEADER: hdr,
+    POHEADERX: hdrX,
+    POITEM: { item: poitem },
+    POITEMX: { item: poitemx },
+    POSCHEDULE: { item: posched },
+    POSCHEDULEX: { item: poschedx },
+  };
+}
+
+function normalizeBapiResult(r0, testRunFlag) {
+  const toArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  const headerRaw = r0?.EXPHEADER || {};
+  const itensRaw = toArray(r0?.POITEM?.item);
+  const schedRaw = toArray(r0?.POSCHEDULE?.item);
+
+  // >>> NOVO: Ler a tabela de condições (Impostos e Preços calculados pelo SAP)
+  const condRaw = toArray(r0?.POCOND?.item);
+
+  // >>> LOG IMPORTANTE: Veja no console quais códigos (COND_TYPE) estão vindo
+  if (condRaw.length > 0) {
+    console.log(">>> DEBUG POCOND (Conditions):", JSON.stringify(condRaw, null, 2));
+  } else {
+    console.log(">>> DEBUG POCOND: Vazio (O SAP não retornou cálculo de preço).");
+  }
+
+  // Agrupa condições por Item
+  const conditionsByItem = condRaw.reduce((acc, c) => {
+    const key = String(c.PO_ITEM || "").padStart(5, "0");
+    if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
+
+    const val = Number(c.COND_VALUE || 0);
+    const type = (c.COND_TYPE || "").toUpperCase();
+
+    // LÓGICA DE SOMA DE IMPOSTOS
+    // Obs: Adicione os códigos reais que você ver no console (ex: BX13, IPI1, etc)
+    if (['BICM', 'BX13', 'ICM1', 'ICMS', 'MWST'].includes(type)) {
+      acc[key].icms += val;
     }
-
-    function getHeaderFromVM(vm) {
-      let h = vm.getProperty("/headerRows");
-      if (Array.isArray(h)) h = h[0] || {};
-      if (!h || !Object.keys(h).length) h = vm.getProperty("/header") || {};
-      return h;
-    }
-
-    function mapHeaderFromAriba(h, firstRow) {
-      const currency = (h.moeda || firstRow?.currency || "BRL")
-        .toString()
-        .toUpperCase()
-        .slice(0, 3);
-      const vendorRaw =
-        (h.fornecedor && String(h.fornecedor).trim()) ||
-        firstRow?.SupplierCode ||
-        firstRow?.suppliercode ||
-        firstRow?.supplierId ||
-        firstRow?.lifnr;
-      const vendor = Keys.zpad(String(vendorRaw || "").replace(/\D/g, ""), 10);
-      const rawTipo = (h.tipoPedido || "NB").toString().trim();
-      const m = rawTipo.match(/([A-Z0-9]{2,4})\s*$/i);
-      const docType = (m ? m[1] : rawTipo).toUpperCase().slice(0, 4);
-
-      return {
-        docType,
-        compCode: (h.companyCode || "").toString().slice(0, 4),
-        purchOrg: (h.purchasingOrganization || "").toString().slice(0, 4),
-        purchGroup: (h.purchasingGroup || "").toString().slice(0, 3),
-        vendor,
-        currency,
-        incoterms1: (h.incoterms1 || "").toString().toUpperCase().slice(0, 3),
-        incoterms2: (h.incoterms2 || "").toString().slice(0, 28),
-      };
-    }
-
-    function resolveItemCatFromRow(r) {
-      const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString();
-
-      // Normaliza Unicode e remove caracteres invisíveis (zero-width, BOM etc.)
-      const cleaned = raw
-        .normalize("NFKC")
-        .replace(/[\u0000-\u001F\u007F-\u009F]/g, "") 
-        .replace(/[\u200B-\u200D\uFEFF\u2060]/g, "") 
-        .replace(/[\u00A0\u202F\u2007]/g, " ") 
-        .replace(/[\s_-]+/g, " ") 
-        .trim()
-        .toUpperCase();
-
-      if (
-        cleaned.startsWith("D") ||
-        cleaned.includes("SERVICE") ||
-        cleaned.includes("SERVIÇO") ||
-        cleaned.includes("SERVICO") ||
-        cleaned === "SVC"
-      ) {
-        return "D";
-      }
-
-      if (typeof Keys.mapItemCategory === "function") {
-        const mapped = Keys.mapItemCategory(raw);
-        if (mapped && mapped !== "0") {
-          return mapped;
-        }
-      }
-
-      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
-      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || r.ItemDescription || "").trim();
-
-      if (!hasMat && hasText) {
-        return "D";
-      }
-      return "0";
-    }
-
-    function mapRowToPOItem(r, idx) {
-      if (!r || typeof r !== "object") {
-        throw new Error(
-          `Linha selecionada inválida na posição ${idx + 1}. Refaça a seleção.`,
-        );
-      }
-
-      const poItem = (idx + 1) * 10;
-      const matRaw = (r?.MaterialCode || r?.materialCode || "")
-        .toString()
-        .trim();
-      const m = matRaw.match(/^(\d{4,})\b/);
-      const material = m ? Keys.zpad(m[1], 18) : "";
-      const desc = (
-        r.itemDEscription ||
-        r.itemDescription ||
-        r.description ||
-        r.ItemDescription ||
-        ""
-      ).toString();
-      const shortText = desc.slice(0, 40);
-      const unit = Keys.mapUoM(
-        (r.unitOfMeasure || "").toString().toUpperCase(),
-      );
-      const plant = Keys.mapPlant((r.PLANT || "").toString());
-      const itemCat = resolveItemCatFromRow(r);
-      const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
-      const netPrice = r.price != null ? Number(r.price) : null;
-      const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || ""))
-        ? String(r.CodigoRequisicao).slice(0, 10)
-        : undefined;
-
-      const it = {
-        poItem,
-        plant,
-        material,
-        shortText,
-        quantity: Number(r?.quantity || 0),
-        unit,
-        netPrice,
-        itemCat,
-        matlGroup,
-        preqNo,
-      };
-
-      if (!it.material && !it.shortText)
-        console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`,
-        );
-      if (!it.unit)
-        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Unidade vazia`);
-      if (!it.plant)
-        console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Centro vazio`);
-      if (!it.quantity)
-        console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Quantidade vazia/zero`,
-        );
-
-      return it;
-    }
-
-    function prepareQMFromSelection(rows, qm) {
-      const idByKey = {};
-      (rows || []).filter(Boolean).forEach((r) => {
-        const matKey = Keys.normKey(Keys.getItemKey(r));
-        const nameKey = Keys.normKey(r.supplierName || "");
-        const lifnr = Keys.pad10(
-          r.lifnr ||
-          r.supplierId ||
-          (/^\d+$/.test(r.supplierName) ? r.supplierName : ""),
-        );
-        const meta = {
-          itemId: r.itemId ?? r.ItemId ?? null,
-          invitationId: r.invitationId ?? r._invitationId ?? null,
-          invitationEmail: r.invitationEmail ?? null,
-          masterQty: Number(r._originalQty || r.quantity) || 0,
-          supplierName: r.supplierName || "",
-          lifnr: lifnr,
-          materialCode: r.MaterialCode || r.materialCode || "",
-        };
-        idByKey[`${matKey}|NAME:${nameKey}`] = meta;
-        if (lifnr) idByKey[`${matKey}|LIFNR:${lifnr}`] = meta;
-      });
-      qm.setProperty("/idByKey", idByKey);
+    
+    if (['BIPI', 'BX23', 'IPI1', 'IPI'].includes(type)) {
+      acc[key].ipi += val;
     }
 
-    function buildResRowsFromBapiResult(result, qm, srcRowsOverride) {
-      const idByKey = qm.getProperty("/idByKey") || {};
-      const norm10 = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
-      const normPo = (v) => {
-        const s = String(v ?? "").trim();
-        if (!s) return null;
-        const n = Number(s.replace(/\D/g, ""));
-        return Number.isFinite(n) ? n : null;
-      };
+    return acc;
+  }, {});
+  // <<< FIM NOVO
 
-      // LIFNR vindo do resultado (header)
-      const lifnrHeader = norm10(result?.header?.fornecedor || result?.header?.vendor || "");
+  const schedByItem = schedRaw.reduce((acc, s) => {
+    const key = String(s.PO_ITEM || "").padStart(5, "0");
+    (acc[key] ||= []).push({
+      schedLine: s.SCHED_LINE,
+      deliveryDate: s.DELIV_DATE,
+      qty: Number(s.QUANTITY || 0),
+    });
+    return acc;
+  }, {});
 
-      // Escolhe as linhas fonte (do mesmo fornecedor)
-      const globalSrc = qm.getProperty("/simSourceRows") || [];
-      const srcRows = (Array.isArray(srcRowsOverride) && srcRowsOverride.length)
-        ? srcRowsOverride
-        : globalSrc.filter(r => norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader);
-
-      // Índice determinístico: poItem (numérico) -> linha fonte
-      const srcByPo = new Map();
-      for (const r of srcRows) {
-        const n = normPo(r?.poItem ?? r?.PO_ITEM ?? r?.poitem);
-        if (n == null) continue;
-        if (srcByPo.has(n)) {
-          console.warn("[MAP] poItem duplicado em srcRows p/ vendor", lifnrHeader, "poItem=", n);
-        } else {
-          srcByPo.set(n, r);
-        }
-      }
-
-      const currency = (result?.header?.moeda || "BRL").toString();
-      const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
-
-      return itens.map((it) => {
-        const poPadded = String(it?.poItem || "").padStart(5, "0");
-        const poNum = normPo(it?.poItem);
-
-        let src = (poNum != null) ? srcByPo.get(poNum) : undefined;
-
-        let meta = null;
-        const matKey = Keys.matKeyFromBapiMaterial(it?.material);
-        if (!src) {
-          meta = idByKey[`${matKey}|LIFNR:${lifnrHeader}`];
-          if (!meta) {
-            const src0 = srcRows[0] || {};
-            const nameKey = Keys.normKey(src0?.supplierName || "");
-            meta = idByKey[`${matKey}|NAME:${nameKey}`];
-          }
-        } else {
-          meta = {
-            itemId: src.itemId ?? src.ItemId ?? null,
-            invitationId: src.invitationId ?? src._invitationId ?? null,
-            invitationEmail: src.invitationEmail ?? null,
-            masterQty: Number(src._originalQty || src.quantity) || 0,
-            supplierName: src.supplierName || "",
-            lifnr: norm10(src.lifnr || src.supplierId || lifnrHeader),
-            materialCode: src.MaterialCode || src.materialCode || "",
-          };
-        }
-
-        const invitationId =
-          (src && (src.invitationId ?? src._invitationId)) != null
-            ? (src.invitationId ?? src._invitationId)
-            : (meta?.invitationId ?? null);
-
-        const invitationEmail =
-          (src && src.invitationEmail != null)
-            ? src.invitationEmail
-            : (meta?.invitationEmail ?? null);
-
-        const originalQty =
-          (src && Number(src._originalQty || src.quantity))
-            ? Number(src._originalQty || src.quantity)
-            : (Number(meta?.masterQty ?? 0) || 0);
-
-        const matDisplay =
-          (src && (src.MaterialCode || src.materialCode))
-            ? (src.MaterialCode || src.materialCode)
-            : (meta?.materialCode || it?.material || Keys.getItemKey(src || {}) || "");
-
-        const supplierName =
-          (src && src.supplierName) ? src.supplierName :
-            (meta?.supplierName || lifnrHeader);
-
-        const itemId =
-          (src && (src.itemId ?? src.ItemId) != null)
-            ? (src.itemId ?? src.ItemId)
-            : (meta?.itemId ?? null);
-
-        const quantity = Number(it?.quantidade || 0) || 0;
-        const price = Number(it?.netPrice || 0) || 0;
-        const total = Number((price * quantity).toFixed(2));
-        const grossPrice = (src && src.price != null) ? Number(src.price) : 0;
-
-        const descricao = it?.descricao ?? "";
-        const ncm = it?.ncm ?? null;
-        const taxCode = it?.taxCode ?? null;
-        const taxJurCode = it?.taxJurCode ?? null;
-        const unidade = it?.unidade ?? it?.poUnit ?? null;
-        const priceUnit = Number(it?.priceUnit ?? 1) || 1;
-        const priceDate = it?.priceDate ?? null;
-        const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
-
-        if (!src) {
-          console.warn("[MAP] Sem match por poItem no retorno", { vendor: lifnrHeader, poItem: poPadded, matKey });
-        }
-
-        return {
-          materialCode: matDisplay,
-          MaterialCode: matDisplay,
-          supplierName,
-          originalQty,
-          quantity,
-          qtyAward: quantity,
-          price,
-          netPrice: price,
-          grossPrice: grossPrice,
-          currency,
-          icms: null,
-          ipi: null,
-          total,
-          itemId,
-          invitationId,
-          invitationEmail,
-          lifnr: lifnrHeader,
-
-          poItem: poPadded,
-
-          descricao,
-          ncm,
-          taxCode,
-          taxJurCode,
-          unidade,
-          unit: unidade,
-          priceUnit,
-          priceDate,
-          schedules,
-        };
-      });
-    }
+  const itens = itensRaw.map((i) => {
+    const key = String(i.PO_ITEM || "").padStart(5, "0");
+    
+    // Recupera os impostos calculados para este item
+    const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
 
     return {
-      toEdmDate,
-      normalizeDate,
-      getDeliveryDateFromRow,
-      getHeaderFromVM,
-      mapHeaderFromAriba,
-      mapRowToPOItem,
-      prepareQMFromSelection,
-      buildResRowsFromBapiResult,
+      poItem: key,
+      material: i.MATERIAL_LONG || i.MATERIAL,
+      descricao: i.SHORT_TEXT,
+      quantidade: Number(i.QUANTITY || 0),
+      unidade: i.PO_UNIT,
+      netPrice: Number(i.NET_PRICE || 0),
+      priceUnit: Number(i.PRICE_UNIT || 1),
+      taxCode: i.TAX_CODE,
+      taxJurCode: i.TAXJURCODE,
+      ncm: i.BRAS_NBM,
+      priceDate: i.PRICE_DATE,
+      schedules: schedByItem[key] || [],
+      
+      // >>> Passa para o retorno final
+      icmsValue: taxes.icms,
+      ipiValue: taxes.ipi
     };
-  },
-);
+  });
+
+  const messages = toArray(r0?.RETURN?.item).map((m) => ({
+    type: m.TYPE,
+    id: m.ID,
+    number: m.NUMBER,
+    message: m.MESSAGE,
+    logNo: m.LOG_NO,
+    v1: m.MESSAGE_V1,
+    v2: m.MESSAGE_V2,
+    v3: m.MESSAGE_V3,
+    v4: m.MESSAGE_V4,
+  }));
+
+  return {
+    testRun: !!testRunFlag,
+    header: {
+      empresa: headerRaw.COMP_CODE,
+      orgCompras: headerRaw.PURCH_ORG,
+      grupoCompras: headerRaw.PUR_GROUP,
+      fornecedor: headerRaw.VENDOR,
+      moeda: headerRaw.CURRENCY,
+      incoterms1: headerRaw.INCOTERMS1,
+      incoterms2: headerRaw.INCOTERMS2,
+      criadoEm: headerRaw.CREAT_DATE,
+      criadoPor: headerRaw.CREATED_BY,
+      poNumber: headerRaw.PO_NUMBER || "",
+    },
+    itens,
+    returnMessages: messages,
+    mensagens: messages,
+  };
+}
+
+module.exports = {
+  getBapiClient,
+  buildSmokePayload,
+  normalizeBapiResult,
+  padLeft,
+};
