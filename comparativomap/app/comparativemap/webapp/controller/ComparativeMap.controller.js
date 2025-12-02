@@ -757,11 +757,32 @@ sap.ui.define(
           return oFloatFormat.format(fValue);
         },
 
+        formatIntegerOrDash: function (sValue) {
+          if (sValue === null || sValue === undefined || sValue === "") {
+            return "-";
+          }
+
+          var fValue = parseFloat(sValue);
+
+          if (isNaN(fValue)) {
+            return "-";
+          }
+
+          var oIntegerFormat = NumberFormat.getFloatInstance({
+            minFractionDigits: 0,
+            maxFractionDigits: 0,
+            groupingEnabled: true,
+            groupingSeparator: "." 
+          });
+
+          return oIntegerFormat.format(fValue);
+        },
+
         formatCleanMaterial: function (sValue) {
           if (!sValue) {
             return "-";
           }
-          
+
           return sValue.replace(/^\d+\s+/, "");
         },
 

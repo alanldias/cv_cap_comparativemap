@@ -281,6 +281,7 @@ sap.ui.define(
         const quantity = Number(it?.quantidade || 0) || 0;
         const price = Number(it?.netPrice || 0) || 0;
         const total = Number((price * quantity).toFixed(2));
+        const grossPrice = (src && src.price != null) ? Number(src.price) : 0;
 
         const descricao = it?.descricao ?? "";
         const ncm = it?.ncm ?? null;
@@ -304,6 +305,7 @@ sap.ui.define(
           qtyAward: quantity,
           price,
           netPrice: price,
+          grossPrice: grossPrice,
           currency,
           icms: null,
           ipi: null,

@@ -16,7 +16,8 @@ sap.ui.define(
     "sap/ui/export/Spreadsheet",
     "sap/ui/export/library",
     "sap/ui/core/UIComponent",
-    "comparativemap/comparativemap/controller/prefs/DraftStore"
+    "comparativemap/comparativemap/controller/prefs/DraftStore",
+    "sap/ui/core/format/NumberFormat"
   ],
   function (
     Controller,
@@ -35,7 +36,8 @@ sap.ui.define(
     Spreadsheet,
     exportLibrary,
     UIComponent,
-    Drafts
+    Drafts,
+    NumberFormat
   ) {
     "use strict";
     const EdmType = exportLibrary.EdmType;
@@ -301,8 +303,8 @@ sap.ui.define(
                 if (inner && inner.clearSelection && !inner.getPlugins?.().some(p => p.isA("sap.ui.table.plugins.SelectionPlugin"))) {
                   try { inner.clearSelection(); } catch (e) { }
                 }
-              } 
-              
+              }
+
               MessageBox.warning("Selecione pelo menos 1 item para poder simular o pedido.");
               return; // Para a execução aqui de forma limpa
             }
@@ -358,25 +360,73 @@ sap.ui.define(
 
             console.log("📤 [SIMULAR] Requests gerados (Payload):", requests);
 
-            // --- Validação Header/Items (Mantida do seu código original) ---
+            // --- Validação Header/Items ---
             const headerMissing = [];
             const itemMissing = [];
+
             requests.forEach((req, ridx) => {
               const h = req.header || {};
-              const nomeForn = h.vendor ? `Forn. ${h.vendor}` : `Requisição #${ridx + 1}`;
 
-              // Validações básicas para não chamar BAPI à toa
+              // Normaliza código do fornecedor da BAPI
+              const vendorCode = (h.vendor && String(h.vendor).replace(/\D/g, "").replace(/^0+/, "")) || "";
+
+              let nomeForn = `Requisição #${ridx + 1}`;
+
+              if (vendorCode) {
+                // Procura a linha original que tenha o mesmo fornecedor
+                const rowEncontrada = rows.find((r) => {
+                  const cand = [
+                    r.lifnr,
+                    r.LIFNR,
+                    r.supplierId,
+                    r.SupplierId,
+                    r.supplierID,
+                    r.suppliercode,
+                    r.supplierCode,
+                    r.SupplierCode,
+                    r.vendor,
+                    r.Vendor,
+                    r.vendorId,
+                    r.VendorId
+                  ].find(Boolean); // pega o primeiro que existir
+
+                  if (!cand) return false;
+
+                  const rowCode = String(cand).replace(/\D/g, "").replace(/^0+/, "");
+                  return rowCode === vendorCode;
+                });
+
+                if (rowEncontrada) {
+                  // pega o nome do fornecedor da linha original
+                  nomeForn =
+                    rowEncontrada.supplierName ||
+                    rowEncontrada.SupplierName ||
+                    rowEncontrada.vendorName ||
+                    rowEncontrada.VendorName ||
+                    `Fornecedor ${vendorCode}`;
+                } else {
+                  nomeForn = `Fornecedor ${vendorCode}`;
+                }
+              }
+
+              // A partir daqui, todas as mensagens vão usar o NOME do fornecedor
+              const tag = `Fornecedor: ${nomeForn}`;
+
               if (!h.docType) headerMissing.push(`${tag}: Tipo Pedido (docType)`);
               if (!h.compCode) headerMissing.push(`${tag}: Empresa (compCode)`);
               if (!h.purchOrg) headerMissing.push(`${tag}: Org. Compras`);
               if (!h.vendor) headerMissing.push(`${tag}: Fornecedor`);
 
               (req.items || []).forEach((it, i) => {
-                const itemRef = `Item ${(i + 1) * 10}`;
-                const itTag = `${nomeForn} > ${itemRef}`;
+                const itemRef = `Item ${(i + 1)}`;
+                const itTag = `Fornecedor: ${nomeForn} > ${itemRef}`;
 
-                if (!it.plant) itemMissing.push(`${itTag}: Falta Centro (plant)`);
-                if (!it.quantity || it.quantity <= 0) itemMissing.push(`${itTag}: Qtd inválida`);
+                if (!it.plant) {
+                  itemMissing.push(`${itTag}: Centro (plant) não informado.`);
+                }
+                if (!it.quantity || it.quantity <= 0) {
+                  itemMissing.push(`${itTag}: Quantidade inválida.`);
+                }
               });
             });
 
@@ -522,7 +572,7 @@ sap.ui.define(
         },
 
 
-                async onAwardDirect() {
+        async onAwardDirect() {
           const view = this.getView();
           const vm = view.getModel("vm");
           const resModel = view.getModel("res");
@@ -679,6 +729,40 @@ sap.ui.define(
             return;
           }
           this._doExport(rows, view.getModel("vm")?.getProperty("/header/docId") || "Simulacao", true);
+        },
+
+        formatNumberOrDash: function (sValue) {
+          // Se for nulo, undefined ou string vazia, retorna o traço
+          if (sValue === null || sValue === undefined || sValue === "") {
+            return "-";
+          }
+
+          // Tenta converter para float
+          var fValue = parseFloat(sValue);
+
+          // Se não for número válido (NaN), retorna traço
+          if (isNaN(fValue)) {
+            return "-";
+          }
+
+          // Instancia o formatador (Padrão brasileiro: ponto no milhar, vírgula no decimal)
+          var oFloatFormat = NumberFormat.getFloatInstance({
+            minFractionDigits: 2,
+            maxFractionDigits: 2,
+            groupingEnabled: true,
+            groupingSeparator: ".",
+            decimalSeparator: ","
+          });
+
+          return oFloatFormat.format(fValue);
+        },
+
+        formatCleanMaterial: function (sValue) {
+          if (!sValue) {
+            return "-";
+          }
+          
+          return sValue.replace(/^\d+\s+/, "");
         },
 
         _doExport(rows, docId, isResult = false) {
