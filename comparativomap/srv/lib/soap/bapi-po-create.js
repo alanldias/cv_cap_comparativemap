@@ -187,110 +187,83 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itensRaw = toArray(r0?.POITEM?.item);
   const schedRaw = toArray(r0?.POSCHEDULE?.item);
 
-  // Lê a tabela de condições
+  // 1. Lê a tabela de CONDIÇÕES (Preços e taxas brutas)
   const condRaw = toArray(r0?.POCOND?.item);
 
-  // -----------------------------------------------------------
-  // >>> COLOQUE O SEU CÓDIGO DE DEBUG AQUI (ENTRE ESTAS LINHAS)
-  // -----------------------------------------------------------
-  condRaw.forEach(c => {
-    // Filtra apenas o ICM2 para não poluir o log
-    if (c.COND_TYPE === 'ICM2') {
-        console.log("=== RAIO-X DO ICM2 ===");
-        
-        // 1. Tenta identificar a Taxa direta
-        console.log("Taxa (COND_VALUE):", c.COND_VALUE); 
-        
-        // 2. Tenta identificar o Montante Total
-        console.log("Montante/Valor Calculado:", c.COND_VAL || "N/A"); 
-        
-        // 3. Tenta identificar a Base
-        console.log("Base de Cálculo (COND_BASE):", c.COND_BASE || "N/A");
+  // 2. Lê a tabela de IMPOSTOS (Onde o valor fiscal real deve estar)
+  // Nota: Dependendo da versão do driver SOAP, pode vir como POTAX ou POITEMTAX.
+  const taxRaw = toArray(r0?.POTAX?.item || r0?.POITEMTAX?.item);
 
-        // 4. LISTA TUDO
-        console.log(">> TODAS AS PROPRIEDADES:", JSON.stringify(c, null, 2));
-        
-        console.log("======================");
-    }
-  });
-  // -----------------------------------------------------------
-  // >>> FIM DO DEBUG
-  // -----------------------------------------------------------
+  // --- DEBUG DE IMPOSTOS ---
+  if (taxRaw.length > 0) {
+      console.log(">>> [POTAX] TABELA DE IMPOSTOS ENCONTRADA:", JSON.stringify(taxRaw, null, 2));
+  } else {
+      console.log(">>> [POTAX] TABELA DE IMPOSTOS VEIO VAZIA. USANDO POCOND.");
+  }
+  // -------------------------
 
-  // Log para conferência (pode comentar depois)
-  console.log(">>> DEBUG CONDITIONS:", JSON.stringify(
-    condRaw
-      .filter(c => Number(c.COND_VALUE) !== 0)
-      .map(c => ({
-        kRaw: c.PO_ITEM || c.ITM_NUMBER,
-        k: normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER),
-        t: c.COND_TYPE,
-        v: c.COND_VALUE
-      })),
-    null,
-    2
-  ));
+  // Função auxiliar para somar impostos via POTAX (Se existir)
+  const taxesFromPotax = taxRaw.reduce((acc, t) => {
+      const key = normalizeItemKey(t.PO_ITEM || t.ITEM_NO); // Confirme se o campo é ITEM_NO ou PO_ITEM no log
+      if (!key) return acc;
+      if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
+      const condType = (t.COND_TYPE || t.KSCHL || "").toUpperCase(); // Nome do imposto
+      const taxValue = Number(t.TAX_VAL || t.WMWST || 0); // Valor monetário do imposto
+
+      // Mapeamento de condições TAXBRA (Ajuste conforme seu sistema)
+      // ICMS
+      if (["ICM2", "ICMS", "BICM", "BX13", "MWST"].includes(condType)) {
+          acc[key].icms += taxValue;
+      }
+      // IPI
+      if (["IPI1", "IPI2", "IPIS", "ZIPI", "BX23"].includes(condType)) {
+          acc[key].ipi += taxValue;
+      }
+      return acc;
+  }, {});
+
+
+  // Agrupa condições por Item (POCOND) - Sua lógica antiga (Fallback)
   const conditionsByItem = condRaw.reduce((acc, c) => {
     const key = normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER);
     if (!key) return acc;
 
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-    // --- INÍCIO DA NOVA LÓGICA DE CÁLCULO ---
-    
-    // 1. Pega os dados brutos
+    // --- NOVA LÓGICA DE CÁLCULO (MANTIDA DO SEU CÓDIGO) ---
     const type = (c.COND_TYPE || "").toUpperCase();
-    const calcType = (c.CALCTYPCON || "").toUpperCase(); // A=%, B=Fixo (Montante)
-    const condValue = Number(c.COND_VALUE || 0);         // O valor da condição (Taxa ou Montante)
-    const baseValue = Number(c.CONBASEVAL || 0);         // A base de cálculo
+    const calcType = (c.CALCTYPCON || "").toUpperCase(); 
+    const condValue = Number(c.COND_VALUE || 0);         
+    const baseValue = Number(c.CONBASEVAL || 0);         
 
     let valorCalculado = 0;
 
-    // 2. Decide como calcular
     if (calcType === 'A') {
-        // TIPO A: Porcentagem (ex: 18.00 significa 18%)
-        // Cálculo: (Base * Taxa) / 100
         valorCalculado = (baseValue * condValue) / 100;
     } 
     else if (calcType === 'B') {
-        // TIPO B: Montante Fixo (ex: 1000.00 significa R$ 1000)
-        // Assume-se que é o valor monetário direto
         valorCalculado = condValue;
     }
     else {
-        // Outros tipos ou se não tiver tipo definido, 
-        // tenta usar o COND_VALUE direto (comportamento padrão antigo)
         valorCalculado = condValue; 
     }
 
-    // Se o resultado não for número válido, ignora
     if (!Number.isFinite(valorCalculado)) return acc;
 
-    // 3. Soma nos acumuladores corretos (ICMS)
-    if ([
-      "BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS",
-      "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"
-    ].includes(type)) {
+    // Soma nos acumuladores
+    if (["BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS", "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"].includes(type)) {
       acc[key].icms += valorCalculado;
     }
-    
-    // 4. Soma nos acumuladores corretos (IPI) - Reaproveita o valorCalculado
-    if ([
-      "BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"
-    ].includes(type)) {
+    if (["BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"].includes(type)) {
       acc[key].ipi += valorCalculado;
     }
-    
-    // --- FIM DA NOVA LÓGICA ---
-
     return acc;
   }, {});
 
   const schedByItem = schedRaw.reduce((acc, s) => {
     const key = normalizeItemKey(s.PO_ITEM);
     if (!key) return acc;
-
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
       deliveryDate: s.DELIV_DATE,
@@ -302,9 +275,19 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itens = itensRaw.map((i) => {
     const key = normalizeItemKey(i.PO_ITEM);
 
-    const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
+    // DECISÃO IMPORTANTE:
+    // Se POTAX (taxRaw) veio preenchida, usa ela. Senão, usa o cálculo manual do POCOND.
+    let taxes = { icms: 0, ipi: 0 };
+    
+    if (taxRaw.length > 0 && taxesFromPotax[key]) {
+        // Usa a tabela de impostos calculada pelo SAP
+        taxes = taxesFromPotax[key];
+    } else {
+        // Usa o cálculo manual baseado nas condições
+        taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
+    }
 
-    console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
+    // console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
 
     return {
       poItem: key,
@@ -319,7 +302,8 @@ function normalizeBapiResult(r0, testRunFlag) {
       ncm: i.BRAS_NBM,
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
-
+      
+      // Valores Finais
       icmsValue: taxes.icms,
       ipiValue: taxes.ipi
     };
