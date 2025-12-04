@@ -191,7 +191,6 @@ function normalizeBapiResult(r0, testRunFlag) {
   const condRaw = toArray(r0?.POCOND?.item);
 
   // 2. Lê a tabela de IMPOSTOS (Onde o valor fiscal real deve estar)
-  // Nota: Dependendo da versão do driver SOAP, pode vir como POTAX ou POITEMTAX.
   const taxRaw = toArray(r0?.POTAX?.item || r0?.POITEMTAX?.item);
 
   // --- DEBUG DE IMPOSTOS ---
@@ -200,23 +199,21 @@ function normalizeBapiResult(r0, testRunFlag) {
   } else {
       console.log(">>> [POTAX] TABELA DE IMPOSTOS VEIO VAZIA. USANDO POCOND.");
   }
-  // -------------------------
 
-  // Função auxiliar para somar impostos via POTAX (Se existir)
+  // A. Tenta ler via POTAX (Tabela oficial de impostos calculados)
   const taxesFromPotax = taxRaw.reduce((acc, t) => {
-      const key = normalizeItemKey(t.PO_ITEM || t.ITEM_NO); // Confirme se o campo é ITEM_NO ou PO_ITEM no log
+      const key = normalizeItemKey(t.PO_ITEM || t.ITEM_NO);
       if (!key) return acc;
       if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-      const condType = (t.COND_TYPE || t.KSCHL || "").toUpperCase(); // Nome do imposto
-      const taxValue = Number(t.TAX_VAL || t.WMWST || 0); // Valor monetário do imposto
+      // ATENÇÃO: Aqui as variáveis são condType e taxValue
+      const condType = (t.COND_TYPE || t.KSCHL || "").toUpperCase(); 
+      const taxValue = Number(t.TAX_VAL || t.WMWST || 0); 
 
-      // Mapeamento de condições TAXBRA (Ajuste conforme seu sistema)
-      // ICMS
-      if (["ICM2", "ICMS", "BICM", "BX13", "MWST"].includes(condType)) {
+      // Mapeamento POTAX
+      if (["ICM2", "ICMS", "BICM", "BX13", "MWST", "ZICO"].includes(condType)) {
           acc[key].icms += taxValue;
       }
-      // IPI
       if (["IPI1", "IPI2", "IPIS", "ZIPI", "BX23"].includes(condType)) {
           acc[key].ipi += taxValue;
       }
@@ -224,14 +221,15 @@ function normalizeBapiResult(r0, testRunFlag) {
   }, {});
 
 
-  // Agrupa condições por Item (POCOND) - Sua lógica antiga (Fallback)
+  // B. Fallback: Lê via POCOND (Condições manuais/Pricing)
+  // É AQUI QUE O SEU CÓDIGO ESTÁ CAINDO E ONDE O FILTRO É CRUCIAL
   const conditionsByItem = condRaw.reduce((acc, c) => {
     const key = normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER);
     if (!key) return acc;
 
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-    // --- NOVA LÓGICA DE CÁLCULO (MANTIDA DO SEU CÓDIGO) ---
+    // 1. Pega os dados brutos
     const type = (c.COND_TYPE || "").toUpperCase();
     const calcType = (c.CALCTYPCON || "").toUpperCase(); 
     const condValue = Number(c.COND_VALUE || 0);         
@@ -239,6 +237,7 @@ function normalizeBapiResult(r0, testRunFlag) {
 
     let valorCalculado = 0;
 
+    // 2. Decide como calcular (A=% ou B=Fixo)
     if (calcType === 'A') {
         valorCalculado = (baseValue * condValue) / 100;
     } 
@@ -251,13 +250,23 @@ function normalizeBapiResult(r0, testRunFlag) {
 
     if (!Number.isFinite(valorCalculado)) return acc;
 
-    // Soma nos acumuladores
-    if (["BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS", "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"].includes(type)) {
+    // 3. Soma nos acumuladores COM FILTRO (AQUI ESTÁ A CORREÇÃO PRINCIPAL)
+    
+    // Lista ICMS Limpa (Sem ICM2, ICM3, ICOF que são valores de pauta/estatísticos)
+    if ([
+      "BICM", "BX13", "ICMS", "MWST", 
+      "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"
+    ].includes(type)) {
       acc[key].icms += valorCalculado;
     }
-    if (["BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"].includes(type)) {
+    
+    // Lista IPI Limpa (Sem IPI2, IPIS)
+    if ([
+      "BIPI", "BX23", "IPI", "ZIPI"
+    ].includes(type)) {
       acc[key].ipi += valorCalculado;
     }
+    
     return acc;
   }, {});
 
@@ -276,18 +285,15 @@ function normalizeBapiResult(r0, testRunFlag) {
     const key = normalizeItemKey(i.PO_ITEM);
 
     // DECISÃO IMPORTANTE:
-    // Se POTAX (taxRaw) veio preenchida, usa ela. Senão, usa o cálculo manual do POCOND.
     let taxes = { icms: 0, ipi: 0 };
     
     if (taxRaw.length > 0 && taxesFromPotax[key]) {
-        // Usa a tabela de impostos calculada pelo SAP
+        // Prioridade 1: Tabela de Impostos do SAP
         taxes = taxesFromPotax[key];
     } else {
-        // Usa o cálculo manual baseado nas condições
+        // Prioridade 2: Cálculo manual das condições
         taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
     }
-
-    // console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
 
     return {
       poItem: key,
@@ -303,7 +309,6 @@ function normalizeBapiResult(r0, testRunFlag) {
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
       
-      // Valores Finais
       icmsValue: taxes.icms,
       ipiValue: taxes.ipi
     };
