@@ -190,6 +190,33 @@ function normalizeBapiResult(r0, testRunFlag) {
   // Lê a tabela de condições
   const condRaw = toArray(r0?.POCOND?.item);
 
+  // -----------------------------------------------------------
+  // >>> COLOQUE O SEU CÓDIGO DE DEBUG AQUI (ENTRE ESTAS LINHAS)
+  // -----------------------------------------------------------
+  condRaw.forEach(c => {
+    // Filtra apenas o ICM2 para não poluir o log
+    if (c.COND_TYPE === 'ICM2') {
+        console.log("=== RAIO-X DO ICM2 ===");
+        
+        // 1. Tenta identificar a Taxa direta
+        console.log("Taxa (COND_VALUE):", c.COND_VALUE); 
+        
+        // 2. Tenta identificar o Montante Total
+        console.log("Montante/Valor Calculado:", c.COND_VAL || "N/A"); 
+        
+        // 3. Tenta identificar a Base
+        console.log("Base de Cálculo (COND_BASE):", c.COND_BASE || "N/A");
+
+        // 4. LISTA TUDO
+        console.log(">> TODAS AS PROPRIEDADES:", JSON.stringify(c, null, 2));
+        
+        console.log("======================");
+    }
+  });
+  // -----------------------------------------------------------
+  // >>> FIM DO DEBUG
+  // -----------------------------------------------------------
+
   // Log para conferência (pode comentar depois)
   console.log(">>> DEBUG CONDITIONS:", JSON.stringify(
     condRaw
