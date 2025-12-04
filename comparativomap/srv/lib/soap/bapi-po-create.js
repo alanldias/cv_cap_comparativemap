@@ -231,32 +231,58 @@ function normalizeBapiResult(r0, testRunFlag) {
     2
   ));
 
-  // Agrupa condições por Item
   const conditionsByItem = condRaw.reduce((acc, c) => {
     const key = normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER);
     if (!key) return acc;
 
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-    const val = Number(c.COND_VALUE || 0);
-    if (!Number.isFinite(val)) return acc;
-
+    // --- INÍCIO DA NOVA LÓGICA DE CÁLCULO ---
+    
+    // 1. Pega os dados brutos
     const type = (c.COND_TYPE || "").toUpperCase();
+    const calcType = (c.CALCTYPCON || "").toUpperCase(); // A=%, B=Fixo (Montante)
+    const condValue = Number(c.COND_VALUE || 0);         // O valor da condição (Taxa ou Montante)
+    const baseValue = Number(c.CONBASEVAL || 0);         // A base de cálculo
 
-    // ICMS
+    let valorCalculado = 0;
+
+    // 2. Decide como calcular
+    if (calcType === 'A') {
+        // TIPO A: Porcentagem (ex: 18.00 significa 18%)
+        // Cálculo: (Base * Taxa) / 100
+        valorCalculado = (baseValue * condValue) / 100;
+    } 
+    else if (calcType === 'B') {
+        // TIPO B: Montante Fixo (ex: 1000.00 significa R$ 1000)
+        // Assume-se que é o valor monetário direto
+        valorCalculado = condValue;
+    }
+    else {
+        // Outros tipos ou se não tiver tipo definido, 
+        // tenta usar o COND_VALUE direto (comportamento padrão antigo)
+        valorCalculado = condValue; 
+    }
+
+    // Se o resultado não for número válido, ignora
+    if (!Number.isFinite(valorCalculado)) return acc;
+
+    // 3. Soma nos acumuladores corretos (ICMS)
     if ([
       "BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS",
       "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"
     ].includes(type)) {
-      acc[key].icms += val;
+      acc[key].icms += valorCalculado;
     }
-
-    // IPI
+    
+    // 4. Soma nos acumuladores corretos (IPI) - Reaproveita o valorCalculado
     if ([
       "BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"
     ].includes(type)) {
-      acc[key].ipi += val;
+      acc[key].ipi += valorCalculado;
     }
+    
+    // --- FIM DA NOVA LÓGICA ---
 
     return acc;
   }, {});
