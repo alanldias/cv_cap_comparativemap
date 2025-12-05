@@ -22,20 +22,55 @@ sap.ui.define([
     console.error(sContextMsg || "Erro na aplicação:", e);
 
     const msgOriginal = _getOriginalMessage(e);
-    
-    // 🟢 CORREÇÃO: Define a variável 'lower' aqui para usar mais abaixo
     const lower = msgOriginal.toLowerCase();
 
+    // 👇 tenta descobrir o status HTTP real
+    const statusCode =
+      e?.statusCode ||
+      e?.httpStatusCode ||
+      e?.cause?.status ||
+      e?.cause?.statusCode ||
+      e?.cause?.response?.statusCode;
+
+    // -------------------------------------------------------------------------
+    // 0. ERRO DE AUTORIZAÇÃO (403 / FORBIDDEN / ROLE)
+    // -------------------------------------------------------------------------
+    const isForbidden =
+      statusCode === 403 ||
+      lower.includes("forbidden") ||
+      lower.includes("insufficient scope") ||
+      lower.includes("missing authorization") ||
+      lower.includes("not authorized");
+
+    if (isForbidden) {
+      // mensagem amigável pro usuário
+      const textoUsuario =
+        "Você não tem permissão para acessar esta funcionalidade.\n\n" +
+        "Se você precisa desse acesso, entre em contato com o suporte " +
+        "ou com o responsável pelo sistema informando a role necessária.";
+
+      const detalhesTecnicos =
+        mOptions.details ||
+        _extractDetails(e) ||
+        `Erro técnico original: ${msgOriginal}`;
+
+      MessageBox.error(textoUsuario, {
+        title: "Acesso não permitido",
+        details: detalhesTecnicos,      // 👈 aqui aparece o Forbidden / 403
+        contentWidth: "640px"
+      });
+      return;
+    }
+
     // --- 1. DETECÇÃO DE FALHA DE INFRAESTRUTURA / CONEXÃO (PRODUÇÃO & LOCAL) ---
-    // Palavras-chave que indicam que o SAP/BAPI está inacessível
     const isConnectionError = 
-        msgOriginal.includes("Could not find service binding") || // Erro local/config
-        msgOriginal.includes("destination service is not bound") || // Erro local/config
-        msgOriginal.includes("Bad Gateway") ||  // Erro 502 (Cloud Connector off)
-        msgOriginal.includes("502") ||          // Erro 502 (Generico)
-        msgOriginal.includes("504") ||          // Erro 504 (Timeout/Lentidão)
+        msgOriginal.includes("Could not find service binding") ||
+        msgOriginal.includes("destination service is not bound") ||
+        msgOriginal.includes("Bad Gateway") ||
+        msgOriginal.includes("502") ||
+        msgOriginal.includes("504") ||
         msgOriginal.includes("500") ||
-        msgOriginal.includes("NetworkError") || // Queda de internet
+        msgOriginal.includes("NetworkError") ||
         msgOriginal.includes("Failed to fetch") ||
         msgOriginal.includes("Connection refused");
 
@@ -50,19 +85,18 @@ sap.ui.define([
             "Por favor, tente novamente em alguns instantes ou contate o suporte de TI.",
             { 
                 title: "Sistema Indisponível",
-                details: "Erro Técnico Original:\n" + msgOriginal // Opcional: para o suporte ver o erro real
+                details: "Erro Técnico Original:\n" + msgOriginal
             }
         );
         return;
     }
-    // -----------------------------------------------------------------------------
 
     // --- 2. TRATAMENTO DE SESSÃO EXPIRADA (RELOAD OBRIGATÓRIO) ---
     const isSessionExpired = 
-        lower.includes("$batch failed") ||           
-        lower.includes("401") ||                      
-        msgOriginal.includes("Unauthorized") ||       
-        msgOriginal.includes("Could not load metadata"); 
+        lower.includes("$batch failed") ||
+        String(statusCode) === "401" ||
+        lower.includes("unauthorized") ||
+        lower.includes("could not load metadata");
 
     if (isSessionExpired) {
       MessageBox.warning(
@@ -76,15 +110,12 @@ sap.ui.define([
       );
       return;
     }
-    
+
     // --- 3. MENSAGENS LIMPAS (VALIDAÇÕES DE NEGÓCIO) ---
-    
-    // Lista de palavras ou símbolos que indicam "Erro de Negócio" (Dados, Validação, etc)
     const isBusinessError = msgOriginal.includes("⚠️") || 
                             msgOriginal.includes("TaxCode") || 
                             msgOriginal.includes("•");
 
-    // Verifica erros técnicos (Stack trace, JSON...)
     const pareceErroTecnico = !isBusinessError && (
                               msgOriginal.includes("Error:") || 
                               msgOriginal.includes("{") || 
@@ -93,7 +124,6 @@ sap.ui.define([
     let text = "";
 
     if (isBusinessError) {
-       // Limpeza visual
        let msgLimpa = msgOriginal
            .replace(/MAT=/g, "Material: ")
            .replace(/Plant=/g, "Centro: ")
@@ -101,7 +131,6 @@ sap.ui.define([
            .replace(/Supplier=/g, "Fornecedor: ")
            .replace(/\|/g, "   "); 
 
-       // Monta o texto final
        text = sContextMsg ? `${sContextMsg}\n\n${msgLimpa}` : msgLimpa;
     } 
     else if (pareceErroTecnico) {
@@ -112,7 +141,6 @@ sap.ui.define([
        text = sContextMsg ? `${sContextMsg}\n\n${msgOriginal}` : msgOriginal;
     }
 
-    // Exibe
     if (!mOptions.showDetailsPanel) {
       MessageBox.error(text, mOptions.messageBoxSettings || {});
       return;

@@ -34,14 +34,17 @@ const makePoItem = (idx) =>
 module.exports = function () {
   const { FilterViews } = this.entities;
 
-  const ensureMapViewer = (req) => {
-    if (!req.user || !req.user.is("MapViewer")) {
+  const ensureMAP_VIEWER = (req) => {
+    console.log("[AUTH DEBUG] user.id  =", req.user.id);
+    console.log("[AUTH DEBUG] roles    =", req.user.roles);
+    console.log("[AUTH DEBUG] attr     =", req.user.attr);
+    if (!req.user || !req.user.is("MAP_VIEWER")) {
       return req.error(403, "Você não tem autorização para acessar o Mapa Comparativo.");
     }
   };
 
   this.on("SaveView", async (req) => {
-    ensureMapViewer(req);
+    ensureMAP_VIEWER(req);
     const {
       name,
       docId = null,
@@ -75,7 +78,7 @@ module.exports = function () {
   });
 
   this.on("GetQuotes", async (req) => {
-    ensureMapViewer(req);
+    ensureMAP_VIEWER(req);
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
 
@@ -209,7 +212,7 @@ module.exports = function () {
   });
 
   this.on("CreateScenario", async (req) => {
-    ensureMapViewer(req);
+    ensureMAP_VIEWER(req);
     const { eventId, title, scenarioType, supplierBids } = req.data || {};
     if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
     if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
@@ -269,7 +272,7 @@ module.exports = function () {
   });
 
   this.on("simularPO", async (req) => {
-    ensureMapViewer(req);
+    ensureMAP_VIEWER(req);
     const {
       requests = [],
       concurrency,       // concorrência entre fornecedores (mapWithConcurrency)
@@ -352,7 +355,7 @@ module.exports = function () {
         for (const it of items) {
           // Garante conversão para number (aceita price ou netPrice dependendo do seu payload)
           const p = Number(it.price !== undefined ? it.price : it.netPrice);
-          
+
           if (!Number.isFinite(p) || p <= 0.000001) {
             throw new Error(
               `Bloqueio de Segurança: O item (Material: ${it.material || 'N/A'}, PO Item: ${it.poItem}) ` +

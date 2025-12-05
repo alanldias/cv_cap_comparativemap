@@ -44,7 +44,7 @@ sap.ui.define(
         })
           .then((oResponse) => {
             if (oResponse.status === 403) {
-              // usuário NÃO tem o scope MapViewer → manda para tela de acesso negado
+              // usuário NÃO tem o scope MAP_VIEWER → manda para tela de acesso negado
               oRouter.navTo("RouteUnauthorized");
             } else if (!oResponse.ok) {
               // erro técnico (500, 502, etc.) → avisa, mas não é erro de permissão

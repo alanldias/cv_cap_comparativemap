@@ -4,7 +4,7 @@
 
   "scopes": [
     {
-      "name": "$XSAPPNAME.MapViewer",
+      "name": "$XSAPPNAME.MAP_VIEWER",
       "description": "Acesso ao Mapa Comparativo (Ariba/S4)"
     }
   ],
@@ -16,13 +16,13 @@
       "name": "MAP_VIEWER",
       "description": "Usuários autorizados a acessar o Mapa Comparativo",
       "scope-references": [
-        "$XSAPPNAME.MapViewer"
+        "$XSAPPNAME.MAP_VIEWER"
       ]
     }
   ],
 
   "oauth2-configuration": {
-    "token-validity": 900,
+    "token-validity": 1800,
     "redirect-uris": [
       "*.cf.br10.hana.ondemand.com",
       "c-vale---ea-cvale00002-qas---hana-cloud-comparativomap-srv.cfapps.br10.hana.ondemand.com",
