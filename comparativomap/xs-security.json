@@ -1,9 +1,26 @@
 {
-  "xsappname": "comparativomap-cvale-qas",
+  "xsappname": "comparativemap-cvale-qas",
   "tenant-mode": "dedicated",
-  "scopes": [],
+
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.MapViewer",
+      "description": "Acesso ao Mapa Comparativo (Ariba/S4)"
+    }
+  ],
+
   "attributes": [],
-  "role-templates": [],
+
+  "role-templates": [
+    {
+      "name": "MAP_VIEWER",
+      "description": "Usuários autorizados a acessar o Mapa Comparativo",
+      "scope-references": [
+        "$XSAPPNAME.MapViewer"
+      ]
+    }
+  ],
+
   "oauth2-configuration": {
     "token-validity": 900,
     "redirect-uris": [
@@ -14,5 +31,6 @@
       "https://*.applicationstudio.cloud.sap/**"
     ]
   },
+
   "authorities-inheritance": false
 }

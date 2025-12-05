@@ -1,0 +1,22 @@
+<mvc:View
+  controllerName="comparativemap.comparativemap.controller.helpers.Unauthorized"
+  xmlns:mvc="sap.ui.core.mvc"
+  xmlns:m="sap.m">
+
+  <m:Page id="headerUnauthorized" showHeader="false">
+    <m:VBox
+        id="vBoxUnauthorized"
+      justifyContent="Center"
+      alignItems="Center"
+      class="sapUiLargeMargin">
+      
+      <!-- <core:Icon id="_IDGenIcon" src="sap-icon://error" size="4rem"/> -->
+      <m:Title id="_IDGenTitle1" text="Acesso negado" level="H2" class="sapUiSmallMarginTop"/>
+      <m:Text id="_IDGenText"
+        text="Você não possui permissão para acessar o Mapa Comparativo. 
+              Em caso de dúvida, entre em contato com o time de TI / Segurança." 
+        class="sapUiSmallMarginTop sapUiSmallMarginBottom"                            
+        textAlign="Center"/>
+    </m:VBox>
+  </m:Page>
+</mvc:View>

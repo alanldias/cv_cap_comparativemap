@@ -5,7 +5,11 @@
     "type": "application",
     "i18n": {
       "bundleUrl": "i18n/i18n.properties",
-      "supportedLocales": ["", "en", "pt"]
+      "supportedLocales": [
+        "",
+        "en",
+        "pt"
+      ]
     },
     "applicationVersion": {
       "version": "0.0.1"
@@ -107,13 +111,26 @@
         {
           "name": "RouteComparativeMap",
           "pattern": ":?query:",
-          "target": ["TargetComparativeMap"]
+          "target": [
+            "TargetComparativeMap"
+          ]
+        },
+        {
+          "name": "RouteUnauthorized",
+          "pattern": "unauthorized",
+          "target": [
+            "TargetUnauthorized"
+          ]
         }
       ],
       "targets": {
         "TargetComparativeMap": {
           "id": "ComparativeMap",
           "name": "ComparativeMap"
+        },
+        "TargetUnauthorized": {
+          "id": "Unauthorized",
+          "name": "Unauthorized"
         }
       }
     },

@@ -34,7 +34,14 @@ const makePoItem = (idx) =>
 module.exports = function () {
   const { FilterViews } = this.entities;
 
+  const ensureMapViewer = (req) => {
+    if (!req.user || !req.user.is("MapViewer")) {
+      return req.error(403, "Você não tem autorização para acessar o Mapa Comparativo.");
+    }
+  };
+
   this.on("SaveView", async (req) => {
+    ensureMapViewer(req);
     const {
       name,
       docId = null,
@@ -68,6 +75,7 @@ module.exports = function () {
   });
 
   this.on("GetQuotes", async (req) => {
+    ensureMapViewer(req);
     const { docId } = req.data || {};
     if (!docId) return req.error(400, "Parâmetro 'docId' é obrigatório.");
 
@@ -201,6 +209,7 @@ module.exports = function () {
   });
 
   this.on("CreateScenario", async (req) => {
+    ensureMapViewer(req);
     const { eventId, title, scenarioType, supplierBids } = req.data || {};
     if (!eventId) return req.error(400, "Parâmetro 'eventId' é obrigatório.");
     if (!Array.isArray(supplierBids) || supplierBids.length === 0) {
@@ -260,6 +269,7 @@ module.exports = function () {
   });
 
   this.on("simularPO", async (req) => {
+    ensureMapViewer(req);
     const {
       requests = [],
       concurrency,       // concorrência entre fornecedores (mapWithConcurrency)

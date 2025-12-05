@@ -757,12 +757,41 @@ sap.ui.define(
           return oFloatFormat.format(fValue);
         },
 
+        formatIntegerOrDash: function (sValue) {
+          if (sValue === null || sValue === undefined || sValue === "") {
+            return "-";
+          }
+
+          var fValue = parseFloat(sValue);
+
+          if (isNaN(fValue)) {
+            return "-";
+          }
+
+          var oIntegerFormat = NumberFormat.getFloatInstance({
+            minFractionDigits: 0,
+            maxFractionDigits: 0,
+            groupingEnabled: true,
+            groupingSeparator: "."
+          });
+
+          return oIntegerFormat.format(fValue);
+        },
+
         formatCleanMaterial: function (sValue) {
           if (!sValue) {
             return "-";
           }
-          
-          return sValue.replace(/^\d+\s+/, "");
+
+          const match = sValue.match(/^(\d+)\s+(.+)/);
+
+          if (match) {
+            const sCodigo = match[1];
+            const sDescricao = match[2];
+            return `${sDescricao} (${sCodigo})`;
+          }
+
+          return sValue;
         },
 
         _doExport(rows, docId, isResult = false) {

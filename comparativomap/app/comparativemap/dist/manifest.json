@@ -118,12 +118,23 @@
           "target": [
             "TargetComparativeMap"
           ]
+        },
+        {
+          "name": "RouteUnauthorized",
+          "pattern": "unauthorized",
+          "target": [
+            "TargetUnauthorized"
+          ]
         }
       ],
       "targets": {
         "TargetComparativeMap": {
           "id": "ComparativeMap",
           "name": "ComparativeMap"
+        },
+        "TargetUnauthorized": {
+          "id": "Unauthorized",
+          "name": "Unauthorized"
         }
       }
     },
