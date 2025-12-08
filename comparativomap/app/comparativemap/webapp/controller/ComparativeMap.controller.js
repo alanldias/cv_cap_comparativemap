@@ -121,15 +121,6 @@ sap.ui.define(
                 return;
               }
 
-              // 🟠 Outros erros → falha técnica (não é problema de role)
-              if (!oResponse.ok) {
-                console.error("[ComparativeMap] technical error on Ping()", oResponse.status);
-                MessageBox.error(
-                  "Falha técnica ao validar seu acesso ao Mapa Comparativo. Tente novamente ou contate o suporte."
-                );
-                return;
-              }
-
               // ✅ 2xx → tem acesso → segue o fluxo normal da tela
               console.log("[ComparativeMap] access OK → offerRestoreOnEnter");
               Drafts.offerRestoreOnEnter(this);
