@@ -204,7 +204,8 @@ service service {
   // --------------------------------------
   action   simularPO(requests: array of SimulacaoPORequest,
                      concurrency: Integer default 4)           returns array of SimulacaoPOResult;
-
+                     
+  function Ping() returns String;
 
                      
 

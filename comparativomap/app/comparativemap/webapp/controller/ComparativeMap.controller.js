@@ -83,9 +83,55 @@ sap.ui.define(
         },
 
         // Disparado toda vez que a rota "RouteComparativeMap" é ativada
-        _onRouteMatched() {
-          console.log("[ComparativeMap] route matched → offerRestoreOnEnter");
-          Drafts.offerRestoreOnEnter(this);
+        _onRouteMatched: function () {
+          console.log("[ComparativeMap] route matched → checking access...");
+
+          const view = this.getView();
+          const oRouter = UIComponent.getRouterFor(this);
+          const oModel = view.getModel(); // OData V4 principal
+
+          if (!oModel) {
+            MessageBox.error(
+              "Não foi possível acessar o modelo de dados para validar seu acesso ao Mapa Comparativo."
+            );
+            oRouter.navTo("RouteUnauthorized");
+            return;
+          }
+
+          // 🌐 Deixa o UI5 dizer qual é a URL do serviço (boa prática SAP)
+          let sServiceUrl = oModel.sServiceUrl || "/odata/v4/service/";
+          if (!sServiceUrl.endsWith("/")) {
+            sServiceUrl += "/";
+          }
+          const sPingUrl = sServiceUrl + "Ping()";
+
+          console.log("[ComparativeMap] calling Ping at:", sPingUrl);
+
+          fetch(sPingUrl, {
+            method: "GET",
+            headers: {
+              Accept: "application/json"
+            }
+          })
+            .then((oResponse) => {
+              // 🔴 Sem autorização → vai para a tela de Acesso Negado
+              if (oResponse.status === 401 || oResponse.status === 403) {
+                console.warn("[ComparativeMap] access denied (", oResponse.status, ") → RouteUnauthorized");
+                oRouter.navTo("RouteUnauthorized");
+                return;
+              }
+
+              // ✅ 2xx → tem acesso → segue o fluxo normal da tela
+              console.log("[ComparativeMap] access OK → offerRestoreOnEnter");
+              Drafts.offerRestoreOnEnter(this);
+            })
+            .catch((e) => {
+              console.error("[ComparativeMap] network error on Ping()", e);
+              MessageBox.error(
+                "Não foi possível validar seu acesso ao Mapa Comparativo. Verifique sua conexão e tente novamente."
+              );
+              oRouter.navTo("RouteUnauthorized");
+            });
         },
 
         onExit() {
