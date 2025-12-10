@@ -15,7 +15,8 @@ sap.ui.define([], function () {
         { name: "currency", label: "Moeda", dataType: "sap.ui.model.type.String", path: "currency" },
         { name: "icms", label: "ICMS", dataType: "sap.ui.model.type.Float", path: "icms" },
         { name: "ipi", label: "IPI", dataType: "sap.ui.model.type.Float", path: "ipi" },
-        { name: "total", label: "Total", dataType: "sap.ui.model.type.Float", path: "total" },
+        { name: "totalLiquido", label: "Total Liquido", dataType: "sap.ui.model.type.Float", path: "totalLiquido" },
+        { name: "totalBruto", label: "Total Bruto", dataType: "sap.ui.model.type.Float", path: "totalBruto" },
         
         // Outros
         { name: "ncm", label: "NCM", dataType: "sap.ui.model.type.String", path: "ncm" },

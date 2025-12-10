@@ -76,11 +76,19 @@
                         <Text text="{path: 'res>ipi', formatter: '.formatNumberOrDash'}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColTotal" propertyKey="total" header="Total" width="9rem" hAlign="End">
+                    <mdct:Column id="resColTotalLiquido" propertyKey="totalLiquido" header="Total Liquido" width="9rem" hAlign="End">
                         <HBox width="100%" justifyContent="End" alignItems="Center">
                             <ObjectNumber 
-                                number="{path: 'res>total', formatter: '.formatNumberOrDash'}" 
-                                unit="{= ${res>total} ? ${res>currency} : '' }" />
+                                number="{path: 'res>totalLiquido', formatter: '.formatNumberOrDash'}" 
+                                unit="{= ${res>totalLiquido} ? ${res>currency} : '' }" />
+                        </HBox>
+                    </mdct:Column>
+
+                    <mdct:Column id="resColTotalBruto" propertyKey="totalBruto" header="Total Bruto" width="9rem" hAlign="End">
+                        <HBox width="100%" justifyContent="End" alignItems="Center">
+                            <ObjectNumber 
+                                number="{path: 'res>totalBruto', formatter: '.formatNumberOrDash'}" 
+                                unit="{= ${res>totalBruto} ? ${res>currency} : '' }" />
                         </HBox>
                     </mdct:Column>
 
