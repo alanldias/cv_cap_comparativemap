@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 2.6.5
+version: 2.6.9
 description: "A simple CAP project."
 
 modules:

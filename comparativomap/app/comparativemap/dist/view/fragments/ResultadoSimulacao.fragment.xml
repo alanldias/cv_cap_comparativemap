@@ -34,15 +34,15 @@
                     </mdct:Column>
 
                     <mdct:Column id="resColMat" propertyKey="materialCode" header="Material" width="10rem">
-                        <Text text="{path: 'res>materialCode', formatter: '.formatCleanMaterial'}" tooltip="{res>materialCode}" />
+                        <Text text="{path: 'res>materialCode', formatter: '.formatter.formatCleanMaterial'}" tooltip="{res>materialCode}" />
                     </mdct:Column>
 
                     <mdct:Column id="resColQtdOrig" propertyKey="originalQty" header="Qtd Original" width="7rem" hAlign="Center">
-                        <Text text="{path: 'res>originalQty', formatter: '.formatIntegerOrDash'}" />
+                        <Text text="{path: 'res>originalQty', formatter: '.formatter.formatIntegerOrDash'}" />
                     </mdct:Column>
 
                     <mdct:Column id="resColQtdSim" propertyKey="quantity" header="Qtd Simulada" width="7rem" hAlign="Center">
-                        <Text text="{path: 'res>quantity', formatter: '.formatIntegerOrDash'}" />
+                        <Text text="{path: 'res>quantity', formatter: '.formatter.formatIntegerOrDash'}" />
                     </mdct:Column>
 
                     <mdct:Column id="resColAward" propertyKey="qtyAward" header="Quantidade p/ Premiar" width="10rem" hAlign="Center">
@@ -56,12 +56,12 @@
                         </mdct:template>
                     </mdct:Column>
 
-                    <mdct:Column id="resColPreco" propertyKey="price" header="Preço Liquido" width="8rem" hAlign="End">
-                        <Text text="{path: 'res>price', formatter: '.formatNumberOrDash'}" />
+                    <mdct:Column id="resColPrecoLiquido" propertyKey="netPrice" header="Preço Liquido" width="8rem" hAlign="End">
+                        <Text text="{path: 'res>netPrice', formatter: '.formatter.formatNumberOrDash'}" />
                     </mdct:Column>
 
                     <mdct:Column id="resColPrecoBruto" propertyKey="grossPrice" header="Preço Bruto" width="8rem" hAlign="End">
-                        <Text text="{ path: 'res>grossPrice', formatter: '.formatNumberOrDash' }" />
+                        <Text text="{ path: 'res>grossPrice', formatter: '.formatter.formatNumberOrDash' }" />
                     </mdct:Column>
 
                     <mdct:Column id="resColMoeda" propertyKey="currency" header="Moeda" width="5rem">
@@ -69,18 +69,26 @@
                     </mdct:Column>
 
                     <mdct:Column id="resColIcms" propertyKey="icms" header="ICMS" width="7rem" hAlign="End">
-                        <Text text="{path: 'res>icms', formatter: '.formatNumberOrDash'}" />
+                        <Text text="{path: 'res>icms', formatter: '.formatter.formatNumberOrDash'}" />
                     </mdct:Column>
 
                     <mdct:Column id="resColIpi" propertyKey="ipi" header="IPI" width="7rem" hAlign="End">
-                        <Text text="{path: 'res>ipi', formatter: '.formatNumberOrDash'}" />
+                        <Text text="{path: 'res>ipi', formatter: '.formatter.formatNumberOrDash'}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColTotal" propertyKey="total" header="Total" width="9rem" hAlign="End">
+                    <mdct:Column id="resColTotalLiquido" propertyKey="totalLiquido" header="Total Liquido" width="9rem" hAlign="End">
                         <HBox width="100%" justifyContent="End" alignItems="Center">
                             <ObjectNumber 
-                                number="{path: 'res>total', formatter: '.formatNumberOrDash'}" 
-                                unit="{= ${res>total} ? ${res>currency} : '' }" />
+                                number="{path: 'res>totalLiquido', formatter: '.formatter.formatNumberOrDash'}" 
+                                unit="{= ${res>totalLiquido} ? ${res>currency} : '' }" />
+                        </HBox>
+                    </mdct:Column>
+
+                    <mdct:Column id="resColTotalBruto" propertyKey="totalBruto" header="Total Bruto" width="9rem" hAlign="End">
+                        <HBox width="100%" justifyContent="End" alignItems="Center">
+                            <ObjectNumber 
+                                number="{path: 'res>totalBruto', formatter: '.formatter.formatNumberOrDash'}" 
+                                unit="{= ${res>totalBruto} ? ${res>currency} : '' }" />
                         </HBox>
                     </mdct:Column>
 

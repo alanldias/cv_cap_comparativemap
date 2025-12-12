@@ -280,8 +280,8 @@ sap.ui.define(
 
         const quantity = Number(it?.quantidade || 0) || 0;
         const netPrice = Number(it?.netPrice || 0) || 0;
-        const totalLiquido = Number((price * quantity).toFixed(2));
-        const grossPrice = (src && src.price != null) ? Number(src.price) : 0;
+        const totalLiquido = Number((netPrice * quantity).toFixed(2));
+        const grossPrice = (src && src.netPrice != null) ? Number(src.netPrice) : 0;
         const totalBruto = Number((grossPrice * quantity).toFixed(2));
 
         const descricao = it?.descricao ?? "";

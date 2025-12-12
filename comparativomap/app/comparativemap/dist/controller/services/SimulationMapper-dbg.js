@@ -279,9 +279,10 @@ sap.ui.define(
             : (meta?.itemId ?? null);
 
         const quantity = Number(it?.quantidade || 0) || 0;
-        const price = Number(it?.netPrice || 0) || 0;
-        const total = Number((price * quantity).toFixed(2));
+        const netPrice = Number(it?.netPrice || 0) || 0;
+        const totalLiquido = Number((price * quantity).toFixed(2));
         const grossPrice = (src && src.price != null) ? Number(src.price) : 0;
+        const totalBruto = Number((grossPrice * quantity).toFixed(2));
 
         const descricao = it?.descricao ?? "";
         const ncm = it?.ncm ?? null;
@@ -303,15 +304,15 @@ sap.ui.define(
           originalQty,
           quantity,
           qtyAward: quantity,
-          price,
-          netPrice: price,
-          grossPrice: grossPrice,
+          netPrice,
+          grossPrice,
           currency,
 
           icms: it.icmsValue || 0,
           ipi: it.ipiValue || 0,
 
-          total,
+          totalLiquido,
+          totalBruto,
           itemId,
           invitationId,
           invitationEmail,
