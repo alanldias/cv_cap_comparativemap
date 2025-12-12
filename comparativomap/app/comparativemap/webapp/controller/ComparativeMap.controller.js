@@ -6,18 +6,13 @@ sap.ui.define(
     "comparativemap/comparativemap/controller/services/SimulationMapper",
     "comparativemap/comparativemap/controller/services/Dialogs",
     "comparativemap/comparativemap/controller/services/AwardService",
-    "comparativemap/comparativemap/controller/helpers/Debug",
     "comparativemap/comparativemap/controller/helpers/Formatters",
     "comparativemap/comparativemap/controller/helpers/ErrorHandler",
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "sap/ui/Device",
     "comparativemap/comparativemap/controller/helpers/buildRequestsBySupplier",
-    "sap/ui/export/Spreadsheet",
-    "sap/ui/export/library",
     "sap/ui/core/UIComponent",
-    "comparativemap/comparativemap/controller/prefs/DraftStore",
-    "sap/ui/core/format/NumberFormat"
+    "comparativemap/comparativemap/controller/prefs/DraftStore"
   ],
   function (
     Controller,
@@ -26,21 +21,15 @@ sap.ui.define(
     Mapper,
     Dialogs,
     AwardSvc,
-    Debug,
     Fmt,
     ErrorHandler,
     MessageToast,
     MessageBox,
-    Device,
     Build,
-    Spreadsheet,
-    exportLibrary,
     UIComponent,
-    Drafts,
-    NumberFormat
+    Drafts
   ) {
     "use strict";
-    const EdmType = exportLibrary.EdmType;
 
     return Controller.extend(
       "comparativemap.comparativemap.controller.ComparativeMap",
@@ -115,11 +104,11 @@ sap.ui.define(
           })
             .then((oResponse) => {
               // 🔴 Sem autorização → vai para a tela de Acesso Negado
-              if (oResponse.status === 401 || oResponse.status === 403) {
-                console.warn("[ComparativeMap] access denied (", oResponse.status, ") → RouteUnauthorized");
-                oRouter.navTo("RouteUnauthorized");
-                return;
-              }
+              // if (oResponse.status === 401 || oResponse.status === 403) {
+              //   console.warn("[ComparativeMap] access denied (", oResponse.status, ") → RouteUnauthorized");
+              //   oRouter.navTo("RouteUnauthorized");
+              //   return;
+              // }
 
               // ✅ 2xx → tem acesso → segue o fluxo normal da tela
               console.log("[ComparativeMap] access OK → offerRestoreOnEnter");
@@ -182,9 +171,6 @@ sap.ui.define(
               console.log(`💾 Salvando draft anterior (${oldDocId}) antes de trocar...`);
               Drafts.save(this, true);
             }
-
-            view.byId("vsdFilterBar")?.setVisible(false);
-            view.byId("vsdFilterLabel")?.setText("");
 
             // 2. Reset layout se não houver draft salvo
             const hasSavedDraft = Drafts.hasDraft(newDocId);
@@ -746,137 +732,6 @@ sap.ui.define(
 
           return modelFallback?.getProperty(pathFallback) || [];
         },
-
-        onExportExcel() {
-          const view = this.getView();
-          const vm = view.getModel("vm");
-          const tbl = view.byId("tblDocs");
-
-          const rows = this._collectRowsFromTable(tbl, "vm", vm, "/rows");
-          if (!rows.length) {
-            sap.m.MessageToast.show("Nada para exportar.");
-            return;
-          }
-          this._doExport(rows, vm?.getProperty("/header/docId") || "MapaComparativo");
-        },
-
-        onExportExcelRes() {
-          const view = this.getView();
-          const tbl = this._dlgRes?.getContent?.()[0];
-          const resModel = view.getModel("res");
-
-          if (!tbl || !resModel) {
-            sap.m.MessageToast.show("Janela de resultados não está aberta.");
-            return;
-          }
-          const rows = this._collectRowsFromTable(tbl, "res", resModel, "/rows");
-          if (!rows.length) {
-            sap.m.MessageToast.show("Nada para exportar.");
-            return;
-          }
-          this._doExport(rows, view.getModel("vm")?.getProperty("/header/docId") || "Simulacao", true);
-        },
-
-        formatNumberOrDash: function (sValue) {
-          // Se for nulo, undefined ou string vazia, retorna o traço
-          if (sValue === null || sValue === undefined || sValue === "") {
-            return "-";
-          }
-
-          // Tenta converter para float
-          var fValue = parseFloat(sValue);
-
-          // Se não for número válido (NaN), retorna traço
-          if (isNaN(fValue)) {
-            return "-";
-          }
-
-          // Instancia o formatador (Padrão brasileiro: ponto no milhar, vírgula no decimal)
-          var oFloatFormat = NumberFormat.getFloatInstance({
-            minFractionDigits: 2,
-            maxFractionDigits: 2,
-            groupingEnabled: true,
-            groupingSeparator: ".",
-            decimalSeparator: ","
-          });
-
-          return oFloatFormat.format(fValue);
-        },
-
-        formatIntegerOrDash: function (sValue) {
-          if (sValue === null || sValue === undefined || sValue === "") {
-            return "-";
-          }
-
-          var fValue = parseFloat(sValue);
-
-          if (isNaN(fValue)) {
-            return "-";
-          }
-
-          var oIntegerFormat = NumberFormat.getFloatInstance({
-            minFractionDigits: 0,
-            maxFractionDigits: 0,
-            groupingEnabled: true,
-            groupingSeparator: "."
-          });
-
-          return oIntegerFormat.format(fValue);
-        },
-
-        formatCleanMaterial: function (sValue) {
-          if (!sValue) {
-            return "-";
-          }
-
-          const match = sValue.match(/^(\d+)\s+(.+)/);
-
-          if (match) {
-            const sCodigo = match[1];
-            const sDescricao = match[2];
-            return `${sDescricao} (${sCodigo})`;
-          }
-
-          return sValue;
-        },
-
-        _doExport(rows, docId, isResult = false) {
-          const toNum = (v) => {
-            if (v == null || v === "") return null;
-            const n = Number(String(v).replace(/\./g, "").replace(",", "."));
-            return Number.isFinite(n) ? n : null;
-          };
-
-          const NUMERIC = isResult
-            ? ["originalQty", "quantity", "qtyAward", "price", "icms", "ipi", "total", "poItem"]
-            : ["quantity", "price", "mva", "Extrinsic_Aliquota_ICMS", "Extrinsic_ICMS_Apurado", "EXTENDEDPRICE", "Extrinsic_Aliquota_IPI"];
-
-          const data = rows.map(r => {
-            const out = { ...r };
-            NUMERIC.forEach(k => { if (k in out) out[k] = toNum(out[k]); });
-            return out;
-          });
-
-          const columns = isResult ? [
-            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
-            { label: "Item", property: "materialCode", type: EdmType.String, width: 16 },
-            { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
-            // ... adicione o resto das colunas de resultado
-          ] : [
-            { label: "Doc ID", property: "docId", type: EdmType.String, width: 12 },
-            { label: "Fornecedor", property: "supplierName", type: EdmType.String, width: 30 },
-            { label: "Item", property: "itemDescription", type: EdmType.String, width: 40 },
-            { label: "Qtd", property: "quantity", type: EdmType.Number, width: 12, scale: 0 },
-            { label: "Preço", property: "price", type: EdmType.Number, width: 12, scale: 2 },
-            // ... adicione o resto das colunas principais
-          ];
-
-          const fileName = `${isResult ? "Resultado" : "Comparativo"}_${docId}.xlsx`;
-          const sheet = new Spreadsheet({ workbook: { columns }, dataSource: data, fileName, worker: true });
-          sheet.build()
-            .then(() => sap.m.MessageToast.show(`Exportado: ${data.length} linha(s)`))
-            .finally(() => sheet.destroy());
-        }
       }
     );
   }

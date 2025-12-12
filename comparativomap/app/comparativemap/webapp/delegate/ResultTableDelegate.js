@@ -1,134 +1,185 @@
 sap.ui.define([
-    "sap/ui/mdc/TableDelegate",
-    "sap/ui/mdc/table/Column",
-    "sap/m/Text",
-    "sap/m/Input", // Usaremos Input simples ou StepInput
-    "sap/ui/mdc/FilterField",
-    "sap/ui/model/Filter",
-    "sap/ui/model/FilterOperator",
-    "sap/ui/model/Sorter",
-    "../model/ResultPropertyInfo" // <--- APONTA PARA O NOVO ARQUIVO
+  "sap/ui/mdc/TableDelegate",
+  "sap/ui/mdc/table/Column",
+  "sap/m/Text",
+  "sap/m/StepInput",
+  "sap/ui/mdc/FilterField",
+  "sap/ui/model/Filter",
+  "sap/ui/model/FilterOperator",
+  "sap/ui/model/Sorter",
+  "sap/ui/model/type/String",
+  "sap/ui/model/type/Float",
+  "sap/ui/model/type/Integer",
+  "comparativemap/comparativemap/model/ResultPropertyInfo"
 ], function (
-    TableDelegate,
-    TableColumn,
-    Text,
-    Input,
-    FilterField,
-    Filter,
-    FilterOperator,
-    Sorter,
-    ResultPropertyInfo // <--- Injetado aqui
+  TableDelegate,
+  TableColumn,
+  Text,
+  StepInput,
+  FilterField,
+  Filter,
+  FilterOperator,
+  Sorter,
+  TypeString,
+  TypeFloat,
+  TypeInteger,
+  ResultPropertyInfo
 ) {
-    "use strict";
+  "use strict";
 
-    const ResultTableDelegate = Object.assign({}, TableDelegate);
+  const ResultTableDelegate = Object.assign({}, TableDelegate);
 
-    // 1. Fetch Properties (Usa o arquivo novo)
-    ResultTableDelegate.fetchProperties = function (oTable) {
-        const aProps = (ResultPropertyInfo || []).map(p => Object.assign({}, p));
-        return Promise.resolve(aProps);
+  function _splitBindingPath(bindingPath, fallbackModel, fallbackPath) {
+    if (!bindingPath) return { model: fallbackModel, path: fallbackPath };
+
+    const s = String(bindingPath);
+    const idx = s.indexOf(">");
+    if (idx > -1) {
+      return { model: s.slice(0, idx), path: s.slice(idx + 1) || fallbackPath };
+    }
+    return { model: fallbackModel, path: s || fallbackPath };
+  }
+
+  function _makeType(dataType, isQty = false) {
+    const dt = String(dataType || "");
+    if (dt.includes("Integer")) return new TypeInteger();
+    if (dt.includes("Float")) {
+      const opts = isQty
+        ? { minFractionDigits: 0, maxFractionDigits: 0 }
+        : { minFractionDigits: 2, maxFractionDigits: 2 };
+      return new TypeFloat(opts);
+    }
+    return new TypeString();
+  }
+
+  function _getController(mPropertyBag) {
+    const v = mPropertyBag && mPropertyBag.view;
+    return v && v.getController ? v.getController() : null;
+  }
+
+  ResultTableDelegate.fetchProperties = function () {
+    return Promise.resolve((ResultPropertyInfo || []).map(p => ({ ...p })));
+  };
+
+  ResultTableDelegate.updateBindingInfo = function (oTable, oBindingInfo) {
+    const payload = oTable.getPayload && oTable.getPayload();
+    const bp = payload && payload.bindingPath;
+
+    const { model, path } = _splitBindingPath(bp, "res", "/rows");
+    oBindingInfo.model = model;
+    oBindingInfo.path = path;
+
+    const cond = (oTable.getFilterConditions && oTable.getFilterConditions()) || {};
+    const aAnd = [];
+
+    const opMap = {
+      EQ: FilterOperator.EQ,
+      NE: FilterOperator.NE,
+      GT: FilterOperator.GT,
+      GE: FilterOperator.GE,
+      LT: FilterOperator.LT,
+      LE: FilterOperator.LE,
+      BT: FilterOperator.BT,
+      Contains: FilterOperator.Contains,
+      StartsWith: FilterOperator.StartsWith,
+      EndsWith: FilterOperator.EndsWith
     };
 
-    // 2. Update Binding (Filtros e Sort básicos)
-    ResultTableDelegate.updateBindingInfo = function (oTable, oBindingInfo) {
-        // Assume sempre o model 'res' e o path '/rows' se não vier no payload
-        oBindingInfo.path = oBindingInfo.path || "/rows";
-        oBindingInfo.model = "res"; // Força o model res se necessário
+    Object.keys(cond).forEach((field) => {
+      const list = cond[field];
+      if (!Array.isArray(list) || !list.length) return;
 
-        // --- Lógica padrão de Filtros e Sort (Cópia do outro delegate) ---
-        const oFilterConditions = oTable.getFilterConditions();
-        const aFilters = [];
-        const mOp = {
-            EQ: FilterOperator.EQ, GT: FilterOperator.GT, GE: FilterOperator.GE,
-            LT: FilterOperator.LT, LE: FilterOperator.LE, BT: FilterOperator.BT,
-            Contains: FilterOperator.Contains, StartsWith: FilterOperator.StartsWith
-        };
+      const aOr = list.map(c => {
+        const op = opMap[c.operator] || FilterOperator.EQ;
+        const v1 = c.values && c.values.length ? c.values[0] : null;
+        const v2 = c.values && c.values.length > 1 ? c.values[1] : null;
+        return new Filter(field, op, v1, v2);
+      });
 
-        if (oFilterConditions) {
-            for (const sField in oFilterConditions) {
-                const aConditions = oFilterConditions[sField];
-                if (aConditions && aConditions.length > 0) {
-                    const aFieldFilters = aConditions.map(c => {
-                        const sOperator = mOp[c.operator] || FilterOperator.EQ;
-                        return new Filter(sField, sOperator, c.values[0], c.values.length > 1 ? c.values[1] : null);
-                    });
-                    aFilters.push(new Filter({ filters: aFieldFilters, and: false }));
-                }
-            }
-        }
-        oBindingInfo.filters = aFilters.length > 0 ? [new Filter({ filters: aFilters, and: true })] : [];
+      aAnd.push(new Filter({ and: false, filters: aOr }));
+    });
 
-        const oSortConditions = oTable.getSortConditions();
-        if (oSortConditions && oSortConditions.sorters) {
-            oBindingInfo.sorter = oSortConditions.sorters.map(s => new Sorter(s.name, s.descending));
-        }
-    };
+    oBindingInfo.filters = aAnd.length ? [new Filter({ and: true, filters: aAnd })] : [];
 
-    // 3. Add Item (Colunas visuais - MODEL 'res')
-    ResultTableDelegate.addItem = function (oTable, sPropertyName, mPropertyBag) {
-        const oProp = ResultPropertyInfo.find(p => p.name === sPropertyName);
+    const sortState = (oTable.getSortConditions && oTable.getSortConditions()) || {};
+    const sorters = Array.isArray(sortState.sorters) ? sortState.sorters : [];
+    oBindingInfo.sorter = sorters.map(s => new Sorter(s.name, !!s.descending, !!(s.grouped || s.group || s.isGrouped)));
+  };
+
+  ResultTableDelegate.addItem = function (oTable, sPropertyName, mPropertyBag) {
+    if (!sPropertyName) return Promise.resolve(null);
+
+    const oProp = (ResultPropertyInfo || []).find(p => p.name === sPropertyName);
+    if (!oProp) return Promise.resolve(null);
+
+    const ctrl = _getController(mPropertyBag);
+    const payload = oTable.getPayload && oTable.getPayload();
+    const bp = payload && payload.bindingPath;
+    const { model } = _splitBindingPath(bp, "res", "/rows");
+    const sPath = `${model}>${oProp.path || oProp.name}`;
+
+    return Promise.resolve().then(function () {
+      let template;
+
+      if (sPropertyName === "qtyAward") {
+        const fn = ctrl && typeof ctrl.onAwardQtyChangeRes === "function"
+          ? ctrl.onAwardQtyChangeRes.bind(ctrl)
+          : null;
+
+        template = new StepInput({
+          value: { path: sPath, type: _makeType(oProp.dataType, true) },
+          width: "75%",
+          textAlign: "Center",
+          step: 1,
+          change: fn || undefined
+        });
+      }
+      else if (String(oProp.dataType || "").includes("Float") || String(oProp.dataType || "").includes("Integer")) {
+        template = new Text({
+          text: { path: sPath, type: _makeType(oProp.dataType, false) },
+          wrapping: false,
+          textAlign: "End"
+        });
+      } else {
+        template = new Text({
+          text: { path: sPath, type: _makeType(oProp.dataType, false) },
+          wrapping: false,
+          tooltip: { path: sPath }
+        });
+      }
+
+      const col = new TableColumn(oTable.getId() + "--col-" + sPropertyName, {
+        propertyKey: sPropertyName,
+        header: oProp.label || sPropertyName,
+        template,
+        width: "10rem",
+        hAlign: (String(oProp.dataType || "").includes("Float") || String(oProp.dataType || "").includes("Integer")) ? "End" : "Begin"
+      });
+
+      if (oProp.visible === false && col.setVisible) col.setVisible(false);
+
+      return col;
+    });
+  };
+
+  ResultTableDelegate.getFilterDelegate = function () {
+    return {
+      addItem: function (oParent, sPropertyName) {
+        const oProp = (ResultPropertyInfo || []).find(p => p.name === sPropertyName);
         if (!oProp) return Promise.resolve(null);
 
-        return Promise.resolve().then(function () {
-            // Caminho fixo com 'res>'
-            const sPath = "res>" + oProp.path;
-            let oTemplate;
-
-            // Campo Editável de Premiação
-            if (sPropertyName === "qtyAward") {
-                oTemplate = new Input({
-                    value: { path: sPath, type: oProp.dataType },
-                    type: "Number",
-                    change: ".onAwardQtyChangeRes" // Função do controller
-                });
-            } 
-            // Floats (Dinheiro/Qtd)
-            else if (oProp.dataType === "sap.ui.model.type.Float") {
-                oTemplate = new Text({
-                    text: {
-                        path: sPath,
-                        type: oProp.dataType,
-                        formatOptions: { minFractionDigits: 2, maxFractionDigits: 2 }
-                    },
-                    textAlign: "End"
-                });
-            } 
-            // Padrão Texto
-            else {
-                oTemplate = new Text({
-                    text: { path: sPath, type: oProp.dataType },
-                    wrapping: false
-                });
-            }
-
-            return new TableColumn(oTable.getId() + "--col-" + sPropertyName, {
-                propertyKey: sPropertyName,
-                header: oProp.label,
-                template: oTemplate,
-                width: "10rem",
-                hAlign: (oProp.dataType === "sap.ui.model.type.Float") ? "End" : "Begin"
-            });
-        });
+        return Promise.resolve(new FilterField({
+          label: oProp.label,
+          dataType: oProp.dataType,
+          maxConditions: -1,
+          conditions: "{$filters>/conditions/" + sPropertyName + "}"
+        }));
+      },
+      fetchProperties: function () {
+        return Promise.resolve((ResultPropertyInfo || []).map(p => ({ ...p })));
+      }
     };
+  };
 
-    // 4. Filter Delegate
-    ResultTableDelegate.getFilterDelegate = function () {
-        return {
-            addItem: function (oParent, sPropertyName) {
-                const oProp = ResultPropertyInfo.find(p => p.name === sPropertyName);
-                if (!oProp) return Promise.resolve(null);
-                return Promise.resolve(new FilterField({
-                    conditions: "{$filters>/conditions/" + sPropertyName + "}",
-                    dataType: oProp.dataType,
-                    label: oProp.label,
-                    maxConditions: -1
-                }));
-            },
-            fetchProperties: function () {
-                return Promise.resolve((ResultPropertyInfo || []).map(p => Object.assign({}, p)));
-            }
-        };
-    };
-
-    return ResultTableDelegate;
+  return ResultTableDelegate;
 });

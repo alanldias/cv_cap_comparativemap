@@ -11,7 +11,8 @@ sap.ui.define([], function () {
         { name: "qtyAward", label: "Qtd Premiar", dataType: "sap.ui.model.type.Integer", path: "qtyAward" }, // Editável
         
         // Financeiro
-        { name: "price", label: "Preço Unit.", dataType: "sap.ui.model.type.Float", path: "price" },
+        { name: "netPrice", label: "Preço Liquido", dataType: "sap.ui.model.type.Float", path: "netPrice" },
+        { name: "grossPrice", label: "Preço Bruto", dataType: "sap.ui.model.type.Float", path: "grossPrice" },
         { name: "currency", label: "Moeda", dataType: "sap.ui.model.type.String", path: "currency" },
         { name: "icms", label: "ICMS", dataType: "sap.ui.model.type.Float", path: "icms" },
         { name: "ipi", label: "IPI", dataType: "sap.ui.model.type.Float", path: "ipi" },

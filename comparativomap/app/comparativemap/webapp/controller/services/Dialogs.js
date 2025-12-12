@@ -3,11 +3,9 @@ sap.ui.define(
     "sap/ui/model/json/JSONModel",
     "sap/m/MessageToast",
     "sap/m/MessageBox",
-    "sap/ui/core/Fragment",
-    "comparativemap/comparativemap/controller/components/ViewSettings"
+    "sap/ui/core/Fragment"
   ],
-  function (JSONModel, MessageToast, MessageBox, Fragment, ViewSettingsCmp) {
-
+  function (JSONModel, MessageToast, MessageBox, Fragment) {
     "use strict";
 
     function _pickDialog(root) {
@@ -18,120 +16,85 @@ sap.ui.define(
           : null;
     }
 
+    function _findParentDialog(ctrl) {
+      try {
+        let c = ctrl;
+        while (c && c.getParent && !(c.isA && c.isA("sap.m.Dialog"))) {
+          c = c.getParent();
+        }
+        return c && c.isA && c.isA("sap.m.Dialog") ? c : null;
+      } catch (e) {
+        return null;
+      }
+    }
+
     async function openResultDialog(view, rows, controller) {
+      // 1) garante model "res"
       let resModel = view.getModel("res");
-      if (!(resModel instanceof sap.ui.model.json.JSONModel)) {
-        resModel = new sap.ui.model.json.JSONModel({ header: {}, rows: [], totals: {} });
+      if (!(resModel instanceof JSONModel)) {
+        resModel = new JSONModel({ header: {}, rows: [], totals: {} });
         view.setModel(resModel, "res");
       }
-      // limite > total esperado
-      resModel.setSizeLimit(Math.max(10000, (rows?.length || 0)));
 
-      // aplica dados e força refresh (garante que o binding veja >100)
-      const safeRows = (rows || []).map(r => ({ ...r, qtyAward: r.qtyAward ?? Number(r.quantity) }));
+      const safeRows = (rows || []).map(r => ({
+        ...r,
+        qtyAward: r.qtyAward ?? Number(r.quantity) // default para premiar
+      }));
+
+      resModel.setSizeLimit(Math.max(10000, safeRows.length || 0));
       resModel.setProperty("/rows", safeRows);
-      resModel.refresh();  // <<< importante
+      resModel.refresh(true);
 
-
-      // 3) Fecha dialog antigo (mantido)
+      // 2) destrói dialog anterior (se existir)
       if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
-        try { controller._dlgRes.destroy(); } catch (e) { }
+        try { controller._dlgRes.destroy(); } catch (e) {}
         controller._dlgRes = null;
       }
 
-      // 4) Carrega fragment (mantido)
+      // 3) carrega fragment com ID único (escopo)
       const scopeId = view.createId("resDlg-" + Date.now());
-      const root = await sap.ui.core.Fragment.load({
+
+      const root = await Fragment.load({
         id: scopeId,
         name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
-        controller,
+        controller
       });
 
       const dlg = _pickDialog(root);
-      if (!dlg) {
-        throw new Error("O fragmento ResultadoSimulacao não tem um <Dialog> como root.");
-      }
+      if (!dlg) throw new Error("O fragmento ResultadoSimulacao não tem um <Dialog> como root.");
+
       view.addDependent(dlg);
       controller._dlgRes = dlg;
 
-      // 5) ViewSettings no FRAGMENT (mantida sua lógica)
-      try {
-        controller._prefsRes = {
-          filter: { fornecedor: [], nomeItem: [], moeda: [], centro: [], grupoMat: [], ncm: [], precoMin: null, precoMax: null },
-          sort: { key: null, desc: false },
-          group: { key: null, desc: false }
-        };
-
-        function getDistinctRes(path) {
-          const rows = view.getModel("res")?.getProperty("/rows") || [];
-          const set = new Set();
-          rows.forEach(r => {
-            const v = r?.[path];
-            if (v !== undefined && v !== null && v !== "") set.add(String(v));
-          });
-          return Array.from(set).sort((a, b) => a.localeCompare(b, "pt-BR"));
-        }
-
-        function findTableInFragment() {
-          return sap.ui.core.Fragment.byId(scopeId, "_IDGenTable2"); // mesmo id do seu XML
-        }
-
-        const mGroup = controller.mGroupFunctions || {
-          supplierName: (ctx) => {
-            const v = ctx.getProperty("supplierName") || "";
-            return { key: v || "__noSupplier__", text: v || "(Sem fornecedor)" };
-          },
-          itemId: (ctx) => {
-            const raw = ctx.getProperty("itemId") ?? ctx.getProperty("ItemId");
-            const v = raw == null ? "" : String(raw);
-            return { key: v || "__noItemId__", text: v ? `Item ${v}` : "(Sem ItemId)" };
-          }
-        };
-
-        controller._vsRes = ViewSettingsCmp.create(
-          dlg,
-          controller._prefsRes,
-          getDistinctRes,
-          mGroup,
-          findTableInFragment,
-          {
-            filterBarId: "resVsdFilterBar",
-            filterLabelId: "resVsdFilterLabel",
-            fragmentScopeId: scopeId
-          }
-        );
-
-        controller._vsRes.applyFiltersFromPrefs();
-        controller._vsRes.applyGroupSortFromPrefs();
-      } catch (e) {
-        console.warn("[Dialogs] ViewSettings (fragment) não inicializado:", e);
-      }
-
-
+      // 4) opcional: rebind da tabela do fragment quando abrir
+      dlg.attachAfterOpen(() => {
+        try {
+          const tblRes = Fragment.byId(scopeId, "tblRes");
+          if (tblRes && tblRes.rebind) tblRes.rebind();
+        } catch (e) {}
+      });
 
       dlg.attachAfterClose(() => {
-        try { dlg.destroy(); } catch (e) { }
+        try { dlg.destroy(); } catch (e) {}
         controller._dlgRes = null;
-        controller._vsRes = null;
       });
 
       dlg.open();
     }
 
-
     function closeAny(controller, evt) {
+      // tenta fechar o dialog do botão clicado
       try {
-        let ctrl = evt && evt.getSource ? evt.getSource() : null;
-        while (ctrl && ctrl.getParent && !(ctrl.isA && ctrl.isA("sap.m.Dialog"))) ctrl = ctrl.getParent();
-        if (ctrl && ctrl.isA && ctrl.isA("sap.m.Dialog")) {
-          ctrl.close();
-          return;
-        }
-      } catch (e) { }
-      controller._dlgRes && controller._dlgRes.close && controller._dlgRes.close();
-      controller._dlgAward && controller._dlgAward.close && controller._dlgAward.close();
-      controller._dlgSim && controller._dlgSim.close && controller._dlgSim.close();
-      controller._oSimDialog && controller._oSimDialog.close && controller._oSimDialog.close();
+        const src = evt && evt.getSource ? evt.getSource() : null;
+        const dlg = _findParentDialog(src);
+        if (dlg) return dlg.close();
+      } catch (e) {}
+
+      // fallback: fecha conhecidos
+      controller._dlgRes?.close?.();
+      controller._dlgAward?.close?.();
+      controller._dlgSim?.close?.();
+      controller._oSimDialog?.close?.();
     }
 
     function showBapiMessages(msgs) {
@@ -140,14 +103,17 @@ sap.ui.define(
         MessageToast.show("Simulação concluída. Sem mensagens da BAPI.");
         return;
       }
+
       const line = (m) => {
         const idnum = [m.id, m.number].filter(Boolean).join("/");
         const tag = m.type ? `[${m.type}]` : "[?]";
         return `${tag} ${m.message || ""}${idnum ? ` (${idnum})` : ""}`;
       };
+
       const text = arr.map(line).join("\n");
       const hasError = arr.some((m) => m.type === "E" || m.type === "A");
       const hasWarning = arr.some((m) => m.type === "W");
+
       if (hasError) MessageBox.error(text, { title: "Mensagens da BAPI" });
       else if (hasWarning) MessageBox.warning(text, { title: "Mensagens da BAPI" });
       else MessageBox.success(text, { title: "Mensagens da BAPI" });
@@ -158,7 +124,7 @@ sap.ui.define(
       MessageBox.error(text || "Ocorreu um erro.", {
         title: title || "Erro",
         details: detailStr,
-        contentWidth: "640px",
+        contentWidth: "640px"
       });
     }
 
