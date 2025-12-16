@@ -27,7 +27,12 @@
       data-sap-ui-libs="sap.m,sap.ui.layout,sap.ui.mdc"
       data-sap-ui-async="true"
       data-sap-ui-frame-options="trusted"
-    ></script>
+     data-sap-ui-flexibilityServices='[
+        {"connector": "KeyUserConnector", "url": "keyuser", "layers": ["CUSTOMER"]},
+        {"connector": "PersonalizationConnector", "url": "keyuser", "layers": ["USER"]}
+    ]'
+    >
+  </script>
   </head>
   <body class="sapUiBody sapUiSizeCompact" id="content">
     <div

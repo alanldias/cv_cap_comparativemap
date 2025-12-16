@@ -27,7 +27,15 @@
       data-sap-ui-libs="sap.m,sap.ui.layout,sap.ui.mdc"
       data-sap-ui-async="true"
       data-sap-ui-frame-options="trusted"
-    ></script>
+     data-sap-ui-flexibilityServices='[
+  {
+    "connector": "BtpServiceConnector",
+    "url": "/keyuser",
+    "layers": ["CUSTOMER","PUBLIC","USER"]
+  }
+]'
+    >
+  </script>
   </head>
   <body class="sapUiBody sapUiSizeCompact" id="content">
     <div

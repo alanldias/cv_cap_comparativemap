@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 2.7.1
+version: 3.0.4
 description: "A simple CAP project."
 
 modules:
@@ -74,6 +74,11 @@ modules:
       - name: comparativomap-destination
         parameters:
           content-target: true
+      - name: ui5-flexibility-keyuser
+        parameters:
+          service-key:
+            name: ui5flexkeyuserqas-key
+
     build-parameters:
       no-source: true
     parameters:
@@ -145,6 +150,11 @@ resources:
     parameters:
       service: html5-apps-repo
       service-plan: app-host
+
+  - name: ui5-flexibility-keyuser
+    type: org.cloudfoundry.existing-service
+    parameters:
+      service-name: ui5flexkeyuserqas    
 
 parameters:
   deploy_mode: html5-repo

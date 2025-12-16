@@ -25,7 +25,10 @@
                             text="Mapa Comparativo"
                             class="cabecalhoTexto" />
                     </HBox>
-                    <HBox id="hboxDireita">
+                    <HBox id="hboxDireita" alignItems="Center" justifyContent="End">
+                        <vm:VariantManagement
+                            id="vmTblDocs"
+                            for="tblDocs" />
                     </HBox>
                 </HBox>
             </Toolbar>

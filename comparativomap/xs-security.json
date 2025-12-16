@@ -2,6 +2,8 @@
   "xsappname": "comparativemap-cvale-qas",
   "tenant-mode": "dedicated",
 
+  "foreign-scope-references": ["uaa.user"],
+
   "scopes": [
     {
       "name": "$XSAPPNAME.MAP_VIEWER",
@@ -9,15 +11,16 @@
     }
   ],
 
-  "attributes": [],
-
   "role-templates": [
     {
       "name": "MAP_VIEWER",
       "description": "Usuários autorizados a acessar o Mapa Comparativo",
-      "scope-references": [
-        "$XSAPPNAME.MAP_VIEWER"
-      ]
+      "scope-references": ["$XSAPPNAME.MAP_VIEWER"]
+    },
+    {
+      "name": "TOKEN_EXCHANGE",
+      "description": "Permite OAuth2UserTokenExchange via Destination",
+      "scope-references": ["uaa.user"]
     }
   ],
 

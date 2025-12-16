@@ -27,6 +27,12 @@
       "destination": "ui5"
     },
     {
+      "source": "^/keyuser/(.*)$",
+      "target": "$1",
+      "service": "com.sap.ui.flex.cf.keyuser",
+      "endpoint": "keyuser"
+    },
+    {
       "source": "^(.*)$",
       "target": "$1",
       "service": "html5-apps-repo-rt",
