@@ -62,7 +62,8 @@
         "sap.ui.core": {},
         "sap.ui.layout": {},
         "sap.ui.mdc": {},
-        "sap.ui.fl": {}
+        "sap.ui.fl": {},
+        "sap.ui.rta": { "lazy": true }
       }
     },
     "contentDensities": {

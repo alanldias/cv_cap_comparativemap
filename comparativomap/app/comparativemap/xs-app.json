@@ -28,9 +28,11 @@
     },
     {
       "source": "^/keyuser/(.*)$",
-      "target": "$1",
+      "target": "/$1",
       "service": "com.sap.ui.flex.cf.keyuser",
-      "endpoint": "keyuser"
+      "endpoint": "keyuser",
+      "authenticationType": "xsuaa",
+      "csrfProtection": false
     },
     {
       "source": "^(.*)$",
