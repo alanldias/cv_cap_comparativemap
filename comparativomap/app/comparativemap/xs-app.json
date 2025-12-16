@@ -35,6 +35,14 @@
       "csrfProtection": false
     },
     {
+      "source": "^/flex/(.*)$",
+      "target": "/flex/$1",
+      "service": "com.sap.ui.flex.cf.keyuser",
+      "endpoint": "keyuser",
+      "authenticationType": "xsuaa",
+      "csrfProtection": false
+    },
+    {
       "source": "^(.*)$",
       "target": "$1",
       "service": "html5-apps-repo-rt",
