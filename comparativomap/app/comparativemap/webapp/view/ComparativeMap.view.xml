@@ -13,22 +13,23 @@
         <customHeader>
             <Toolbar id="toolbarCabecalhoTopo" class="cabecalhoTopo">
                 <HBox id="hboxCabecalho" width="100%" alignItems="Center" justifyContent="SpaceBetween">
-                    <HBox id="hboxEsquerda"  alignItems="Center" class="fundologo">
+                    <HBox id="hboxEsquerda"  alignItems="Center" class="fundologo" width="20%">
                         <Image id="logoTopo"
                             src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"
                             height="2rem"
                             width="auto"
                             class="sapUiTinyMarginBegin" />
                     </HBox>
-                    <HBox id="hboxCentro"  justifyContent="Center">
+                    <HBox id="hboxCentro"  justifyContent="Center" width="60%">
                         <Text id="tituloCabecalho"
                             text="Mapa Comparativo"
                             class="cabecalhoTexto" />
                     </HBox>
-                    <HBox id="hboxDireita" alignItems="Center" justifyContent="End">
+                    <HBox id="hboxDireita" alignItems="Center" justifyContent="End" width="20%">
                         <vm:VariantManagement
                             id="vmTblDocs"
-                            for="tblDocs" />
+                            for="tblDocs"
+                            />
                     </HBox>
                 </HBox>
             </Toolbar>

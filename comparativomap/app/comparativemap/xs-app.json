@@ -29,17 +29,13 @@
     {
       "source": "^/keyuser/(.*)$",
       "target": "/$1",
-      "service": "com.sap.ui.flex.cf.keyuser",
-      "endpoint": "keyuser",
-      "authenticationType": "xsuaa",
+      "destination": "BTP_UI5FLEX_QAS",
       "csrfProtection": false
     },
     {
       "source": "^/flex/(.*)$",
       "target": "/flex/$1",
-      "service": "com.sap.ui.flex.cf.keyuser",
-      "endpoint": "keyuser",
-      "authenticationType": "xsuaa",
+      "destination": "BTP_UI5FLEX_QAS",
       "csrfProtection": false
     },
     {
