@@ -82,9 +82,8 @@ function buildSmokePayload(header, items, schedules, testRun) {
         },
       ];
 
-  // Arrays para Itens e as novas CONDIÇÕES (POCOND)
   const poitem = [], poitemx = [];
-  const pocond = [], pocondx = []; // <--- Isso faltava no seu código
+  const pocond = [], pocondx = []; 
 
   itemList.forEach((it, i) => {
     const _po = Number(String(it.poItem ?? "").replace(/\D/g, ""));
@@ -95,7 +94,7 @@ function buildSmokePayload(header, items, schedules, testRun) {
 
     const rec = {
       PO_ITEM,
-      PO_PRICE: "1", // Importante ser 1 quando enviamos conditions manuais like PB00                           
+      PO_PRICE: "1",                        
       PLANT: it.plant,
       QUANTITY: String(Number(it.quantity ?? 0)),
       PO_UNIT: it.unit,
@@ -109,11 +108,10 @@ function buildSmokePayload(header, items, schedules, testRun) {
     poitem.push(rec);
     poitemx.push(markX(rec, { PO_ITEM }));
 
-    // >>> REINSERINDO A LÓGICA DO PB00 (ESSENCIAL PARA O CÁLCULO)
     if (it.netPrice != null) {
       const condRec = {
         PO_ITEM: PO_ITEM,
-        COND_TYPE: "PB00", // Código do preço bruto
+        COND_TYPE: "PB00", 
         COND_VALUE: String(it.netPrice),
         CURRENCY: header.currency || "BRL",
         CHANGE_ID: "I"
@@ -126,7 +124,6 @@ function buildSmokePayload(header, items, schedules, testRun) {
         CHANGE_ID: "X"
       });
     }
-    // <<< FIM LÓGICA PB00
   });
 
   const today = isoDate(new Date());
@@ -167,7 +164,6 @@ function buildSmokePayload(header, items, schedules, testRun) {
     POITEMX: { item: poitemx },
     POSCHEDULE: { item: posched },
     POSCHEDULEX: { item: poschedx },
-    // >>> Importante: Enviar as condições para o SAP
     POCOND: { item: pocond },
     POCONDX: { item: pocondx }
   };
@@ -183,61 +179,82 @@ function normalizeItemKey(v) {
 
 function normalizeBapiResult(r0, testRunFlag) {
   const toArray = (v) => (Array.isArray(v) ? v : v ? [v] : []);
+  
+  // =================================================================
+  // >>> NOVO: EXTRAÇÃO E LOG DO EXTENSIONOUT
+  // =================================================================
+  const extensionRaw = toArray(r0?.EXTENSIONOUT?.item);
+  
+  if (extensionRaw.length > 0) {
+    console.log("=================================================");
+    console.log(">>> [DEBUG] EXTENSIONOUT RECEBIDO DO SAP:");
+    console.log(JSON.stringify(extensionRaw, null, 2));
+    console.log("=================================================");
+  } else {
+    console.log(">>> [DEBUG] EXTENSIONOUT VEIO VAZIO.");
+  }
+  // =================================================================
+
   const headerRaw = r0?.EXPHEADER || {};
   const itensRaw = toArray(r0?.POITEM?.item);
   const schedRaw = toArray(r0?.POSCHEDULE?.item);
-
-  // Lê a tabela de condições
   const condRaw = toArray(r0?.POCOND?.item);
+  const taxRaw = toArray(r0?.POTAX?.item || r0?.POITEMTAX?.item);
 
-  // Log para conferência (pode comentar depois)
-  console.log(">>> DEBUG CONDITIONS:", JSON.stringify(
-    condRaw
-      .filter(c => Number(c.COND_VALUE) !== 0)
-      .map(c => ({
-        kRaw: c.PO_ITEM || c.ITM_NUMBER,
-        k: normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER),
-        t: c.COND_TYPE,
-        v: c.COND_VALUE
-      })),
-    null,
-    2
-  ));
+  // Lógica antiga mantida como Fallback por enquanto
+  const taxesFromPotax = taxRaw.reduce((acc, t) => {
+      const key = normalizeItemKey(t.PO_ITEM || t.ITEM_NO);
+      if (!key) return acc;
+      if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-  // Agrupa condições por Item
+      const condType = (t.COND_TYPE || t.KSCHL || "").toUpperCase(); 
+      const taxValue = Number(t.TAX_VAL || t.WMWST || 0); 
+
+      if (["ICM2", "ICMS", "BICM", "BX13", "MWST", "ZICO"].includes(condType)) {
+          acc[key].icms += taxValue;
+      }
+      if (["IPI1", "IPI2", "IPIS", "ZIPI", "BX23"].includes(condType)) {
+          acc[key].ipi += taxValue;
+      }
+      return acc;
+  }, {});
+
   const conditionsByItem = condRaw.reduce((acc, c) => {
     const key = normalizeItemKey(c.PO_ITEM || c.ITM_NUMBER);
     if (!key) return acc;
-
     if (!acc[key]) acc[key] = { icms: 0, ipi: 0 };
 
-    const val = Number(c.COND_VALUE || 0);
-    if (!Number.isFinite(val)) return acc;
-
     const type = (c.COND_TYPE || "").toUpperCase();
+    const calcType = (c.CALCTYPCON || "").toUpperCase(); 
+    const condValue = Number(c.COND_VALUE || 0);         
+    const baseValue = Number(c.CONBASEVAL || 0);         
 
-    // ICMS
-    if ([
-      "BICM", "BX13", "ICM1", "ICM2", "ICM3", "ICMS",
-      "MWST", "ICOF", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"
-    ].includes(type)) {
-      acc[key].icms += val;
+    let valorCalculado = 0;
+    if (calcType === 'A') {
+        valorCalculado = (baseValue * condValue) / 100;
+    } 
+    else if (calcType === 'B') {
+        valorCalculado = condValue;
+    }
+    else {
+        valorCalculado = condValue; 
     }
 
-    // IPI
-    if ([
-      "BIPI", "BX23", "IPI1", "IPI2", "IPIS", "IPI", "ZIPI"
-    ].includes(type)) {
-      acc[key].ipi += val;
-    }
+    if (!Number.isFinite(valorCalculado)) return acc;
 
+    if (["BICM", "BX13", "ICMS", "MWST", "ZCM8", "ZINB", "ZICO", "ZRED", "ZREI"].includes(type)) {
+      acc[key].icms += valorCalculado;
+    }
+    
+    if (["BIPI", "BX23", "IPI", "ZIPI"].includes(type)) {
+      acc[key].ipi += valorCalculado;
+    }
     return acc;
   }, {});
 
   const schedByItem = schedRaw.reduce((acc, s) => {
     const key = normalizeItemKey(s.PO_ITEM);
     if (!key) return acc;
-
     (acc[key] ||= []).push({
       schedLine: s.SCHED_LINE,
       deliveryDate: s.DELIV_DATE,
@@ -249,9 +266,12 @@ function normalizeBapiResult(r0, testRunFlag) {
   const itens = itensRaw.map((i) => {
     const key = normalizeItemKey(i.PO_ITEM);
 
-    const taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
-
-    console.log(`[TAX MATCH] Item ${key} -> ICMS: ${taxes.icms} | IPI: ${taxes.ipi}`);
+    let taxes = { icms: 0, ipi: 0 };
+    if (taxRaw.length > 0 && taxesFromPotax[key]) {
+        taxes = taxesFromPotax[key];
+    } else {
+        taxes = conditionsByItem[key] || { icms: 0, ipi: 0 };
+    }
 
     return {
       poItem: key,
@@ -266,7 +286,7 @@ function normalizeBapiResult(r0, testRunFlag) {
       ncm: i.BRAS_NBM,
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
-
+      
       icmsValue: taxes.icms,
       ipiValue: taxes.ipi
     };
@@ -301,6 +321,8 @@ function normalizeBapiResult(r0, testRunFlag) {
     itens,
     returnMessages: messages,
     mensagens: messages,
+    // ADICIONEI AQUI PARA VOCÊ PODER VER NO RETORNO DA API TAMBÉM SE QUISER
+    debugExtensionOut: extensionRaw 
   };
 }
 

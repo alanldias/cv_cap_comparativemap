@@ -1,6 +1,7 @@
 using comparativemap as comparativemap from '../db/schema';
 
 @path: '/odata/v4/service'
+// @requires: 'MAP_VIEWER'
 service service {
 
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
@@ -203,7 +204,8 @@ service service {
   // --------------------------------------
   action   simularPO(requests: array of SimulacaoPORequest,
                      concurrency: Integer default 4)           returns array of SimulacaoPOResult;
-
+                     
+  function Ping() returns String;
 
                      
 

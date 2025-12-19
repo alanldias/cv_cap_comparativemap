@@ -1,5 +1,8 @@
 sap.ui.define(
-  ["sap/ui/core/UIComponent", "comparativemap/comparativemap/model/models"],
+  [
+    "sap/ui/core/UIComponent",
+    "comparativemap/comparativemap/model/models"
+  ],
   (UIComponent, models) => {
     "use strict";
 
@@ -10,15 +13,15 @@ sap.ui.define(
       },
 
       init() {
-        // call the base component's init function
+        // chama o init padrão do UIComponent
         UIComponent.prototype.init.apply(this, arguments);
 
-        // set the device model
+        // set do device model
         this.setModel(models.createDeviceModel(), "device");
 
-        // enable routing
+        // inicializa o router
         this.getRouter().initialize();
-      },
+      }
     });
   },
 );

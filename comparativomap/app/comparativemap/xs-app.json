@@ -27,6 +27,18 @@
       "destination": "ui5"
     },
     {
+      "source": "^/keyuser/(.*)$",
+      "target": "/$1",
+      "destination": "BTP_UI5FLEX_QAS",
+      "csrfProtection": false
+    },
+    {
+      "source": "^/flex/(.*)$",
+      "target": "/flex/$1",
+      "destination": "BTP_UI5FLEX_QAS",
+      "csrfProtection": false
+    },
+    {
       "source": "^(.*)$",
       "target": "$1",
       "service": "html5-apps-repo-rt",

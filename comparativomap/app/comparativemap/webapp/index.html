@@ -1,41 +1,67 @@
 <!doctype html>
 <html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-    <title>C.Vale - Mapa Comparativo</title>
-    <link rel="icon" href="https://www.cvale.com.br/site/web-files/imagens/logos/favicon.png" type="imagem/png" />
-    <style>
-      html,
-      body,
-      body > div,
-      #container,
-      #container-uiarea {
-        height: 100%;
-      }
-    </style>
-    <script
-      id="sap-ui-bootstrap"
-      src="https://sapui5.hana.ondemand.com/1.139.0/resources/sap-ui-core.js"
-      data-sap-ui-theme="sap_horizon"
-      data-sap-ui-resource-roots='{
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+  <title>C.Vale - Mapa Comparativo</title>
+  <link rel="icon" href="https://www.cvale.com.br/site/web-files/imagens/logos/favicon.png" type="imagem/png" />
+  <style>
+    html,
+    body,
+    body>div,
+    #container,
+    #container-uiarea {
+      height: 100%;
+    }
+  </style>
+  <script>
+(function () {
+  // pega o "diretório" do app no HTML5 runtime: "/<GUID>/"
+  const basePath = location.pathname.replace(/[^\/]*$/, ""); 
+
+  function rewrite(url) {
+    if (typeof url !== "string") return url;
+
+    // Só mexe no que tá quebrando
+    if (url.startsWith("/flex/")) {
+      // vira "/<GUID>/keyuser/flex/..."
+      return basePath + "keyuser" + url;
+    }
+    return url;
+  }
+
+  // XHR (UI5 usa muito isso)
+  const origOpen = XMLHttpRequest.prototype.open;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    return origOpen.call(this, method, rewrite(url), ...rest);
+  };
+
+  // fetch (por via das dúvidas)
+  if (window.fetch) {
+    const origFetch = window.fetch.bind(window);
+    window.fetch = (input, init) => {
+      if (typeof input === "string") input = rewrite(input);
+      return origFetch(input, init);
+    };
+  }
+})();
+</script>
+  <script id="sap-ui-bootstrap" src="https://sapui5.hana.ondemand.com/1.139.0/resources/sap-ui-core.js"
+    data-sap-ui-theme="sap_horizon" data-sap-ui-resource-roots='{
             "comparativemap.comparativemap": "./"
-        }'
-      data-sap-ui-on-init="module:sap/ui/core/ComponentSupport"
-      data-sap-ui-compat-version="edge"
-      data-sap-ui-libs="sap.m,sap.ui.layout,sap.ui.mdc"
-      data-sap-ui-async="true"
-      data-sap-ui-frame-options="trusted"
-    ></script>
-  </head>
-  <body class="sapUiBody sapUiSizeCompact" id="content">
-    <div
-      data-sap-ui-component
-      data-name="comparativemap.comparativemap"
-      data-id="container"
-      data-settings='{"id" : "comparativemap.comparativemap"}'
-      data-handle-validation="true"
-    ></div>
-  </body>
+        }' data-sap-ui-on-init="module:sap/ui/core/ComponentSupport" data-sap-ui-compat-version="edge"
+    data-sap-ui-libs="sap.m,sap.ui.layout,sap.ui.mdc" data-sap-ui-async="true" data-sap-ui-frame-options="trusted"
+    data-sap-ui-flexibilityServices='[
+  {"connector":"BtpServiceConnector","url":"keyuser","layers":["USER","PUBLIC","CUSTOMER"]}
+]'>
+</script>
+</head>
+
+<body class="sapUiBody sapUiSizeCompact" id="content">
+  <div data-sap-ui-component data-name="comparativemap.comparativemap" data-id="container"
+    data-settings='{"id" : "comparativemap.comparativemap"}' data-handle-validation="true"></div>
+</body>
+
 </html>

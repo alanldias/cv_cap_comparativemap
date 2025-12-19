@@ -1,11 +1,31 @@
 {
-  "xsappname": "comparativomap-cvale-qas",
+  "xsappname": "comparativemap-cvale-qas",
   "tenant-mode": "dedicated",
-  "scopes": [],
-  "attributes": [],
-  "role-templates": [],
+
+  "foreign-scope-references": ["uaa.user"],
+
+  "scopes": [
+    {
+      "name": "$XSAPPNAME.MAP_VIEWER",
+      "description": "Acesso ao Mapa Comparativo (Ariba/S4)"
+    }
+  ],
+
+  "role-templates": [
+    {
+      "name": "MAP_VIEWER",
+      "description": "Usuários autorizados a acessar o Mapa Comparativo",
+      "scope-references": ["$XSAPPNAME.MAP_VIEWER"]
+    },
+    {
+      "name": "TOKEN_EXCHANGE",
+      "description": "Permite OAuth2UserTokenExchange via Destination",
+      "scope-references": ["uaa.user"]
+    }
+  ],
+
   "oauth2-configuration": {
-    "token-validity": 900,
+    "token-validity": 1800,
     "redirect-uris": [
       "*.cf.br10.hana.ondemand.com",
       "c-vale---ea-cvale00002-qas---hana-cloud-comparativomap-srv.cfapps.br10.hana.ondemand.com",
@@ -14,5 +34,6 @@
       "https://*.applicationstudio.cloud.sap/**"
     ]
   },
+
   "authorities-inheritance": false
 }

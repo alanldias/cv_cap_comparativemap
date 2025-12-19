@@ -1,178 +1,207 @@
 sap.ui.define([
-    "sap/ui/mdc/TableDelegate",
-    "sap/ui/mdc/table/Column",
-    "sap/m/Text",
-    "sap/m/StepInput",
-    "sap/ui/mdc/FilterField",
-    "sap/ui/model/Filter",
-    "sap/ui/model/FilterOperator",
-    "sap/ui/model/Sorter",
-    "comparativemap/comparativemap/model/PropertyInfo" // <--- SEU NOVO ARQUIVO AQUI
+  "sap/ui/mdc/TableDelegate",
+  "sap/ui/mdc/table/Column",
+  "sap/m/Text",
+  "sap/m/StepInput",
+  "sap/ui/mdc/FilterField",
+  "sap/ui/model/Filter",
+  "sap/ui/model/FilterOperator",
+  "sap/ui/model/Sorter",
+  "sap/ui/model/type/String",
+  "sap/ui/model/type/Float",
+  "sap/ui/model/type/Integer",
+  "comparativemap/comparativemap/model/PropertyInfo"
 ], function (
-    TableDelegate,
-    TableColumn,
-    Text,
-    StepInput,
-    FilterField,
-    Filter,
-    FilterOperator,
-    Sorter,
-    PropertyInfo // <--- Injetado aqui
+  TableDelegate,
+  TableColumn,
+  Text,
+  StepInput,
+  FilterField,
+  Filter,
+  FilterOperator,
+  Sorter,
+  TypeString,
+  TypeFloat,
+  TypeInteger,
+  PropertyInfo
 ) {
-    "use strict";
+  "use strict";
 
-    const JSONTableDelegate = Object.assign({}, TableDelegate);
+  const JSONTableDelegate = Object.assign({}, TableDelegate);
 
-    // ----------------------------------------------------------
-    // 1. Fetch Properties (Para o Dialog de Colunas/Filtros)
-    // ----------------------------------------------------------
-    JSONTableDelegate.fetchProperties = function (oTable) {
-        // O MDC exige que isso seja uma Promise que retorna um Array
-        // Clonamos o array para evitar mutação acidental
-        const aProps = (PropertyInfo || []).map(p => Object.assign({}, p));
-        return Promise.resolve(aProps);
+  function _splitBindingPath(bindingPath, fallbackModel, fallbackPath) {
+    if (!bindingPath) return { model: fallbackModel, path: fallbackPath };
+
+    // aceita "vm>/rows" ou "/rows"
+    const s = String(bindingPath);
+    const idx = s.indexOf(">");
+    if (idx > -1) {
+      return {
+        model: s.slice(0, idx),
+        path: s.slice(idx + 1) || fallbackPath
+      };
+    }
+    return { model: fallbackModel, path: s || fallbackPath };
+  }
+
+  function _makeType(dataType, isQty = false) {
+    const dt = String(dataType || "");
+    if (dt.includes("Integer")) return new TypeInteger();
+
+    if (dt.includes("Float")) {
+      // quantidade normalmente sem casas; preços com 2 casas.
+      const opts = isQty
+        ? { minFractionDigits: 0, maxFractionDigits: 0 }
+        : { minFractionDigits: 2, maxFractionDigits: 2 };
+      return new TypeFloat(opts);
+    }
+
+    return new TypeString();
+  }
+
+  function _getController(mPropertyBag) {
+    // mPropertyBag.view vem quando o MDC chama o delegate no contexto da View
+    const v = mPropertyBag && mPropertyBag.view;
+    return v && v.getController ? v.getController() : null;
+  }
+
+  JSONTableDelegate.fetchProperties = function () {
+    return Promise.resolve((PropertyInfo || []).map(p => ({ ...p })));
+  };
+
+  JSONTableDelegate.updateBindingInfo = function (oTable, oBindingInfo) {
+    const payload = oTable.getPayload && oTable.getPayload();
+    const bp = payload && payload.bindingPath;
+
+    const { model, path } = _splitBindingPath(bp, "vm", "/rows");
+    oBindingInfo.model = model;
+    oBindingInfo.path = path;
+
+    // -------- FILTERS --------
+    const cond = (oTable.getFilterConditions && oTable.getFilterConditions()) || {};
+    const aAnd = [];
+
+    const opMap = {
+      EQ: FilterOperator.EQ,
+      NE: FilterOperator.NE,
+      GT: FilterOperator.GT,
+      GE: FilterOperator.GE,
+      LT: FilterOperator.LT,
+      LE: FilterOperator.LE,
+      BT: FilterOperator.BT,
+      Contains: FilterOperator.Contains,
+      StartsWith: FilterOperator.StartsWith,
+      EndsWith: FilterOperator.EndsWith
     };
 
-    // ----------------------------------------------------------
-    // 2. Update Binding (Aplicar Filtros/Sort no JSONModel)
-    // ----------------------------------------------------------
-    JSONTableDelegate.updateBindingInfo = function (oTable, oBindingInfo) {
-        // Apenas chama a implementação padrão se você NÃO quiser controle total
-        // TableDelegate.updateBindingInfo.apply(this, arguments); 
+    Object.keys(cond).forEach((field) => {
+      const list = cond[field];
+      if (!Array.isArray(list) || !list.length) return;
 
-        // --- LÓGICA MANUAL PARA JSON MODEL ---
-        
-        // A) Path
-        const oPayload = oTable.getPayload();
-        if (oPayload && oPayload.bindingPath) {
-            oBindingInfo.path = oPayload.bindingPath;
-        }
+      const aOr = list.map(c => {
+        const op = opMap[c.operator] || FilterOperator.EQ;
+        const v1 = c.values && c.values.length ? c.values[0] : null;
+        const v2 = c.values && c.values.length > 1 ? c.values[1] : null;
+        return new Filter(field, op, v1, v2);
+      });
 
-        // B) Filtros
-        const oFilterConditions = oTable.getFilterConditions();
-        const aFilters = [];
-        const mOp = {
-            EQ: FilterOperator.EQ, GT: FilterOperator.GT, GE: FilterOperator.GE,
-            LT: FilterOperator.LT, LE: FilterOperator.LE, BT: FilterOperator.BT,
-            Contains: FilterOperator.Contains, StartsWith: FilterOperator.StartsWith, EndsWith: FilterOperator.EndsWith
-        };
+      aAnd.push(new Filter({ and: false, filters: aOr }));
+    });
 
-        if (oFilterConditions) {
-            for (const sField in oFilterConditions) {
-                const aConditions = oFilterConditions[sField];
-                if (aConditions && aConditions.length > 0) {
-                    // Mapeia cada condição do campo
-                    const aFieldFilters = aConditions.map(c => {
-                        const sOperator = mOp[c.operator] || FilterOperator.EQ;
-                        const v1 = c.values[0];
-                        const v2 = c.values.length > 1 ? c.values[1] : null;
-                        return new Filter(sField, sOperator, v1, v2);
-                    });
-                    // Agrupa com OR (mesmo campo = OR)
-                    aFilters.push(new Filter({ filters: aFieldFilters, and: false }));
-                }
-            }
-        }
+    oBindingInfo.filters = aAnd.length ? [new Filter({ and: true, filters: aAnd })] : [];
 
-        oBindingInfo.filters = [];
-        if (aFilters.length > 0) {
-            // Agrupa diferentes campos com AND
-            oBindingInfo.filters.push(new Filter({ filters: aFilters, and: true }));
-        }
+    // -------- SORT / GROUP --------
+    const sortState = (oTable.getSortConditions && oTable.getSortConditions()) || {};
+    const sorters = Array.isArray(sortState.sorters) ? sortState.sorters : [];
 
-        // C) Sort
-        const oSortConditions = oTable.getSortConditions();
-        oBindingInfo.sorter = [];
-        if (oSortConditions && oSortConditions.sorters && oSortConditions.sorters.length > 0) {
-            oBindingInfo.sorter = oSortConditions.sorters.map(s => new Sorter(s.name, s.descending));
-        }
-    };
+    oBindingInfo.sorter = sorters.map(s => {
+      // alguns builds marcam grouping no sorter (depende da versão)
+      const vGroup = !!(s.grouped || s.group || s.isGrouped);
+      return new Sorter(s.name, !!s.descending, vGroup);
+    });
+  };
 
-    // ----------------------------------------------------------
-    // 3. Add Item (Criar as colunas visuais)
-    // ----------------------------------------------------------
-    JSONTableDelegate.addItem = function (oTable, sPropertyName, mPropertyBag) {
-        // Proteção contra chamadas vazias que causam erro 'find'
-        if (!sPropertyName) return Promise.resolve(null);
+  JSONTableDelegate.addItem = function (oTable, sPropertyName, mPropertyBag) {
+    if (!sPropertyName) return Promise.resolve(null);
 
-        const oProp = PropertyInfo.find(p => p.name === sPropertyName);
-        
-        // Se não achou a propriedade, retorna null (evita quebra)
-        if (!oProp) {
-            console.error(`JSONTableDelegate: Propriedade '${sPropertyName}' não encontrada no PropertyInfo.`);
-            return Promise.resolve(null);
-        }
+    const oProp = (PropertyInfo || []).find(p => p.name === sPropertyName);
+    if (!oProp) return Promise.resolve(null);
 
-        return Promise.resolve().then(function () {
-            let oTemplate;
+    const ctrl = _getController(mPropertyBag);
 
-            // Lógica de Template Específica
-            if (sPropertyName === "quantity") {
-                oTemplate = new StepInput({
-                    value: { path: "vm>" + oProp.path, type: oProp.dataType },
-                    width: "100%",
-                    change: ".onQtyInlineChange"
-                });
-            } 
-            else if (oProp.dataType === "sap.ui.model.type.Float") {
-                oTemplate = new Text({
-                    text: {
-                        path: "vm>" + oProp.path,
-                        type: oProp.dataType,
-                        formatOptions: { minFractionDigits: 2, maxFractionDigits: 2 }
-                    },
-                    textAlign: "End",
-                    wrapping: false
-                });
-            } 
-            else {
-                oTemplate = new Text({
-                    text: { path: "vm>" + oProp.path, type: oProp.dataType },
-                    wrapping: true,
-                    maxLines: 2,
-                    tooltip: { path: "vm>" + oProp.path }
-                });
-            }
+    const payload = oTable.getPayload && oTable.getPayload();
+    const bp = payload && payload.bindingPath;
+    const { model } = _splitBindingPath(bp, "vm", "/rows");
+    const sPath = `${model}>${oProp.path || oProp.name}`;
 
-            const sId = oTable.getId() + "--col-" + sPropertyName;
-            const oColumn = new TableColumn(sId, {
-                propertyKey: sPropertyName,
-                header: oProp.label,
-                template: oTemplate,
-                width: "10rem",
-                hAlign: (oProp.dataType === "sap.ui.model.type.Float") ? "End" : "Begin"
-            });
+    return Promise.resolve().then(function () {
+      let template;
 
-            return oColumn;
+      // quantity editável (se o usuário recriar a coluna pelo P13N)
+      if (sPropertyName === "quantity") {
+        const fn = ctrl && typeof ctrl.onQtyInlineChange === "function"
+          ? ctrl.onQtyInlineChange.bind(ctrl)
+          : null;
+
+        template = new StepInput({
+          value: { path: sPath, type: _makeType(oProp.dataType, true) },
+          width: "75%",
+          textAlign: "Center",
+          step: 1,
+          change: fn || undefined
         });
+      }
+      // numéricos
+      else if (String(oProp.dataType || "").includes("Float") || String(oProp.dataType || "").includes("Integer")) {
+        template = new Text({
+          text: { path: sPath, type: _makeType(oProp.dataType, false) },
+          wrapping: false,
+          textAlign: "End"
+        });
+      }
+      // texto
+      else {
+        template = new Text({
+          text: { path: sPath, type: _makeType(oProp.dataType, false) },
+          wrapping: true,
+          maxLines: 2,
+          tooltip: { path: sPath }
+        });
+      }
+
+      const col = new TableColumn(oTable.getId() + "--col-" + sPropertyName, {
+        propertyKey: sPropertyName,
+        header: oProp.label || sPropertyName,
+        template: template,
+        width: "10rem",
+        hAlign: (String(oProp.dataType || "").includes("Float") || String(oProp.dataType || "").includes("Integer")) ? "End" : "Begin"
+      });
+
+      // se você usar visible no PropertyInfo
+      if (oProp.visible === false && col.setVisible) col.setVisible(false);
+
+      return col;
+    });
+  };
+
+  JSONTableDelegate.getFilterDelegate = function () {
+    return {
+      addItem: function (oParent, sPropertyName) {
+        const oProp = (PropertyInfo || []).find(p => p.name === sPropertyName);
+        if (!oProp) return Promise.resolve(null);
+
+        return Promise.resolve(new FilterField({
+          label: oProp.label,
+          dataType: oProp.dataType, // aqui pode ser string mesmo
+          maxConditions: oProp.maxConditions !== undefined ? oProp.maxConditions : -1,
+          conditions: "{$filters>/conditions/" + sPropertyName + "}"
+        }));
+      },
+      fetchProperties: function () {
+        return Promise.resolve((PropertyInfo || []).map(p => ({ ...p })));
+      }
     };
+  };
 
-    // ----------------------------------------------------------
-    // 4. Filter Delegate (Obrigatório para a engrenagem funcionar)
-    // ----------------------------------------------------------
-    JSONTableDelegate.getFilterDelegate = function () {
-        return {
-            addItem: function (oParent, sPropertyName) {
-                const oProp = PropertyInfo.find(p => p.name === sPropertyName);
-                if (!oProp) return Promise.resolve(null);
-
-                return Promise.resolve().then(function () {
-                    const oFilterField = new FilterField({
-                        conditions: "{$filters>/conditions/" + sPropertyName + "}",
-                        dataType: oProp.dataType,
-                        label: oProp.label,
-                        maxConditions: oProp.maxConditions !== undefined ? oProp.maxConditions : -1
-                    });
-                    return oFilterField;
-                });
-            },
-            // CRUCIAL: O FilterDelegate TAMBÉM precisa saber buscar as propriedades
-            fetchProperties: function (oTable) {
-                const aProps = (PropertyInfo || []).map(p => Object.assign({}, p));
-                return Promise.resolve(aProps);
-            }
-        };
-    };
-
-    return JSONTableDelegate;
+  return JSONTableDelegate;
 });

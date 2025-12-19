@@ -25,7 +25,10 @@
                             text="Mapa Comparativo"
                             class="cabecalhoTexto" />
                     </HBox>
-                    <HBox id="hboxDireita">
+                    <HBox id="hboxDireita" alignItems="Center" justifyContent="End">
+                        <vm:VariantManagement
+                            id="vmTblDocs"
+                            for="tblDocs" />
                     </HBox>
                 </HBox>
             </Toolbar>
@@ -129,7 +132,7 @@
                             </mdct:Column>
 
                             <mdct:Column id="colPreco" propertyKey="price" header="Preço do Item" width="8rem" hAlign="End">
-                                <Text text="{ path: 'vm>price', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>price', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colMoeda" propertyKey="currency" header="Moeda" width="5rem">
@@ -141,43 +144,43 @@
                             </mdct:Column>
 
                             <mdct:Column id="colMVA" propertyKey="mva" header="MVA (%)" width="6rem">
-                                <Text text="{ path: 'vm>mva', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>mva', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colAliqICMS" propertyKey="Extrinsic_Aliquota_ICMS" header="Alíquota ICMS (%)" width="9rem">
-                                <Text text="{ path: 'vm>Extrinsic_Aliquota_ICMS', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Aliquota_ICMS', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colICMSAp" propertyKey="Extrinsic_ICMS_Apurado" header="ICMS Apurado" width="8rem">
-                                <Text text="{ path: 'vm>Extrinsic_ICMS_Apurado', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_ICMS_Apurado', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colAliqIPI" propertyKey="Extrinsic_Aliquota_IPI" header="Alíquota IPI (%)" width="8rem">
-                                <Text text="{ path: 'vm>Extrinsic_Aliquota_IPI', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Aliquota_IPI', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colIPIAp" propertyKey="Extrinsic_IPI_Apurado" header="IPI Apurado" width="7rem">
-                                <Text text="{ path: 'vm>Extrinsic_IPI_Apurado', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_IPI_Apurado', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colAliqPIS" propertyKey="Extrinsic_Aliquota_PIS" header="Alíquota PIS (%)" width="8rem">
-                                <Text text="{ path: 'vm>Extrinsic_Aliquota_PIS', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Aliquota_PIS', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colPISAp" propertyKey="Extrinsic_PIS_Apurado" header="PIS Apurado" width="7rem">
-                                <Text text="{ path: 'vm>Extrinsic_PIS_Apurado', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_PIS_Apurado', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colAliqCOFINS" propertyKey="Extrinsic_Aliquota_Cofins" header="Alíq. COFINS (%)" width="9rem">
-                                <Text text="{ path: 'vm>Extrinsic_Aliquota_Cofins', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Aliquota_Cofins', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colCOFINSAp" propertyKey="Extrinsic_Cofins_apurado" header="COFINS Apurado" width="8rem">
-                                <Text text="{ path: 'vm>Extrinsic_Cofins_apurado', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Cofins_apurado', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colAliqICMSIntra" propertyKey="Extrinsic_Aliquota_ICMS_Interna" header="ICMS Interna (%)" width="9rem">
-                                <Text text="{ path: 'vm>Extrinsic_Aliquota_ICMS_Interna', formatter: '.formatNumberOrDash' }" />
+                                <Text text="{ path: 'vm>Extrinsic_Aliquota_ICMS_Interna', formatter: '.formatter.formatNumberOrDash' }" />
                             </mdct:Column>
 
                             <mdct:Column id="colOrigem" propertyKey="Extrinsic_Origem_do_Material" header="Origem" width="9rem">
@@ -187,7 +190,7 @@
                             <mdct:Column id="colPrecoEstendido" propertyKey="EXTENDEDPRICE" header="Preço Estendido" width="9rem" hAlign="End">
                                 <HBox width="100%" justifyContent="End" alignItems="Center">
                                     <ObjectNumber 
-                                        number="{path: 'vm>EXTENDEDPRICE', formatter: '.formatNumberOrDash'}" 
+                                        number="{path: 'vm>EXTENDEDPRICE', formatter: '.formatter.formatNumberOrDash'}" 
                                         unit="{= ${vm>EXTENDEDPRICE} ? ${vm>currency} : '' }" />
                                 </HBox>
                             </mdct:Column>
