@@ -10,9 +10,9 @@ module.exports = {
   SERVICE_TAXCODE_DEFAULT: process.env.TAXCODE_SERVICE_DEFAULT || "YQ",
 
   DEST: {
-    EVENTS: "ARIBA_Event_Management_Test",
-    PROJECTS: "ARIBA_Sourcing_Project_Management_Test",
-    S4H: "S4H_QAS_CQE_MAPA",
+    EVENTS: "ARIBA_Event_Management_Prod",
+    PROJECTS: "ARIBA_Sourcing_Project_Management_Prod",
+    S4H: "S4H_PRD_CPE_MAPA",
   },
 
   API_PREFIX: {

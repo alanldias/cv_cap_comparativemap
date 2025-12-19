@@ -209,12 +209,12 @@ async function _fetchTokenFromDestination(destination) {
       "[HTTP:_fetchToken] resp.data (se houver) =",
       e?.response?.data
         ? (() => {
-            try {
-              return JSON.stringify(e.response.data).slice(0, 2000);
-            } catch {
-              return String(e.response.data);
-            }
-          })()
+          try {
+            return JSON.stringify(e.response.data).slice(0, 2000);
+          } catch {
+            return String(e.response.data);
+          }
+        })()
         : null,
     );
     throw e;
@@ -291,15 +291,14 @@ async function destGet(
   { params = {}, headers = {}, timeoutMs = HTTP_TIMEOUT_MS } = {},
 ) {
   dbg("[destGet] START", { destName, relativePath });
+
   const destination = await getDestination({
     destinationName: destName,
     useCache: false,
   });
   if (!destination) throw new Error(`Destination ${destName} não encontrada`);
-  dbg("[destGet] destination.url =", destination.url);
 
   const urlPath = _maybePrefixPath(destName, relativePath);
-  dbg("[destGet] computed path =", urlPath);
 
   const baseCfg = {
     method: "get",
@@ -309,30 +308,28 @@ async function destGet(
     timeout: Number(timeoutMs) || 30000,
   };
 
-  baseCfg.params = _mergeQueryParamsFromDestination(
-    destination,
-    baseCfg.params,
-  );
-  baseCfg.params = _ensureAribaQueryParams(
-    destName,
-    destination,
-    baseCfg.params,
-  );
+  baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params);
+  baseCfg.params = _ensureAribaQueryParams(destName, destination, baseCfg.params);
   baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers);
 
   const reqCfg = await _buildReqConfig(destination, baseCfg);
-  // apiKey fallback por ENV
-  const keyFromOP = Object.entries(_op(destination)).find(([k]) =>
+
+  // --- pega apiKey da destination (inclui URL.headers.api-key)
+  const op = _op(destination);
+  const keyFromOP = Object.entries(op).find(([k]) =>
     /^URL\.headers\.(api[-_]?key)$/i.test(k),
   )?.[1];
+
   let apiKey =
-    reqCfg.headers.apiKey ||
-    reqCfg.headers.APIKey ||
-    reqCfg.headers.apikey ||
-    reqCfg.headers["api-key"] ||
+    reqCfg.headers?.apiKey ||
+    reqCfg.headers?.APIKey ||
+    reqCfg.headers?.apikey ||
+    reqCfg.headers?.["api-key"] ||
+    reqCfg.headers?.["x-api-key"] ||
     destination.headers?.apiKey ||
     destination.headers?.["api-key"] ||
     keyFromOP;
+
   if (!apiKey) {
     apiKey =
       destName === DEST.EVENTS
@@ -341,12 +338,33 @@ async function destGet(
           ? process.env.ARIBA_API_KEY_PROJECTS
           : null;
   }
+
+  // --- FORÇA COMPATIBILIDADE de header pro Ariba
   if (apiKey) {
-    reqCfg.headers.apiKey = apiKey;
-    dbg("[destGet] apiKey present (masked) =", mask(apiKey));
-  } else {
-    dbg("[destGet] apiKey absent for", destName);
+    reqCfg.headers["api-key"] = apiKey;
+    reqCfg.headers["apikey"] = apiKey;
+    reqCfg.headers["apiKey"] = apiKey;
+    reqCfg.headers["APIKey"] = apiKey;
+    reqCfg.headers["x-api-key"] = apiKey;
   }
+
+  // =========================
+  // CONSOLE.LOG DEBUG (safe)
+  // =========================
+  console.log("[DBG][destGet] DEST =", destName);
+  console.log("[DBG][destGet] URL =", reqCfg.baseURL, reqCfg.url);
+  console.log("[DBG][destGet] auth =", destination.authentication);
+  console.log("[DBG][destGet] params =", reqCfg.params);
+  console.log("[DBG][destGet] headers keys =", Object.keys(reqCfg.headers || {}));
+  console.log("[DBG][destGet] has Authorization? =", Boolean(reqCfg.headers?.authorization || reqCfg.headers?.Authorization));
+
+  console.log("[DBG][destGet] apiKey candidates =", {
+    "api-key": reqCfg.headers?.["api-key"] ? mask(reqCfg.headers["api-key"]) : null,
+    apikey: reqCfg.headers?.apikey ? mask(reqCfg.headers.apikey) : null,
+    apiKey: reqCfg.headers?.apiKey ? mask(reqCfg.headers.apiKey) : null,
+    APIKey: reqCfg.headers?.APIKey ? mask(reqCfg.headers.APIKey) : null,
+    "x-api-key": reqCfg.headers?.["x-api-key"] ? mask(reqCfg.headers["x-api-key"]) : null,
+  });
 
   dbg("[destGet] REQUEST =>", {
     method: reqCfg.method || "GET",
@@ -354,34 +372,31 @@ async function destGet(
     url: reqCfg.url,
     timeout: reqCfg.timeout,
   });
+
   try {
     const resp = await axios.request(reqCfg);
-    dbg(
-      "[destGet] RESPONSE OK status =",
-      resp.status,
-      "| dataType =",
-      typeof resp.data,
-    );
+    dbg("[destGet] RESPONSE OK status =", resp.status, "| dataType =", typeof resp.data);
     return resp.data;
   } catch (e) {
     LOG.error?.("[destGet] request error:", e?.message || e);
+
+    console.log("[DBG][destGet] axios error status =", e?.response?.status);
+    console.log("[DBG][destGet] axios error headers keys =", Object.keys(e?.response?.headers || {}));
+    console.log(
+      "[DBG][destGet] axios error data (first 800) =",
+      e?.response?.data
+        ? (typeof e.response.data === "string"
+          ? e.response.data.slice(0, 800)
+          : JSON.stringify(e.response.data).slice(0, 800))
+        : null,
+    );
+
     dbg("[destGet] request config keys =", {
       baseURL: reqCfg.baseURL,
       url: reqCfg.url,
-      headersKeys: Object.keys(reqCfg.headers),
+      headersKeys: Object.keys(reqCfg.headers || {}),
     });
-    dbg(
-      "[destGet] error response (truncated) =",
-      e?.response
-        ? (() => {
-            try {
-              return JSON.stringify(e.response.data).slice(0, 1000);
-            } catch {
-              return String(e.response.data);
-            }
-          })()
-        : null,
-    );
+
     throw e;
   }
 }
@@ -393,15 +408,14 @@ async function destPost(
   { params = {}, headers = {}, timeoutMs = HTTP_TIMEOUT_MS } = {},
 ) {
   dbg("[destPost] START", { destName, relativePath });
+
   const destination = await getDestination({
     destinationName: destName,
     useCache: false,
   });
   if (!destination) throw new Error(`Destination ${destName} não encontrada`);
-  dbg("[destPost] destination.url =", destination.url);
 
   const urlPath = _maybePrefixPath(destName, relativePath);
-  dbg("[destPost] computed path =", urlPath);
 
   const baseCfg = {
     method: "post",
@@ -411,31 +425,29 @@ async function destPost(
     headers: { ...headers },
     timeout: Number(timeoutMs) || 30000,
   };
-  baseCfg.params = _mergeQueryParamsFromDestination(
-    destination,
-    baseCfg.params,
-  );
-  baseCfg.params = _ensureAribaQueryParams(
-    destName,
-    destination,
-    baseCfg.params,
-  );
+
+  baseCfg.params = _mergeQueryParamsFromDestination(destination, baseCfg.params);
+  baseCfg.params = _ensureAribaQueryParams(destName, destination, baseCfg.params);
   baseCfg.headers = _mergeHeadersFromDestination(destination, baseCfg.headers);
 
   const reqCfg = await _buildReqConfig(destination, baseCfg);
 
+  // --- pega apiKey da destination (inclui URL.headers.api-key)
   const op = _op(destination);
   const keyFromOP = Object.entries(op).find(([k]) =>
     /^URL\.headers\.(api[-_]?key)$/i.test(k),
   )?.[1];
+
   let apiKey =
-    reqCfg.headers.apiKey ||
-    reqCfg.headers.APIKey ||
-    reqCfg.headers.apikey ||
-    reqCfg.headers["api-key"] ||
+    reqCfg.headers?.apiKey ||
+    reqCfg.headers?.APIKey ||
+    reqCfg.headers?.apikey ||
+    reqCfg.headers?.["api-key"] ||
+    reqCfg.headers?.["x-api-key"] ||
     destination.headers?.apiKey ||
     destination.headers?.["api-key"] ||
     keyFromOP;
+
   if (!apiKey) {
     apiKey =
       destName === DEST.EVENTS
@@ -444,12 +456,33 @@ async function destPost(
           ? process.env.ARIBA_API_KEY_PROJECTS
           : null;
   }
+
+  // --- FORÇA COMPATIBILIDADE de header pro Ariba
   if (apiKey) {
-    reqCfg.headers.apiKey = apiKey;
-    dbg("[destPost] apiKey present (masked) =", mask(apiKey));
-  } else {
-    dbg("[destPost] apiKey absent for", destName);
+    reqCfg.headers["api-key"] = apiKey;
+    reqCfg.headers["apikey"] = apiKey;
+    reqCfg.headers["apiKey"] = apiKey;
+    reqCfg.headers["APIKey"] = apiKey;
+    reqCfg.headers["x-api-key"] = apiKey;
   }
+
+  // =========================
+  // CONSOLE.LOG DEBUG (safe)
+  // =========================
+  console.log("[DBG][destPost] DEST =", destName);
+  console.log("[DBG][destPost] URL =", reqCfg.baseURL, reqCfg.url);
+  console.log("[DBG][destPost] auth =", destination.authentication);
+  console.log("[DBG][destPost] params =", reqCfg.params);
+  console.log("[DBG][destPost] headers keys =", Object.keys(reqCfg.headers || {}));
+  console.log("[DBG][destPost] has Authorization? =", Boolean(reqCfg.headers?.authorization || reqCfg.headers?.Authorization));
+
+  console.log("[DBG][destPost] apiKey candidates =", {
+    "api-key": reqCfg.headers?.["api-key"] ? mask(reqCfg.headers["api-key"]) : null,
+    apikey: reqCfg.headers?.apikey ? mask(reqCfg.headers.apikey) : null,
+    apiKey: reqCfg.headers?.apiKey ? mask(reqCfg.headers.apiKey) : null,
+    APIKey: reqCfg.headers?.APIKey ? mask(reqCfg.headers.APIKey) : null,
+    "x-api-key": reqCfg.headers?.["x-api-key"] ? mask(reqCfg.headers["x-api-key"]) : null,
+  });
 
   dbg("[destPost] REQUEST =>", {
     method: reqCfg.method || "POST",
@@ -457,33 +490,28 @@ async function destPost(
     url: reqCfg.url,
     timeout: reqCfg.timeout,
   });
+
   try {
     const resp = await axios.request(reqCfg);
-    dbg(
-      "[destPost] RESPONSE OK status =",
-      resp.status,
-      "| headers keys =",
-      Object.keys(resp.headers || {}).slice(0, 10),
-    );
+    dbg("[destPost] RESPONSE OK status =", resp.status);
     return { data: resp.data, headers: resp.headers, status: resp.status };
   } catch (e) {
     LOG.error?.("[destPost] request error:", e?.message || e);
-    dbg(
-      "[destPost] error response (truncated) =",
-      e?.response
-        ? (() => {
-            try {
-              return JSON.stringify(e.response.data).slice(0, 1000);
-            } catch {
-              return String(e.response.data);
-            }
-          })()
+
+    console.log("[DBG][destPost] axios error status =", e?.response?.status);
+    console.log("[DBG][destPost] axios error headers keys =", Object.keys(e?.response?.headers || {}));
+    console.log(
+      "[DBG][destPost] axios error data (first 800) =",
+      e?.response?.data
+        ? (typeof e.response.data === "string"
+          ? e.response.data.slice(0, 800)
+          : JSON.stringify(e.response.data).slice(0, 800))
         : null,
     );
+
     throw e;
   }
 }
-
 module.exports = {
   destGet,
   destPost,

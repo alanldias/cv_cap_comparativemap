@@ -50,26 +50,26 @@
       "[production]": {
         "auth": "xsuaa"
       },
-      "ARIBA_Event_Management_Test": {
+      "ARIBA_Event_Management_Prod": {
         "kind": "rest",
         "[production]": {
           "credentials": {
-            "destination": "ARIBA_Event_Management_Test"
+            "destination": "ARIBA_Event_Management_Prod"
           }
         }
       },
       "BAPI_PO_CREATE": {
         "credentials": {
-          "destination": "S4H_QAS_CQE_MAPA",
+          "destination": "S4H_PRD_CPE_MAPA",
           "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300"
         }
       },
       "BAPI_INFORECORD_GETLIST": {
-        "ARIBA_Sourcing_Project_Management_Test": {
+        "ARIBA_Sourcing_Project_Management_Prod": {
           "kind": "rest",
           "[production]": {
             "credentials": {
-              "destination": "ARIBA_Sourcing_Project_Management_Test"
+              "destination": "ARIBA_Sourcing_Project_Management_Prod"
             }
           }
         },
@@ -78,7 +78,7 @@
           "model": "srv/external/API_INFORECORD_PROCESS_SRV.csn.json",
           "[production]": {
             "credentials": {
-              "destination": "S4H_QAS_CQE_MAPA",
+              "destination": "S4H_PRD_CPE_MAPA",
               "path": "/sap/opu/odata/sap/API_INFORECORD_PROCESS_SRV"
             }
           }

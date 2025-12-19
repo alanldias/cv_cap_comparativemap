@@ -104,11 +104,11 @@ sap.ui.define(
           })
             .then((oResponse) => {
               // 🔴 Sem autorização → vai para a tela de Acesso Negado
-              // if (oResponse.status === 401 || oResponse.status === 403) {
-              //   console.warn("[ComparativeMap] access denied (", oResponse.status, ") → RouteUnauthorized");
-              //   oRouter.navTo("RouteUnauthorized");
-              //   return;
-              // }
+              if (oResponse.status === 401 || oResponse.status === 403) {
+                console.warn("[ComparativeMap] access denied (", oResponse.status, ") → RouteUnauthorized");
+                oRouter.navTo("RouteUnauthorized");
+                return;
+              }
 
               // ✅ 2xx → tem acesso → segue o fluxo normal da tela
               console.log("[ComparativeMap] access OK → offerRestoreOnEnter");

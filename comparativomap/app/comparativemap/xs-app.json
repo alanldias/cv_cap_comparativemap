@@ -29,13 +29,13 @@
     {
       "source": "^/keyuser/(.*)$",
       "target": "/$1",
-      "destination": "BTP_UI5FLEX_QAS",
+      "destination": "BTP_UI5FLEX_PRD",
       "csrfProtection": false
     },
     {
       "source": "^/flex/(.*)$",
       "target": "/flex/$1",
-      "destination": "BTP_UI5FLEX_QAS",
+      "destination": "BTP_UI5FLEX_PRD",
       "csrfProtection": false
     },
     {
