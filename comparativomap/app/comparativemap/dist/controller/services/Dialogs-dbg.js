@@ -38,48 +38,44 @@ sap.ui.define(
 
       const safeRows = (rows || []).map(r => ({
         ...r,
-        qtyAward: r.qtyAward ?? Number(r.quantity) // default para premiar
+        qtyAward: r.qtyAward ?? Number(r.quantity)
       }));
 
       resModel.setSizeLimit(Math.max(10000, safeRows.length || 0));
       resModel.setProperty("/rows", safeRows);
       resModel.refresh(true);
 
-      // 2) destrói dialog anterior (se existir)
-      if (controller._dlgRes && controller._dlgRes.destroy && !controller._dlgRes.bIsDestroyed) {
-        try { controller._dlgRes.destroy(); } catch (e) {}
-        controller._dlgRes = null;
+      // 2) cria um scopeId FIXO (nada de Date.now)
+      //    Isso vira algo tipo: <viewId>--resDlg--tblRes (sempre igual)
+      const scopeId = controller._resDlgScopeId || (controller._resDlgScopeId = view.createId("resDlg"));
+
+      // 3) carrega UMA vez e reaproveita
+      if (!controller._dlgRes || controller._dlgRes.bIsDestroyed) {
+        const root = await Fragment.load({
+          id: scopeId,
+          name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
+          controller
+        });
+
+        const dlg = _pickDialog(root);
+        if (!dlg) throw new Error("O fragmento ResultadoSimulacao não tem um <Dialog> como root.");
+
+        view.addDependent(dlg);
+        controller._dlgRes = dlg;
+
+        // (opcional) rebind ao abrir — mas registra UMA vez só
+        dlg.attachAfterOpen(() => {
+          try {
+            const tblRes = Fragment.byId(scopeId, "tblRes");
+            tblRes?.rebind?.();
+          } catch (e) { }
+        });
+
+        // 🚫 não destrói no close (senão você se ferra com variant de novo)
+        // dlg.attachAfterClose(() => { ...destroy... });
       }
 
-      // 3) carrega fragment com ID único (escopo)
-      const scopeId = view.createId("resDlg-" + Date.now());
-
-      const root = await Fragment.load({
-        id: scopeId,
-        name: "comparativemap.comparativemap.view.fragments.ResultadoSimulacao",
-        controller
-      });
-
-      const dlg = _pickDialog(root);
-      if (!dlg) throw new Error("O fragmento ResultadoSimulacao não tem um <Dialog> como root.");
-
-      view.addDependent(dlg);
-      controller._dlgRes = dlg;
-
-      // 4) opcional: rebind da tabela do fragment quando abrir
-      dlg.attachAfterOpen(() => {
-        try {
-          const tblRes = Fragment.byId(scopeId, "tblRes");
-          if (tblRes && tblRes.rebind) tblRes.rebind();
-        } catch (e) {}
-      });
-
-      dlg.attachAfterClose(() => {
-        try { dlg.destroy(); } catch (e) {}
-        controller._dlgRes = null;
-      });
-
-      dlg.open();
+      controller._dlgRes.open();
     }
 
     function closeAny(controller, evt) {
@@ -88,7 +84,7 @@ sap.ui.define(
         const src = evt && evt.getSource ? evt.getSource() : null;
         const dlg = _findParentDialog(src);
         if (dlg) return dlg.close();
-      } catch (e) {}
+      } catch (e) { }
 
       // fallback: fecha conhecidos
       controller._dlgRes?.close?.();

@@ -1,6 +1,6 @@
 _schema-version: 3.3.0
 ID: comparativomap
-version: 3.1.5
+version: 3.3.4
 description: "A simple CAP project."
 
 modules:
@@ -77,7 +77,7 @@ modules:
       - name: ui5-flexibility-keyuser
         parameters:
           service-key:
-            name: ui5flexkeyuserqas-key
+            name: sk_ui5flexkeyuserqas
 
     build-parameters:
       no-source: true

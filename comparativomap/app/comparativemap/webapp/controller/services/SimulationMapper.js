@@ -308,9 +308,6 @@ sap.ui.define(
           grossPrice,
           currency,
 
-          icms: it.icmsValue || 0,
-          ipi: it.ipiValue || 0,
-
           totalLiquido,
           totalBruto,
           itemId,
@@ -329,6 +326,9 @@ sap.ui.define(
           priceUnit,
           priceDate,
           schedules,
+          icm1: Number(it?.icm1) || 0,
+          icm2: Number(it?.icm2) || 0,
+          ipi1: Number(it?.ipi1) || 0,
         };
       });
     }

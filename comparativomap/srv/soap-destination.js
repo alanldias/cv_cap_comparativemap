@@ -24,18 +24,29 @@ function maskHeaders(headers = {}) {
   return h;
 }
 
-function preview(body, len = 500) {
+function preview(body, len = 2000) {
   if (!body) return "";
   const s = typeof body === "string" ? body : JSON.stringify(body);
   return s.length > len ? s.slice(0, len) + " ...[truncado]" : s;
 }
 
 async function getSoapService(service, wsdl, endpoint, method = "POST") {
+  const DEBUG = String(process.env.SOAP_DEBUG || "").trim() === "1";
+  const DEBUG_XML = String(process.env.SOAP_DEBUG_XML || "").trim() === "1";
+
   console.log("[getSoapService] ENTER", { service, wsdl });
 
   // 1) Ler config do cds.env (.cdsrc.json / package.json)
   const definition = cds.env.requires[service];
-  console.log("[getSoapService] cds.requires[service]=", redact(definition));
+  if (DEBUG) {
+    console.log("[getSoapService] cds.requires[service]=", redact(definition));
+  } else {
+    console.log("[getSoapService] dest config ok?", {
+      ok: !!definition?.credentials?.destination,
+      dest: definition?.credentials?.destination,
+      path: definition?.credentials?.path,
+    });
+  }
 
   if (!definition?.credentials?.destination) {
     throw new Error(
@@ -50,23 +61,21 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
   console.time("[getSoapService] getDestination");
   let dest;
   try {
-    console.log("[getSoapService] getDestination START", { destName });
     dest = await getDestination({ destinationName: destName });
-
-    console.log("[getSoapService] getDestination OK?", {
-      ok: !!dest,
-      baseUrl: dest?.url,
-      authentication: dest?.authentication,
-      // cuidado: só o user, nunca a senha
-      username: dest?.username || dest?.originalProperties?.User,
-    });
   } catch (e) {
+    console.timeEnd("[getSoapService] getDestination");
     console.error("[getSoapService] getDestination ERROR:", e?.message || e);
     throw e;
-  } finally {
-    console.timeEnd("[getSoapService] getDestination");
   }
+  console.timeEnd("[getSoapService] getDestination");
   if (!dest) throw new Error(`Destination '${destName}' não encontrada`);
+
+  console.log("[getSoapService] destination", {
+    name: destName,
+    baseUrl: dest?.url,
+    authentication: dest?.authentication,
+    username: dest?.username || dest?.originalProperties?.User,
+  });
 
   // 3) Montar endpoint final
   const base = dest.url.endsWith("/") ? dest.url.slice(0, -1) : dest.url;
@@ -76,14 +85,14 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
   // 4) httpClient que usa a Destination (túnel, auth, etc.)
   const httpClient = {
     request: async function (url, data, callback, exheaders, exoptions) {
-      // IMPORTANTE: 'url' aqui é o path relativo que o 'soap' manda,
-      // o SDK vai resolver usando o 'dest' (base já veio da Destination).
-      console.log("[httpClient.request] → OUTBOUND SOAP", {
-        method,
-        url,
-        soapHeaders: exheaders,                    // só o que o node-soap passou
-        bodyPreview: preview(data, 600),           // pedaço do XML que vai pra BAPI
-      });
+      if (DEBUG) {
+        console.log("[httpClient.request] → OUTBOUND SOAP", {
+          method,
+          url,
+          headers: maskHeaders(exheaders),
+          bodyPreview: preview(data, 800),
+        });
+      }
 
       try {
         const result = await executeHttpRequest(
@@ -94,8 +103,25 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
 
         console.log("[httpClient.request] ← SOAP RESPONSE", {
           status: result?.status,
-          dataPreview: preview(result?.data, 400),
+          // só mostra preview se DEBUG ligado
+          ...(DEBUG ? { dataPreview: preview(result?.data, 800) } : {}),
         });
+
+        // Debug do XML bruto (só se habilitar SOAP_DEBUG_XML=1)
+        if (DEBUG_XML) {
+          const xml = String(result?.data || "");
+          const pos = xml.toUpperCase().indexOf("EXTENSIONOUT");
+          console.log(">>> [DEBUG_XML] XML length:", xml.length);
+          console.log(">>> [DEBUG_XML] contains EXTENSIONOUT?", pos >= 0);
+          if (pos >= 0) {
+            console.log(">>> [DEBUG_XML] slice around EXTENSIONOUT:");
+            console.log(xml.slice(Math.max(0, pos - 300), Math.min(xml.length, pos + 1200)));
+          }
+          console.log(
+            ">>> [DEBUG_XML] EXTENSIONOUT has <item> ?",
+            /<\s*EXTENSIONOUT[\s\S]*?<\s*item\b/i.test(xml),
+          );
+        }
 
         callback(null, result, result.data);
       } catch (e) {
@@ -107,18 +133,16 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
           console.error("REQUEST URL:", (cfg.baseURL || "") + (cfg.url || ""));
           console.error("REQUEST METHOD:", cfg.method);
           console.error("REQUEST HEADERS:", maskHeaders(cfg.headers));
-          if (cfg.data) {
+          if (DEBUG && cfg.data) {
             console.error("REQUEST BODY (first 800):");
             console.error(preview(cfg.data, 800));
           }
-        } else {
-          console.error("sem cfg no erro (não parece Axios).");
         }
 
         if (resp) {
           console.error("RESPONSE STATUS:", resp.status, resp.statusText);
           console.error("RESPONSE HEADERS:", maskHeaders(resp.headers));
-          if (resp.data) {
+          if (DEBUG && resp.data) {
             console.error("RESPONSE BODY (first 800):");
             console.error(
               typeof resp.data === "string"
@@ -127,8 +151,7 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
             );
           }
         } else {
-          console.error("sem resp.data, erro bruto:");
-          console.error(e);
+          console.error("erro bruto:", e?.message || e);
         }
         console.error("=== END SOAP HTTP ERROR (httpClient) ===");
 
@@ -141,18 +164,16 @@ async function getSoapService(service, wsdl, endpoint, method = "POST") {
   console.time("[getSoapService] createClientAsync");
   let client;
   try {
-    console.log("[getSoapService] createClientAsync START", { wsdl });
     client = await soap.createClientAsync(wsdl, {
       httpClient,
       endpoint: endpoint.url,
     });
-    console.log("[getSoapService] createClientAsync OK");
   } catch (e) {
+    console.timeEnd("[getSoapService] createClientAsync");
     console.error("[getSoapService] createClientAsync ERROR:", e?.message || e);
     throw e;
-  } finally {
-    console.timeEnd("[getSoapService] createClientAsync");
   }
+  console.timeEnd("[getSoapService] createClientAsync");
 
   console.log("[getSoapService] RETURN SOAP client ready");
   return client;
