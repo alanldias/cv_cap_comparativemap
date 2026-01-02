@@ -75,15 +75,15 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-          {
-            poItem: 10,
-            plant: "BR01",
-            shortText: "Teste chamada BAPI",
-            quantity: 1,
-            unit: "PC",
-            taxCode: "I1",
-          },
-        ];
+        {
+          poItem: 10,
+          plant: "BR01",
+          shortText: "Teste chamada BAPI",
+          quantity: 1,
+          unit: "PC",
+          taxCode: "I1",
+        },
+      ];
 
   const poitem = [],
     poitemx = [];
@@ -136,27 +136,26 @@ function buildSmokePayload(header, items, schedules, testRun) {
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-          PO_ITEM: (() => {
-            const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
-            if (!Number.isFinite(_po)) {
-              throw new Error(
-                `buildSmokePayload: schedule sem poItem válido (idx=${
-                  idx + 1
-                }).`,
-              );
-            }
-            return padLeft(String(_po), 5, "0");
-          })(),
-          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
-          QUANTITY: String(s.quantity ?? "0"),
-        }))
+        PO_ITEM: (() => {
+          const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+          if (!Number.isFinite(_po)) {
+            throw new Error(
+              `buildSmokePayload: schedule sem poItem válido (idx=${idx + 1
+              }).`,
+            );
+          }
+          return padLeft(String(_po), 5, "0");
+        })(),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+        DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
+        QUANTITY: String(s.quantity ?? "0"),
+      }))
       : poitem.map((p) => ({
-          PO_ITEM: p.PO_ITEM,
-          SCHED_LINE: "0001",
-          DELIV_DATE: todayDATS(),
-          QUANTITY: p.QUANTITY,
-        }));
+        PO_ITEM: p.PO_ITEM,
+        SCHED_LINE: "0001",
+        DELIV_DATE: todayDATS(),
+        QUANTITY: p.QUANTITY,
+      }));
 
   const posched = [],
     poschedx = [];
@@ -427,9 +426,9 @@ function normalizeBapiResult(r0, testRunFlag) {
       ipiValue: taxes.ipi,
 
       // ✅ EXT por item (ordem)
-      icm1: extForIdx.icm1 || 0,
-      icm2: extForIdx.icm2 || 0,
-      ipi1: extForIdx.ipi1 || 0,
+      icm1: Math.abs(extForIdx.icm1 || 0),
+      icm2: Math.abs(extForIdx.icm2 || 0),
+      ipi1: Math.abs(extForIdx.ipi1 || 0),
     };
   });
 
