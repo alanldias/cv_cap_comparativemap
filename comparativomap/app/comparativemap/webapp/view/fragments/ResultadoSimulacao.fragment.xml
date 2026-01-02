@@ -6,23 +6,25 @@
     xmlns:vm="sap.ui.fl.variants">
 
     <Dialog id="dlgRes" titleAlignment="Center" contentWidth="85%" draggable="true" resizable="true">
-        
-        <customHeader>
-            <Toolbar id="toolbarSimulacao" class="cabecalhoTopo">
                 
-                    <HBox id="hboxCentroSim" justifyContent="Center" width="60%">
-                        <Text id="tituloSim"
-                            text="Resultado da Simulação"
-                            class="cabecalhoTexto" />
-                    </HBox>
-                    <HBox id="hboxDireitaSim" alignItems="Center" justifyContent="End" width="20%">
-                        <vm:VariantManagement
-                            id="vmtblRes"
-                            for="tblRes" />
-                    </HBox>
+    <customHeader>
+        <Toolbar id="toolbarSimulacao" class="cabecalhoTopo" height="3rem">
             
-            </Toolbar>
-        </customHeader>
+            <ToolbarSpacer/>
+
+            <HBox justifyContent="Center" width="auto">
+            <Text id="tituloSim"
+                    text="Resultado da Simulação"
+                    class="cabecalhoTexto" />
+            </HBox>
+            <ToolbarSpacer/>
+            <vm:VariantManagement
+                id="vmtblRes"
+                for="tblRes" />
+
+        </Toolbar>
+    </customHeader>
+
         
         <content>
             <mdc:Table id="tblRes"
