@@ -326,9 +326,8 @@ sap.ui.define(
           priceUnit,
           priceDate,
           schedules,
-          icm1: Number(it?.icm1) || 0,
-          icm2: Number(it?.icm2) || 0,
-          ipi1: Number(it?.ipi1) || 0,
+          icms: Number(it?.icms) || 0,
+          ipi: Number(it?.ipi) || 0,
         };
       });
     }

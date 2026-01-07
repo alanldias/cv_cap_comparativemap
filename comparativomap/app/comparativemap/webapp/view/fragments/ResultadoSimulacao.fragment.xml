@@ -88,16 +88,12 @@
                         <Text text="{= ${res>currency} || '-' }" />
                     </mdct:Column>
 
-                   <mdct:Column id="resColIcm1" propertyKey="icm1" header="ICM1" width="7rem" hAlign="End">
-                    <Text text="{path: 'res>icm1', formatter: '.formatter.formatNumberOrDash'}" />
+                   <mdct:Column id="resColIcms" propertyKey="icms" header="ICMS" width="7rem" hAlign="End">
+                    <Text text="{path: 'res>icms', formatter: '.formatter.formatNumberOrDash'}" />
                     </mdct:Column>
 
-                    <mdct:Column id="resColIcm2" propertyKey="icm2" header="ICM2" width="7rem" hAlign="End">
-                    <Text text="{path: 'res>icm2', formatter: '.formatter.formatNumberOrDash'}" />
-                    </mdct:Column>
-
-                    <mdct:Column id="resColIpi1" propertyKey="ipi1" header="IPI1" width="7rem" hAlign="End">
-                    <Text text="{path: 'res>ipi1', formatter: '.formatter.formatNumberOrDash'}" />
+                    <mdct:Column id="resColIpi" propertyKey="ipi" header="IPI" width="7rem" hAlign="End">
+                    <Text text="{path: 'res>ipi', formatter: '.formatter.formatNumberOrDash'}" />
                     </mdct:Column>
 
 
