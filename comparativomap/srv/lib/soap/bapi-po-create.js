@@ -75,15 +75,15 @@ function buildSmokePayload(header, items, schedules, testRun) {
     Array.isArray(items) && items.length > 0
       ? items
       : [
-          {
-            poItem: 10,
-            plant: "BR01",
-            shortText: "Teste chamada BAPI",
-            quantity: 1,
-            unit: "PC",
-            taxCode: "I1",
-          },
-        ];
+        {
+          poItem: 10,
+          plant: "BR01",
+          shortText: "Teste chamada BAPI",
+          quantity: 1,
+          unit: "PC",
+          taxCode: "I1",
+        },
+      ];
 
   const poitem = [],
     poitemx = [];
@@ -136,27 +136,26 @@ function buildSmokePayload(header, items, schedules, testRun) {
   const schedList =
     Array.isArray(schedules) && schedules.length > 0
       ? schedules.map((s, idx) => ({
-          PO_ITEM: (() => {
-            const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
-            if (!Number.isFinite(_po)) {
-              throw new Error(
-                `buildSmokePayload: schedule sem poItem válido (idx=${
-                  idx + 1
-                }).`,
-              );
-            }
-            return padLeft(String(_po), 5, "0");
-          })(),
-          SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
-          DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
-          QUANTITY: String(s.quantity ?? "0"),
-        }))
+        PO_ITEM: (() => {
+          const _po = Number(String(s.poItem ?? "").replace(/\D/g, ""));
+          if (!Number.isFinite(_po)) {
+            throw new Error(
+              `buildSmokePayload: schedule sem poItem válido (idx=${idx + 1
+              }).`,
+            );
+          }
+          return padLeft(String(_po), 5, "0");
+        })(),
+        SCHED_LINE: padLeft(String(s.schedLine ?? 1), 4, "0"),
+        DELIV_DATE: s.deliveryDate ? toDATS(String(s.deliveryDate)) : todayDATS(),
+        QUANTITY: String(s.quantity ?? "0"),
+      }))
       : poitem.map((p) => ({
-          PO_ITEM: p.PO_ITEM,
-          SCHED_LINE: "0001",
-          DELIV_DATE: todayDATS(),
-          QUANTITY: p.QUANTITY,
-        }));
+        PO_ITEM: p.PO_ITEM,
+        SCHED_LINE: "0001",
+        DELIV_DATE: todayDATS(),
+        QUANTITY: p.QUANTITY,
+      }));
 
   const posched = [],
     poschedx = [];
@@ -238,13 +237,12 @@ function parseSapNumber(raw) {
   return negative ? -n : n;
 }
 
-// ✅ NOVO: extrai por "grupos" (ICM1/ICM2/IPI1) e devolve byIndex
+// extrai por "grupos" icms + ipi e devolve byIndex
 function extractExtTaxes(extensionRaw, expectedItems = 0) {
   const out = {
-    global: { icm1: 0, icm2: 0, ipi1: 0 },
-    byItem: {},   // continua vazio nesse teu caso (sem PO_ITEM no ext)
-    byIndex: [],  // [{icm1,icm2,ipi1}, ...] na ordem dos itens
-    meta: { groupSize: 0, groupCount: 0 },
+    global: { icms: 0, ipi: 0 },
+    byIndex: [], // [{icms, ipi}, ...] na ordem dos itens
+    meta: { groupSize: 0, groupCount: 0, icmsOffset: -1, ipiOffset: -1 },
   };
 
   const list = Array.isArray(extensionRaw) ? extensionRaw : [];
@@ -258,32 +256,46 @@ function extractExtTaxes(extensionRaw, expectedItems = 0) {
 
   if (!names.length || !vals.length) return out;
 
-  // teu caso: repetição fixa "ICM1,ICM2,IPI1"
-  const groupSize = 3;
+  // achar o primeiro ICMS e IPI no header
+  const firstICMS = names.indexOf("ICMS");
+  const firstIPI = names.indexOf("IPI");
+
+  if (firstICMS < 0 || firstIPI < 0) {
+    console.warn("[EXT] Não achei ICMS/IPI em VALUEPART1", { sample: names.slice(0, 12) });
+    return out;
+  }
+
+  // groupSize = distância entre o primeiro ICMS e o próximo ICMS (repetição por item)
+  // Ex: ICMS, IPI, ICMS, IPI => groupSize = 2
+  let groupSize = 0;
+  for (let i = firstICMS + 1; i < names.length; i++) {
+    if (names[i] === "ICMS") {
+      groupSize = i - firstICMS;
+      break;
+    }
+  }
+  // se só tem 1 grupo (1 item), não tem "próximo ICMS", então assume 2
+  if (!groupSize) groupSize = 2;
+
+  // offsets dentro do grupo
+  const icmsOffset = firstICMS % groupSize;
+  const ipiOffset = firstIPI % groupSize;
+
+  out.meta.groupSize = groupSize;
+  out.meta.icmsOffset = icmsOffset;
+  out.meta.ipiOffset = ipiOffset;
+
   const groupCount = Math.min(
     Math.floor(names.length / groupSize),
     Math.floor(vals.length / groupSize),
   );
-
-  out.meta.groupSize = groupSize;
   out.meta.groupCount = groupCount;
 
   for (let g = 0; g < groupCount; g++) {
     const base = g * groupSize;
-
-    const k1 = names[base + 0];
-    const k2 = names[base + 1];
-    const k3 = names[base + 2];
-
-    // sanity: garante o pattern (se vier zoado, não explode — só avisa)
-    if (k1 !== "ICM1" || k2 !== "ICM2" || k3 !== "IPI1") {
-      console.warn("[EXT] Pattern inesperado no grupo", g, [k1, k2, k3]);
-    }
-
     out.byIndex.push({
-      icm1: vals[base + 0] ?? 0,
-      icm2: vals[base + 1] ?? 0,
-      ipi1: vals[base + 2] ?? 0,
+      icms: Math.abs(vals[base + icmsOffset] ?? 0),
+      ipi: Math.abs(vals[base + ipiOffset] ?? 0),
     });
   }
 
@@ -409,6 +421,11 @@ function normalizeBapiResult(r0, testRunFlag) {
     // ✅ pega por índice; fallback pro global se faltar
     const extForIdx = ext.byIndex[idx] || ext.global;
 
+    const asNumber = (v) => {
+      const n = Number(v);
+      return Number.isFinite(n) ? n : 0;
+    };
+
     return {
       poItem: key,
       material: i.MATERIAL_LONG || i.MATERIAL,
@@ -423,13 +440,8 @@ function normalizeBapiResult(r0, testRunFlag) {
       priceDate: i.PRICE_DATE,
       schedules: schedByItem[key] || [],
 
-      icmsValue: taxes.icms,
-      ipiValue: taxes.ipi,
-
-      // ✅ EXT por item (ordem)
-      icm1: extForIdx.icm1 || 0,
-      icm2: extForIdx.icm2 || 0,
-      ipi1: extForIdx.ipi1 || 0,
+      icms: asNumber(extForIdx.icms),
+      ipi: asNumber(extForIdx.ipi),
     };
   });
 

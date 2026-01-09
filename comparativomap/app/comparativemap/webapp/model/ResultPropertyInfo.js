@@ -14,9 +14,8 @@ sap.ui.define([], function () {
         { name: "netPrice", label: "Preço Liquido", dataType: "sap.ui.model.type.Float", path: "netPrice" },
         { name: "grossPrice", label: "Preço Bruto", dataType: "sap.ui.model.type.Float", path: "grossPrice" },
         { name: "currency", label: "Moeda", dataType: "sap.ui.model.type.String", path: "currency" },
-        { name: "icm1", label: "ICM1", dataType: "sap.ui.model.type.Float", path: "icm1" },
-        { name: "icm2", label: "ICM2", dataType: "sap.ui.model.type.Float", path: "icm2" },
-        { name: "ipi1", label: "IPI1", dataType: "sap.ui.model.type.Float", path: "ipi1" },
+        { name: "icms", label: "icms", dataType: "sap.ui.model.type.Float", path: "icms" },
+        { name: "ipi", label: "ipi", dataType: "sap.ui.model.type.Float", path: "ipi" },
         { name: "totalLiquido", label: "Total Liquido", dataType: "sap.ui.model.type.Float", path: "totalLiquido" },
         { name: "totalBruto", label: "Total Bruto", dataType: "sap.ui.model.type.Float", path: "totalBruto" },
 
