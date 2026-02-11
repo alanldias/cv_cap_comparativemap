@@ -3,12 +3,15 @@ sap.ui.define(
   function (Keys) {
     "use strict";
 
+    // Date -> "YYYY-MM-DD" (Edm.Date-style)
     function toEdmDate(d) {
       const y = d.getFullYear(),
         m = String(d.getMonth() + 1).padStart(2, "0"),
         day = String(d.getDate()).padStart(2, "0");
       return `${y}-${m}-${day}`;
     }
+
+    // Aceita: "YYYY-MM-DD", "YYYYMMDD", { dateValue }, Date/string parseável; fallback hoje
     function normalizeDate(val) {
       if (!val) return toEdmDate(new Date());
       const s =
@@ -22,12 +25,14 @@ sap.ui.define(
       if (!isNaN(d)) return toEdmDate(d);
       throw new Error("Data inválida: " + val);
     }
+
+    // Prioriza campo técnico vindo do back (já normalizado)
     function getDeliveryDateFromRow(r) {
-      // Prioriza o campo técnico que já vem do back como "YYYY-MM-DD"
       const raw = r?.DeliveryDateEdm || r?.DeliveryDate || null;
       return normalizeDate(raw || new Date());
     }
 
+    // Header pode vir como array (headerRows[0]) ou objeto (header)
     function getHeaderFromVM(vm) {
       let h = vm.getProperty("/headerRows");
       if (Array.isArray(h)) h = h[0] || {};
@@ -35,18 +40,22 @@ sap.ui.define(
       return h;
     }
 
+    // Mapeia header “funcional” do Ariba pro payload do BAPI (valores curtinhos/limpos)
     function mapHeaderFromAriba(h, firstRow) {
       const currency = (h.moeda || firstRow?.currency || "BRL")
         .toString()
         .toUpperCase()
         .slice(0, 3);
+
       const vendorRaw =
         (h.fornecedor && String(h.fornecedor).trim()) ||
         firstRow?.SupplierCode ||
         firstRow?.suppliercode ||
         firstRow?.supplierId ||
         firstRow?.lifnr;
+
       const vendor = Keys.zpad(String(vendorRaw || "").replace(/\D/g, ""), 10);
+
       const rawTipo = (h.tipoPedido || "NB").toString().trim();
       const m = rawTipo.match(/([A-Z0-9]{2,4})\s*$/i);
       const docType = (m ? m[1] : rawTipo).toUpperCase().slice(0, 4);
@@ -63,10 +72,11 @@ sap.ui.define(
       };
     }
 
+    // Decide itemCat: "D" (serviço) vs "0" (material) + fallback pra mapItemCategory
     function resolveItemCatFromRow(r) {
       const raw = (r.ItemCategory || r.itemCategory || r.category || "").toString();
 
-      // Normaliza Unicode e remove caracteres invisíveis (zero-width, BOM etc.)
+      // Normaliza e remove “lixo invisível” (zero-width/BOM/controls)
       const cleaned = raw
         .normalize("NFKC")
         .replace(/[\u0000-\u001F\u007F-\u009F]/g, "")
@@ -76,6 +86,7 @@ sap.ui.define(
         .trim()
         .toUpperCase();
 
+      // Detecção direta de serviço
       if (
         cleaned.startsWith("D") ||
         cleaned.includes("SERVICE") ||
@@ -86,50 +97,57 @@ sap.ui.define(
         return "D";
       }
 
+      // Mapeamento por dicionário (KeyUtils)
       if (typeof Keys.mapItemCategory === "function") {
         const mapped = Keys.mapItemCategory(raw);
-        if (mapped && mapped !== "0") {
-          return mapped;
-        }
+        if (mapped && mapped !== "0") return mapped;
       }
 
-      const hasMat = !!String(r.MaterialCode || r.material || "").replace(/\D/g, "").replace(/^0+/, "");
-      const hasText = !!String(r.itemDescription || r.ItemDescription || r.description || r.ItemDescription || "").trim();
+      // Heurística: sem material + tem texto => serviço
+      const hasMat = !!String(r.MaterialCode || r.material || "")
+        .replace(/\D/g, "")
+        .replace(/^0+/, "");
+      const hasText = !!String(
+        r.itemDescription || r.ItemDescription || r.description || ""
+      ).trim();
 
-      if (!hasMat && hasText) {
-        return "D";
-      }
+      if (!hasMat && hasText) return "D";
       return "0";
     }
 
+    // Mapeia uma linha do grid pra estrutura do item do BAPI
+    // Obs: em alguns fluxos, o poItem aqui vira “fallback” e é sobrescrito depois.
     function mapRowToPOItem(r, idx) {
       if (!r || typeof r !== "object") {
         throw new Error(
-          `Linha selecionada inválida na posição ${idx + 1}. Refaça a seleção.`,
+          `Linha selecionada inválida na posição ${idx + 1}. Refaça a seleção.`
         );
       }
 
-      const poItem = (idx + 1) * 10;
-      const matRaw = (r?.MaterialCode || r?.materialCode || "")
-        .toString()
-        .trim();
+      const poItem = (idx + 1) * 10; // fallback local (se ninguém fornecer poItem real)
+      const matRaw = (r?.MaterialCode || r?.materialCode || "").toString().trim();
       const m = matRaw.match(/^(\d{4,})\b/);
       const material = m ? Keys.zpad(m[1], 18) : "";
+
+      // NOTE: mantém também itemDEscription (typo histórico) como fallback
       const desc = (
-        r.itemDEscription ||
         r.itemDescription ||
+        r.itemDEscription ||
         r.description ||
         r.ItemDescription ||
         ""
       ).toString();
+
       const shortText = desc.slice(0, 40);
-      const unit = Keys.mapUoM(
-        (r.unitOfMeasure || "").toString().toUpperCase(),
-      );
+      const unit = Keys.mapUoM((r.unitOfMeasure || "").toString().toUpperCase());
       const plant = Keys.mapPlant((r.PLANT || "").toString());
       const itemCat = resolveItemCatFromRow(r);
       const matlGroup = (r.grupo_de_materias || "").toString().slice(0, 9);
+
+      // netPrice: se vier, ajuda previsibilidade no BAPI (cond PB00)
       const netPrice = r.price != null ? Number(r.price) : null;
+
+      // preqNo: só se parecer número (evita sujeira)
       const preqNo = /^\d+$/.test(String(r.CodigoRequisicao || ""))
         ? String(r.CodigoRequisicao).slice(0, 10)
         : undefined;
@@ -147,9 +165,10 @@ sap.ui.define(
         preqNo,
       };
 
+      // Warnings “soft” pra diagnóstico de payload ruim
       if (!it.material && !it.shortText)
         console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`,
+          `[ITEM ${String(poItem).padStart(5, "0")}] Sem MATERIAL e SHORT_TEXT`
         );
       if (!it.unit)
         console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Unidade vazia`);
@@ -157,12 +176,13 @@ sap.ui.define(
         console.warn(`[ITEM ${String(poItem).padStart(5, "0")}] Centro vazio`);
       if (!it.quantity)
         console.warn(
-          `[ITEM ${String(poItem).padStart(5, "0")}] Quantidade vazia/zero`,
+          `[ITEM ${String(poItem).padStart(5, "0")}] Quantidade vazia/zero`
         );
 
       return it;
     }
 
+    // Cria índice (idByKey) pra ligar “resultado BAPI” com seleção original (por material + fornecedor)
     function prepareQMFromSelection(rows, qm) {
       const idByKey = {};
       (rows || []).filter(Boolean).forEach((r) => {
@@ -170,9 +190,10 @@ sap.ui.define(
         const nameKey = Keys.normKey(r.supplierName || "");
         const lifnr = Keys.pad10(
           r.lifnr ||
-          r.supplierId ||
-          (/^\d+$/.test(r.supplierName) ? r.supplierName : ""),
+            r.supplierId ||
+            (/^\d+$/.test(r.supplierName) ? r.supplierName : "")
         );
+
         const meta = {
           itemId: r.itemId ?? r.ItemId ?? null,
           invitationId: r.invitationId ?? r._invitationId ?? null,
@@ -182,15 +203,24 @@ sap.ui.define(
           lifnr: lifnr,
           materialCode: r.MaterialCode || r.materialCode || "",
         };
+
+        // fallback por nome (quando não tem LIFNR)
         idByKey[`${matKey}|NAME:${nameKey}`] = meta;
+        // match preferencial por LIFNR
         if (lifnr) idByKey[`${matKey}|LIFNR:${lifnr}`] = meta;
       });
       qm.setProperty("/idByKey", idByKey);
     }
 
+    // Converte retorno do BAPI (itens) em linhas pro dialog de resultado
+    // Estratégia:
+    // 1) tenta match por poItem (determinístico)
+    // 2) fallback por materialKey + fornecedor (idByKey)
     function buildResRowsFromBapiResult(result, qm, srcRowsOverride) {
       const idByKey = qm.getProperty("/idByKey") || {};
-      const norm10 = (v) => (v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0"));
+
+      const norm10 = (v) =>
+        v == null ? "" : String(v).replace(/\D/g, "").padStart(10, "0");
       const normPo = (v) => {
         const s = String(v ?? "").trim();
         if (!s) return null;
@@ -198,36 +228,50 @@ sap.ui.define(
         return Number.isFinite(n) ? n : null;
       };
 
-      // LIFNR vindo do resultado (header)
-      const lifnrHeader = norm10(result?.header?.fornecedor || result?.header?.vendor || "");
+      const lifnrHeader = norm10(
+        result?.header?.fornecedor || result?.header?.vendor || ""
+      );
 
-      // Escolhe as linhas fonte (do mesmo fornecedor)
+      // Linhas fonte: do mesmo fornecedor (ou override explícito)
       const globalSrc = qm.getProperty("/simSourceRows") || [];
-      const srcRows = (Array.isArray(srcRowsOverride) && srcRowsOverride.length)
-        ? srcRowsOverride
-        : globalSrc.filter(r => norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader);
+      const srcRows =
+        Array.isArray(srcRowsOverride) && srcRowsOverride.length
+          ? srcRowsOverride
+          : globalSrc.filter(
+              (r) =>
+                norm10(r?.lifnr || r?.supplierId || r?.SupplierCode) === lifnrHeader
+            );
 
-      // Índice determinístico: poItem (numérico) -> linha fonte
+      // Mapa poItem (num) -> row fonte (pra match exato)
       const srcByPo = new Map();
       for (const r of srcRows) {
         const n = normPo(r?.poItem ?? r?.PO_ITEM ?? r?.poitem);
         if (n == null) continue;
         if (srcByPo.has(n)) {
-          console.warn("[MAP] poItem duplicado em srcRows p/ vendor", lifnrHeader, "poItem=", n);
+          console.warn(
+            "[MAP] poItem duplicado em srcRows p/ vendor",
+            lifnrHeader,
+            "poItem=",
+            n
+          );
         } else {
           srcByPo.set(n, r);
         }
       }
 
       const currency = (result?.header?.moeda || "BRL").toString();
-      const itens = Array.isArray(result?.itens) ? result.itens.filter(Boolean) : [];
+      const itens = Array.isArray(result?.itens)
+        ? result.itens.filter(Boolean)
+        : [];
 
       return itens.map((it) => {
         const poPadded = String(it?.poItem || "").padStart(5, "0");
         const poNum = normPo(it?.poItem);
 
-        let src = (poNum != null) ? srcByPo.get(poNum) : undefined;
+        // 1) match por poItem
+        let src = poNum != null ? srcByPo.get(poNum) : undefined;
 
+        // 2) fallback por materialKey + fornecedor
         let meta = null;
         const matKey = Keys.matKeyFromBapiMaterial(it?.material);
         if (!src) {
@@ -251,37 +295,37 @@ sap.ui.define(
 
         const invitationId =
           (src && (src.invitationId ?? src._invitationId)) != null
-            ? (src.invitationId ?? src._invitationId)
-            : (meta?.invitationId ?? null);
+            ? src.invitationId ?? src._invitationId
+            : meta?.invitationId ?? null;
 
         const invitationEmail =
-          (src && src.invitationEmail != null)
+          src && src.invitationEmail != null
             ? src.invitationEmail
-            : (meta?.invitationEmail ?? null);
+            : meta?.invitationEmail ?? null;
 
         const originalQty =
-          (src && Number(src._originalQty || src.quantity))
+          src && Number(src._originalQty || src.quantity)
             ? Number(src._originalQty || src.quantity)
-            : (Number(meta?.masterQty ?? 0) || 0);
+            : Number(meta?.masterQty ?? 0) || 0;
 
         const matDisplay =
-          (src && (src.MaterialCode || src.materialCode))
-            ? (src.MaterialCode || src.materialCode)
-            : (meta?.materialCode || it?.material || Keys.getItemKey(src || {}) || "");
+          src && (src.MaterialCode || src.materialCode)
+            ? src.MaterialCode || src.materialCode
+            : meta?.materialCode || it?.material || Keys.getItemKey(src || {}) || "";
 
         const supplierName =
-          (src && src.supplierName) ? src.supplierName :
-            (meta?.supplierName || lifnrHeader);
+          src && src.supplierName ? src.supplierName : meta?.supplierName || lifnrHeader;
 
         const itemId =
-          (src && (src.itemId ?? src.ItemId) != null)
-            ? (src.itemId ?? src.ItemId)
-            : (meta?.itemId ?? null);
+          src && (src.itemId ?? src.ItemId) != null
+            ? src.itemId ?? src.ItemId
+            : meta?.itemId ?? null;
 
+        // Cálculos básicos pro dialog
         const quantity = Number(it?.quantidade || 0) || 0;
         const netPrice = Number(it?.netPrice || 0) || 0;
         const totalLiquido = Number((netPrice * quantity).toFixed(2));
-        const grossPrice = (src && src.price != null) ? Number(src.price) : 0;
+        const grossPrice = src && src.price != null ? Number(src.price) : 0;
         const totalBruto = Number((grossPrice * quantity).toFixed(2));
 
         const descricao = it?.descricao ?? "";
@@ -294,7 +338,11 @@ sap.ui.define(
         const schedules = Array.isArray(it?.schedules) ? it.schedules : [];
 
         if (!src) {
-          console.warn("[MAP] Sem match por poItem no retorno", { vendor: lifnrHeader, poItem: poPadded, matKey });
+          console.warn("[MAP] Sem match por poItem no retorno", {
+            vendor: lifnrHeader,
+            poItem: poPadded,
+            matKey,
+          });
         }
 
         return {
@@ -307,16 +355,13 @@ sap.ui.define(
           netPrice,
           grossPrice,
           currency,
-
           totalLiquido,
           totalBruto,
           itemId,
           invitationId,
           invitationEmail,
           lifnr: lifnrHeader,
-
           poItem: poPadded,
-
           descricao,
           ncm,
           taxCode,
@@ -342,5 +387,5 @@ sap.ui.define(
       prepareQMFromSelection,
       buildResRowsFromBapiResult,
     };
-  },
+  }
 );
