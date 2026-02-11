@@ -62,16 +62,6 @@
         "credentials": {
           "destination": "S4H_PRD_CPE_MAPA",
           "path": "/sap/bc/srt/scs/sap/zbapi_po_create1?sap-client=300"
-        }
-      },
-      "BAPI_INFORECORD_GETLIST": {
-        "ARIBA_Sourcing_Project_Management_Prod": {
-          "kind": "rest",
-          "[production]": {
-            "credentials": {
-              "destination": "ARIBA_Sourcing_Project_Management_Prod"
-            }
-          }
         },
         "API_INFORECORD_PROCESS_SRV": {
           "kind": "odata-v2",

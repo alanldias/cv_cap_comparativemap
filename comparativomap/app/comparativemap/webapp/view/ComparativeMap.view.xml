@@ -13,19 +13,19 @@
         <customHeader>
             <Toolbar id="toolbarCabecalhoTopo" class="cabecalhoTopo">
                 <HBox id="hboxCabecalho" width="100%" alignItems="Center" justifyContent="SpaceBetween">
-                    <HBox id="hboxEsquerda"  alignItems="Center" class="fundologo" width="20%">
-                        <Image id="logoTopo"
-                            src="https://www.cvale.com.br/site/web-files/imagens/logos/logo.png"
+                    <HBox id="hboxCabecalhoEsquerda" width="30%" alignItems="Center" class="sapUiTinyMarginTop">
+                        <Image id="logoCabecalho"
+                            src="https://amer.cockpit.btp.cloud.sap/~1761742998000~/images/sap_logo.svg"
                             height="2rem"
-                            width="auto"
-                            class="sapUiTinyMarginBegin" />
+                            width="auto" />
+                        <Text id="textoLogo" text="BTP Cockpit" class="textoLogo sapMTitle sapMTitleStyleAuto sapMTitleNoWrap"/>
                     </HBox>
-                    <HBox id="hboxCentro"  justifyContent="Center" width="60%">
+                    <HBox id="hboxCabecalhoCentro" width="40%" justifyContent="Center">
                         <Text id="tituloCabecalho"
                             text="Mapa Comparativo"
                             class="cabecalhoTexto" />
                     </HBox>
-                    <HBox id="hboxDireita" alignItems="Center" justifyContent="End" width="20%">
+                     <HBox id="hboxDireita" alignItems="Center" justifyContent="End" width="30%">
                         <vm:VariantManagement
                             id="vmTblDocs"
                             for="tblDocs"
@@ -244,7 +244,7 @@
         <footer>
             <OverflowToolbar id="pageFooter">
                 <ToolbarSpacer id="spacerFooter1"/>
-                <Text id="footerTxt" text=""/>
+                    <Text id="txtNTT" text="Producted by © NTT DATA Business Solutions 2026"/>
                 <ToolbarSpacer id="spacerFooter2"/>
             </OverflowToolbar>
         </footer>

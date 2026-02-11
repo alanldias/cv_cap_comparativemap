@@ -54,12 +54,12 @@ sap.ui.define(
 
           view.addStyleClass("sapUiSizeCompact");
 
-          // Revalida acesso sempre que a rota for ativada
-          const router = UIComponent.getRouterFor(this);
-          this._fnRouteMatched = this._onRouteMatched.bind(this);
-          router
-            .getRoute("RouteComparativeMap")
-            .attachPatternMatched(this._fnRouteMatched);
+          // // Revalida acesso sempre que a rota for ativada
+          // const router = UIComponent.getRouterFor(this);
+          // this._fnRouteMatched = this._onRouteMatched.bind(this);
+          // router
+          //   .getRoute("RouteComparativeMap")
+          //   .attachPatternMatched(this._fnRouteMatched);
 
           // Autosave dos dados (sem preferências de UI)
           this._onUnloadSave = () => {
@@ -90,44 +90,44 @@ sap.ui.define(
           }
         },
 
-        async _onRouteMatched() {
-          const view = this.getView();
-          const router = UIComponent.getRouterFor(this);
-          const oModel = view.getModel(); // OData V4 principal
+        // async _onRouteMatched() {
+        //   const view = this.getView();
+        //   const router = UIComponent.getRouterFor(this);
+        //   const oModel = view.getModel(); // OData V4 principal
 
-          if (!oModel) {
-            MessageBox.error(
-              "Não foi possível acessar o modelo de dados para validar seu acesso ao Mapa Comparativo.",
-            );
-            router.navTo("RouteUnauthorized");
-            return;
-          }
+        //   if (!oModel) {
+        //     MessageBox.error(
+        //       "Não foi possível acessar o modelo de dados para validar seu acesso ao Mapa Comparativo.",
+        //     );
+        //     router.navTo("RouteUnauthorized");
+        //     return;
+        //   }
 
-          // deixa o UI5 dizer a serviceUrl
-          let sServiceUrl = oModel.sServiceUrl || "/odata/v4/service/";
-          if (!sServiceUrl.endsWith("/")) sServiceUrl += "/";
-          const sPingUrl = sServiceUrl + "Ping()";
+        //   // deixa o UI5 dizer a serviceUrl
+        //   let sServiceUrl = oModel.sServiceUrl || "/odata/v4/service/";
+        //   if (!sServiceUrl.endsWith("/")) sServiceUrl += "/";
+        //   const sPingUrl = sServiceUrl + "Ping()";
 
-          try {
-            const resp = await fetch(sPingUrl, {
-              method: "GET",
-              headers: { Accept: "application/json" },
-            });
+        //   try {
+        //     const resp = await fetch(sPingUrl, {
+        //       method: "GET",
+        //       headers: { Accept: "application/json" },
+        //     });
 
-            if (resp.status === 401 || resp.status === 403) {
-              router.navTo("RouteUnauthorized");
-              return;
-            }
+        //     if (resp.status === 401 || resp.status === 403) {
+        //       router.navTo("RouteUnauthorized");
+        //       return;
+        //     }
 
-            // Oferta de restore (somente dados) ao entrar na tela
-            Drafts.offerRestoreOnEnter(this);
-          } catch (e) {
-            MessageBox.error(
-              "Não foi possível validar seu acesso ao Mapa Comparativo. Verifique sua conexão e tente novamente.",
-            );
-            router.navTo("RouteUnauthorized");
-          }
-        },
+        //     // Oferta de restore (somente dados) ao entrar na tela
+        //     Drafts.offerRestoreOnEnter(this);
+        //   } catch (e) {
+        //     MessageBox.error(
+        //       "Não foi possível validar seu acesso ao Mapa Comparativo. Verifique sua conexão e tente novamente.",
+        //     );
+        //     router.navTo("RouteUnauthorized");
+        //   }
+        // },
         // BUSCA (DOCID)
         async onBuscar() {
           const view = this.getView();

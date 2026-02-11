@@ -1,7 +1,7 @@
 using comparativemap as comparativemap from '../db/schema';
 
 @path: '/odata/v4/service'
-@requires: 'MAP_VIEWER'
+// @requires: 'MAP_VIEWER'
 service service {
 
   entity AribaQuotes as projection on comparativemap.AribaQuotes;
