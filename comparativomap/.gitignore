@@ -9,7 +9,7 @@ gen/
 node_modules/
 target/
 resources/
-comparativomap/app/comparativomap/dist
+dist
 
 # Web IDE, App Studio
 .che/

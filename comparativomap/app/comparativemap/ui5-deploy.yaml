@@ -21,6 +21,6 @@ builder:
     - name: ui5-task-zipper
       afterTask: generateCachebusterInfo
       configuration:
-        archiveName: comparativemapcomparativemap
+        archiveName: comparativomap
         additionalFiles:
           - xs-app.json

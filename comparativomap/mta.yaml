@@ -44,7 +44,7 @@ modules:
       build-result: resources
       requires:
         - artifacts:
-            - comparativemapcomparativemap.zip
+            - comparativomap.zip
           name: comparativomap-ui
           target-path: resources/
 

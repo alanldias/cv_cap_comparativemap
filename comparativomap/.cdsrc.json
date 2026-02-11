@@ -1,15 +1,7 @@
 {
   "requires": {
     "auth": {
-      "kind": "basic",
-      "users": {
-        "EADIAS": {
-          "password": "m2E%h^H6Rn"
-        }
-      },
-      "[production]": {
-        "kind": "xsuaa"
-      }
+      "kind": "basic"
     },
     "BAPI_PO_CREATE": {
       "credentials": {
